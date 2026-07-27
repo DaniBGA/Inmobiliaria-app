@@ -1,0 +1,53 @@
+/* Kit de marca real de Facundo Paris Propiedades (no las Google Fonts
+   genéricas del boceto original — ver plan de la landing en CONEXIONES.md).
+   Roles:
+   - Gotham (Bold/Medium/Book): títulos y cuerpo — reemplaza a Spectral/Inter
+   - Montserrat (SemiBold/Medium/Regular): labels en mayúscula, botones, nav */
+
+@font-face {
+  font-family: 'Gotham';
+  src: url('../../fonts/Gotham-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Gotham';
+  src: url('../../fonts/GothamMedium.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Gotham';
+  src: url('../../fonts/GothamBook.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Montserrat';
+  src: url('../../fonts/Montserrat-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Montserrat';
+  src: url('../../fonts/Montserrat-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Montserrat';
+  src: url('../../fonts/Montserrat-SemiBold.ttf') format('truetype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}

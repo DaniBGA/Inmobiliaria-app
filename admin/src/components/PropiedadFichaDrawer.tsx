@@ -1,0 +1,1048 @@
+import { useEffect, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
+import { api, ApiError, BASE_URL } from '../api/client';
+import { Modal } from './Modal';
+import { formatMoney, formatUsd, formatDate, mesActualStr, mesLabel } from '../lib/format';
+import { honorariosLabel, type TipoHonorarios } from '../lib/honorarios';
+
+type Modalidad = 'ALQUILER' | 'VENTA';
+type IndiceAjuste = 'IPC' | 'ICL' | null;
+type PunitorioFrecuencia = 'DIA' | 'SEMANA' | 'MES' | 'UNICO' | null;
+type PunitorioTipo = 'PORCENTAJE' | 'MONTO_FIJO' | null;
+type EstadoVenta = 'PUBLICADA' | 'RESERVADA' | 'VENDIDA' | 'VENDIDA_POR_TERCEROS' | 'PAUSADA';
+
+interface Inquilino {
+  nombre: string;
+  telefono: string | null;
+  email: string | null;
+}
+interface Propietario {
+  nombre: string;
+  telefono: string | null;
+  email: string | null;
+}
+interface HistorialAumento {
+  id: string;
+  fecha: string;
+  monto: string | number;
+}
+interface Interesado {
+  etapa: string;
+}
+interface Venta {
+  precio: string | number;
+  moneda: 'ARS' | 'USD';
+  estado: EstadoVenta;
+  publicada: boolean;
+  senaRecibida: string | number | null;
+  cierreEstimado: string | null;
+  interesados: Interesado[];
+}
+interface Documento {
+  id: string;
+  nombre: string;
+  url: string;
+  tamanioBytes: number;
+  subidoEn: string;
+}
+interface PropiedadFicha {
+  id: string;
+  nombre: string;
+  direccion: string;
+  modalidad: Modalidad;
+  tipo: string;
+  montoAlquilerVigente: string | number | null;
+  alquilerPublicado: boolean;
+  honorariosTipo: TipoHonorarios;
+  honorariosPorcentaje: string | number | null;
+  indice: IndiceAjuste;
+  frecuenciaAumentoMeses: number | null;
+  contratoInicio: string | null;
+  contratoFin: string | null;
+  punitorioFrecuencia: PunitorioFrecuencia;
+  punitorioTipo: PunitorioTipo;
+  punitorioValor: string | number | null;
+  designado: { nombre: string } | null;
+  propietario: Propietario | null;
+  inquilino: Inquilino | null;
+  historialAumentos: HistorialAumento[];
+  venta: Venta | null;
+  documentos: Documento[];
+}
+interface RentaVigente {
+  monto: string | number | null;
+  proximoAumento: string | null;
+}
+interface Pago {
+  id: string;
+  mes: string;
+  monto: string | number;
+  medio: string;
+}
+interface Gasto {
+  id: string;
+  descripcion: string;
+  monto: string | number;
+  fecha: string;
+  categoria: string;
+  destino: 'PROPIETARIO' | 'INQUILINO' | 'INMOBILIARIA';
+}
+interface Incidencia {
+  id: string;
+  titulo: string;
+  rubro: string;
+  estado: 'ABIERTA' | 'EN_CURSO' | 'RESUELTA';
+  prioridad: 'BAJA' | 'MEDIA' | 'ALTA';
+  costo: string | number | null;
+  proveedor: { nombre: string } | null;
+  fechaApertura: string;
+  fechaCierre: string | null;
+}
+interface Configuracion {
+  ipc: string;
+  icl: string;
+  honorariosDefaultPorcentaje: string;
+  dolarReferencia: string;
+  diasAnticipacionAumento: number;
+}
+interface FacturaItem {
+  id: string;
+  descripcion: string;
+  monto: string | number;
+}
+interface Factura {
+  numero: number;
+  total: string | number;
+  items: FacturaItem[];
+}
+interface Recibo {
+  numero: number;
+  montoFacturado: string | number;
+  montoCobrado: string | number;
+  ajusteSobreFacturado: string | number | null;
+  items: FacturaItem[];
+}
+
+const TIPO_LABEL: Record<string, string> = {
+  CASA: 'Casa',
+  DEPARTAMENTO_DUPLEX: 'Departamento/Dúplex',
+  QUINTA: 'Quinta',
+  LOTE: 'Lote',
+  CAMPO: 'Campo',
+  GALPON: 'Galpón',
+  LOCAL_OFICINA: 'Local/Oficina',
+  CABANIAS_HOTELES_OTROS: 'Cabañas/Hoteles/Otros',
+  FONDO_DE_COMERCIO: 'Fondo de comercio',
+  COCHERAS: 'Cocheras',
+};
+const FREQ_LABEL: Record<number, string> = { 1: 'MENSUAL', 3: 'TRIMESTRAL', 6: 'SEMESTRAL', 12: 'ANUAL' };
+const PUNIT_FREQ_LABEL: Record<string, string> = { DIA: 'POR DÍA', SEMANA: 'POR SEMANA', MES: 'POR MES', UNICO: 'ÚNICO' };
+const ESTADO_VENTA_LABEL: Record<EstadoVenta, string> = {
+  PUBLICADA: 'Publicada',
+  RESERVADA: 'Reservada',
+  VENDIDA: 'Vendida',
+  VENDIDA_POR_TERCEROS: 'Vendida por terceros',
+  PAUSADA: 'Pausada',
+};
+const ESTADO_VENTA_CLASE: Record<EstadoVenta, string> = {
+  PUBLICADA: 'publicada',
+  RESERVADA: 'reservada',
+  VENDIDA: 'vendida',
+  VENDIDA_POR_TERCEROS: 'vendida_por_terceros',
+  PAUSADA: 'pausada',
+};
+const DESTINO_LABEL: Record<Gasto['destino'], string> = {
+  PROPIETARIO: 'AL PROPIETARIO',
+  INQUILINO: 'AL INQUILINO',
+  INMOBILIARIA: 'A LA INMOBILIARIA',
+};
+const ESTADO_INC_LABEL: Record<Incidencia['estado'], string> = { ABIERTA: 'Abierta', EN_CURSO: 'En curso', RESUELTA: 'Resuelta' };
+const ESTADO_INC_CLASE: Record<Incidencia['estado'], string> = { ABIERTA: 'abierta', EN_CURSO: 'encurso', RESUELTA: 'resuelta' };
+
+function fmtKB(bytes: number) {
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: string; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [montoNuevo, setMontoNuevo] = useState('');
+  const [calcAbierto, setCalcAbierto] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [docError, setDocError] = useState<string | null>(null);
+  const [subiendoDoc, setSubiendoDoc] = useState(false);
+  const [gastoModal, setGastoModal] = useState(false);
+  const [facturaModal, setFacturaModal] = useState(false);
+  const [reciboModal, setReciboModal] = useState(false);
+
+  const propiedad = useQuery({
+    queryKey: ['propiedades', propiedadId],
+    queryFn: () => api.get<PropiedadFicha>(`/propiedades/${propiedadId}`),
+  });
+  const p = propiedad.data;
+  const esAlquiler = p?.modalidad === 'ALQUILER';
+
+  const rentaVigente = useQuery({
+    queryKey: ['renta-vigente', propiedadId],
+    queryFn: () => api.get<RentaVigente>(`/propiedades/${propiedadId}/renta-vigente`),
+    enabled: esAlquiler,
+  });
+  const pagos = useQuery({
+    queryKey: ['cobros', 'pagos', propiedadId],
+    queryFn: () => api.get<Pago[]>(`/cobros/propiedades/${propiedadId}/pagos`),
+    enabled: esAlquiler,
+  });
+  const gastos = useQuery({
+    queryKey: ['gastos', propiedadId],
+    queryFn: () => api.get<Gasto[]>(`/gastos?propiedadId=${propiedadId}`),
+    enabled: esAlquiler,
+  });
+  const incidencias = useQuery({
+    queryKey: ['incidencias', propiedadId],
+    queryFn: () => api.get<Incidencia[]>(`/incidencias?propiedadId=${propiedadId}`),
+  });
+  const configuracion = useQuery({
+    queryKey: ['configuracion'],
+    queryFn: () => api.get<Configuracion>('/configuracion'),
+  });
+
+  function invalidarTodo() {
+    qc.invalidateQueries({ queryKey: ['propiedades'] });
+    qc.invalidateQueries({ queryKey: ['cobros'] });
+    qc.invalidateQueries({ queryKey: ['caja'] });
+    qc.invalidateQueries({ queryKey: ['avisos'] });
+    qc.invalidateQueries({ queryKey: ['renta-vigente', propiedadId] });
+  }
+
+  const aplicarAumento = useMutation({
+    mutationFn: (vars: { fecha: string; monto: number }) => api.post(`/propiedades/${propiedadId}/aumentos`, vars),
+    onSuccess: () => {
+      setMontoNuevo('');
+      setCalcAbierto(false);
+      invalidarTodo();
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo aplicar el aumento.'),
+  });
+
+  const eliminarPropiedad = useMutation({
+    mutationFn: () => api.delete(`/propiedades/${propiedadId}`),
+    // No usa invalidarTodo() ni toca ['propiedades', propiedadId] /
+    // ['renta-vigente', propiedadId] de ninguna forma (ni invalidate ni
+    // remove): esta propia ficha todavía está montada y observando esas dos
+    // queries en este mismo instante, así que CUALQUIER toque al cache de
+    // esas keys (invalidar o directamente sacarlas) hace que React Query
+    // les dispare un refetch inmediato — contra una propiedad que ya no
+    // existe, esas dos pegan `findUniqueOrThrow` y devuelven 500 en vez de
+    // simplemente no hacer nada. Al no tocarlas, no hay refetch; `onClose()`
+    // desmonta el drawer y ahí se dejan de observar solas.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['propiedades'], exact: true });
+      qc.invalidateQueries({ queryKey: ['cobros'] });
+      qc.invalidateQueries({ queryKey: ['caja'] });
+      qc.invalidateQueries({ queryKey: ['avisos'] });
+      qc.invalidateQueries({ queryKey: ['ventas'] });
+      qc.invalidateQueries({ queryKey: ['carteles'] });
+      onClose();
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo eliminar la propiedad.'),
+  });
+
+  // Marca la propiedad como vacante otra vez — no borra el historial de
+  // pagos/facturas del inquilino, solo la relación 1:1 vigente
+  // (`removeInquilino`, ya existía en el backend sin usarse desde ningún
+  // lado). Una vez vacante, si "Publicada en la web" sigue en true, vuelve
+  // a aparecer en la landing pública.
+  const quitarInquilino = useMutation({
+    mutationFn: () => api.delete(`/propiedades/${propiedadId}/inquilino`),
+    onSuccess: invalidarTodo,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo quitar el inquilino.'),
+  });
+
+  function confirmarQuitarInquilino() {
+    if (window.confirm('¿Marcar esta propiedad como vacante? Se quita el inquilino asignado — no se borra su historial de pagos.')) {
+      quitarInquilino.mutate();
+    }
+  }
+
+  // Toggle inmediato (sin botón "Guardar" aparte): controla si esta
+  // propiedad de alquiler vacante se muestra en la landing pública o
+  // queda pausada — mismo concepto que "Mostrar en la página web" para
+  // Venta, pero como campo propio en Propiedad (no hay ficha de venta
+  // para alquiler).
+  const togglePublicadoAlquiler = useMutation({
+    mutationFn: (checked: boolean) => api.patch(`/propiedades/${propiedadId}`, { alquilerPublicado: checked }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['propiedades'] }),
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo actualizar la publicación en la web.'),
+  });
+
+  const eliminarDocumento = useMutation({
+    mutationFn: (documentoId: string) => api.delete(`/propiedades/${propiedadId}/documentos/${documentoId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['propiedades'] }),
+    onError: (err) => setDocError(err instanceof ApiError ? err.message : 'No se pudo eliminar el documento.'),
+  });
+
+  async function subirDocumento(files: FileList | null) {
+    const file = files?.[0];
+    if (!file) return;
+    setDocError(null);
+    setSubiendoDoc(true);
+    try {
+      const form = new FormData();
+      form.append('archivo', file);
+      await api.upload(`/propiedades/${propiedadId}/documentos`, form);
+      qc.invalidateQueries({ queryKey: ['propiedades'] });
+    } catch (err) {
+      setDocError(err instanceof ApiError ? err.message : 'No se pudo subir el documento.');
+    } finally {
+      setSubiendoDoc(false);
+    }
+  }
+
+  function confirmarEliminarPropiedad() {
+    if (!p) return;
+    if (window.confirm(`¿Eliminar definitivamente "${p.nombre}"? Esta acción no se puede deshacer.`)) {
+      eliminarPropiedad.mutate();
+    }
+  }
+
+  // Cuándo mostrar "Alerta Aumento": próximo aumento dentro de la ventana de
+  // días de Configuración (mismo criterio que Avisos, §2.10).
+  const cfg = configuracion.data;
+  const proximoAumento = rentaVigente.data?.proximoAumento ?? null;
+  const diasParaAumento = proximoAumento
+    ? Math.ceil((new Date(proximoAumento).getTime() - Date.now()) / 86400000)
+    : null;
+  const aumentoInminente = diasParaAumento != null && cfg && diasParaAumento <= cfg.diasAnticipacionAumento;
+  const vencido = p?.contratoFin ? new Date(p.contratoFin) < new Date() : false;
+
+  const montoVigente = Number(rentaVigente.data?.monto ?? p?.montoAlquilerVigente ?? 0);
+  const indiceValor = cfg ? Number(p?.indice === 'ICL' ? cfg.icl : cfg.ipc) : 0;
+  const sugerido = montoVigente > 0 && indiceValor > 0 ? Math.round(montoVigente * (1 + indiceValor / 100)) : null;
+
+  function confirmarAumento() {
+    const nuevo = Number(montoNuevo);
+    if (!nuevo || nuevo <= 0) return;
+    if (!window.confirm(`Aplicar aumento: ${formatMoney(montoVigente)} → ${formatMoney(nuevo)}?`)) return;
+    const fecha = aumentoInminente && proximoAumento ? proximoAumento.slice(0, 10) : new Date().toISOString().slice(0, 10);
+    aplicarAumento.mutate({ fecha, monto: nuevo });
+  }
+
+  const historial = p?.historialAumentos ?? [];
+  const montoInicial = historial.length ? historial[historial.length - 1].monto : null;
+  const v = p?.venta ?? null;
+  const dolarReferencia = cfg ? Number(cfg.dolarReferencia) : 0;
+  const precioVentaArs = v ? (v.moneda === 'USD' ? Number(v.precio) * dolarReferencia : Number(v.precio)) : 0;
+  const honorPct = cfg ? Number(cfg.honorariosDefaultPorcentaje) : 0;
+
+  return (
+    <>
+      <div className="overlay on" onClick={onClose}></div>
+      <div className="drawer on">
+        {propiedad.isLoading || !p ? (
+          <div className="dhead">
+            <div>
+              <h2>Cargando…</h2>
+            </div>
+            <button className="dclose" onClick={onClose}>
+              ✕
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="dhead">
+              <div>
+                <h2>{p.nombre}</h2>
+                <div className="sub">PARA {p.modalidad === 'VENTA' ? 'VENTA' : 'ALQUILER'}</div>
+              </div>
+              {aumentoInminente && <span className="badge alerta">Alerta Aumento</span>}
+              {vencido && <span className="badge vencido">Vencido</span>}
+              <button className="dclose" onClick={onClose} style={{ marginLeft: 'auto' }}>
+                ✕
+              </button>
+            </div>
+            {error && (
+              <div className="errstate" style={{ margin: '0 32px 0' }}>
+                {error}
+              </div>
+            )}
+            <div className="dbody">
+              <div>
+                <div className="dsec">
+                  <h5>INFORMACIÓN DEL CONTRATO</h5>
+                  <div className="infocard">
+                    <div className="f">
+                      <b>Monto inicial</b>
+                      <span className="big">{montoInicial != null ? formatMoney(montoInicial) : '—'}</span>
+                    </div>
+                    <div className="f">
+                      <b>Monto actual</b>
+                      <span className="big">{montoVigente ? formatMoney(montoVigente) : '—'}</span>
+                    </div>
+                    <div className="f">
+                      <b>Inicio de contrato</b>
+                      <span>{p.contratoInicio ? formatDate(p.contratoInicio) : '—'}</span>
+                    </div>
+                    <div className="f">
+                      <b>Índice</b>
+                      <span>{esAlquiler ? p.indice ?? '—' : '—'}</span>
+                    </div>
+                    <div className="f">
+                      <b>Fin de contrato</b>
+                      <span>{p.contratoFin ? formatDate(p.contratoFin) : '—'}</span>
+                    </div>
+                    <div className="f">
+                      <b>Frecuencia de ajuste</b>
+                      <span>{esAlquiler && p.frecuenciaAumentoMeses ? FREQ_LABEL[p.frecuenciaAumentoMeses] ?? `${p.frecuenciaAumentoMeses} MESES` : '—'}</span>
+                    </div>
+                    <div
+                      className="f"
+                      style={{ gridColumn: '1/-1', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border2)', paddingTop: 14, marginTop: 2 }}
+                    >
+                      <b style={{ marginBottom: 0 }}>Próximo aumento</b>
+                      <span className="big" style={aumentoInminente ? { color: 'var(--orange)' } : undefined}>
+                        {proximoAumento ? formatDate(proximoAumento) : '—'}
+                      </span>
+                    </div>
+                    {p.punitorioValor != null && Number(p.punitorioValor) > 0 && (
+                      <div className="f" style={{ gridColumn: '1/-1', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <b style={{ marginBottom: 0 }}>Punitorio por mora</b>
+                        <span>
+                          {p.punitorioTipo === 'PORCENTAJE' ? `${p.punitorioValor}%` : formatMoney(p.punitorioValor)}{' '}
+                          {p.punitorioFrecuencia ? PUNIT_FREQ_LABEL[p.punitorioFrecuencia] : ''}
+                        </span>
+                      </div>
+                    )}
+                    <div className="f" style={{ gridColumn: '1/-1', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <b style={{ marginBottom: 0 }}>Honorarios profesionales</b>
+                      <span>{honorariosLabel(p, honorPct).toUpperCase()}</span>
+                    </div>
+                    {p.designado && (
+                      <div className="f" style={{ gridColumn: '1/-1', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <b style={{ marginBottom: 0 }}>La muestra</b>
+                        <span>{p.designado.nombre}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="dsec" style={{ marginTop: 22, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <div>
+                    <h5>INQUILINO</h5>
+                    {esAlquiler && (
+                      <label className="chk" style={{ marginBottom: 10 }}>
+                        <input
+                          type="checkbox"
+                          checked={p.alquilerPublicado}
+                          disabled={togglePublicadoAlquiler.isPending}
+                          onChange={(e) => togglePublicadoAlquiler.mutate(e.target.checked)}
+                        />
+                        <span>Publicada en la web</span>
+                      </label>
+                    )}
+                    {p.inquilino ? (
+                      <>
+                        <div className="contactline">
+                          👤 <b>{p.inquilino.nombre}</b>
+                        </div>
+                        {p.inquilino.telefono && <div className="contactline">✆ {p.inquilino.telefono}</div>}
+                        {p.inquilino.email && (
+                          <div className="contactline">
+                            ✉ <a href={`mailto:${p.inquilino.email}`}>{p.inquilino.email}</a>
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                          <button className="btn-invoice" style={{ marginTop: 0, flex: 1 }} onClick={() => setFacturaModal(true)}>
+                            📄 Emitir factura
+                          </button>
+                          <button className="btn-invoice" style={{ marginTop: 0, flex: 1 }} onClick={() => setReciboModal(true)}>
+                            🧾 Emitir recibo
+                          </button>
+                        </div>
+                        <button
+                          className="btn-sm ghostred"
+                          style={{ width: '100%', marginTop: 8 }}
+                          disabled={quitarInquilino.isPending}
+                          onClick={confirmarQuitarInquilino}
+                        >
+                          ✕ Marcar como vacante
+                        </button>
+                      </>
+                    ) : (
+                      <div className="contactline" style={{ color: 'var(--muted)' }}>
+                        Sin inquilino
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <h5>PROPIETARIO</h5>
+                    {p.propietario ? (
+                      <>
+                        <div className="contactline">
+                          👤 <b>{p.propietario.nombre}</b>
+                        </div>
+                        {p.propietario.telefono && <div className="contactline">✆ {p.propietario.telefono}</div>}
+                        {p.propietario.email && (
+                          <div className="contactline">
+                            ✉ <a href={`mailto:${p.propietario.email}`}>{p.propietario.email}</a>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="contactline" style={{ color: 'var(--muted)' }}>
+                        No especificado
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="dsec" style={{ marginTop: 22 }}>
+                  <h5>HISTORIAL DE AUMENTOS</h5>
+                  <div className="hist">
+                    {historial.length ? (
+                      historial.map((h) => (
+                        <div className="row" key={h.id}>
+                          <span>{formatDate(h.fecha)}</span>
+                          <span>{formatMoney(h.monto)}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="row">
+                        <span style={{ color: 'var(--muted)' }}>Sin registros</span>
+                        <span></span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {esAlquiler && (
+                  <div className="dsec" style={{ marginTop: 22 }}>
+                    <h5>ÚLTIMOS COBROS</h5>
+                    <div className="hist">
+                      {pagos.data?.length ? (
+                        pagos.data.map((pg) => (
+                          <div className="row" key={pg.id}>
+                            <span>
+                              {mesLabel(pg.mes.slice(0, 7))} · {pg.medio}
+                            </span>
+                            <span>{formatMoney(pg.monto)}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="row">
+                          <span style={{ color: 'var(--muted)' }}>Sin cobros registrados</span>
+                          <span></span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {esAlquiler && (
+                  <div className="dsec" style={{ marginTop: 22 }}>
+                    <h5 style={{ display: 'flex', alignItems: 'center' }}>
+                      GASTOS IMPUTADOS
+                      <button className="btn-sm" style={{ marginLeft: 'auto', padding: '4px 10px' }} onClick={() => setGastoModal(true)}>
+                        + Cargar gasto
+                      </button>
+                    </h5>
+                    <div className="hist">
+                      {gastos.data?.length ? (
+                        gastos.data.map((g) => (
+                          <div className="row" key={g.id} style={{ alignItems: 'center', gap: 12 }}>
+                            <span style={{ minWidth: 0 }}>
+                              <span style={{ display: 'block', color: 'var(--ink)', fontWeight: 600 }}>{g.descripcion}</span>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, color: 'var(--muted)', fontSize: 11 }}>
+                                {formatDate(g.fecha)}
+                                <span className="gastotag">{g.categoria}</span>
+                                <span className="gastotag">{DESTINO_LABEL[g.destino]}</span>
+                              </span>
+                            </span>
+                            <span style={{ color: 'var(--red)', whiteSpace: 'nowrap' }}>− {formatMoney(g.monto)}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="row">
+                          <span style={{ color: 'var(--muted)' }}>Sin gastos cargados</span>
+                          <span></span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                {esAlquiler ? (
+                  <div className="calc">
+                    <h4>🧮 CALCULADORA DE AUMENTO</h4>
+                    <p>Calculá la actualización del alquiler con la calculadora de Arquiler y después registrá el nuevo monto en el sistema.</p>
+                    {!calcAbierto ? (
+                      <button className="btn-light" style={{ width: '100%' }} onClick={() => setCalcAbierto(true)}>
+                        INICIAR ACTUALIZACIÓN
+                      </button>
+                    ) : (
+                      <>
+                        <div className="calcframe">
+                          <iframe title="Calculadora de alquileres" src="https://arquiler.com/mini?theme=light&backgroundColor=ffffff" loading="lazy" />
+                        </div>
+                        {sugerido != null && (
+                          <div className="result">Sugerido con el índice cargado en Configuración: {formatMoney(sugerido)}</div>
+                        )}
+                        <div className="fields" style={{ marginTop: sugerido != null ? 0 : 14 }}>
+                          <div style={{ gridColumn: '1/-1' }}>
+                            <label>Nuevo monto calculado ($)</label>
+                            <input
+                              type="number"
+                              min={0}
+                              placeholder="Copiá aquí el resultado de la calculadora"
+                              value={montoNuevo}
+                              onChange={(e) => setMontoNuevo(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <div className="btnrow">
+                          <button className="btn-light" disabled={aplicarAumento.isPending || !montoNuevo} onClick={confirmarAumento}>
+                            APLICAR AUMENTO
+                          </button>
+                          <button className="btn-ghostd" onClick={() => setCalcAbierto(false)}>
+                            Cancelar
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <div className="dsec">
+                    <h5>OPERACIÓN DE VENTA</h5>
+                    <div className="infocard">
+                      <div className="f">
+                        <b>Precio de lista</b>
+                        <span className="big">{v ? (v.moneda === 'USD' ? formatUsd(v.precio) : formatMoney(v.precio)) : '—'}</span>
+                      </div>
+                      <div className="f">
+                        <b>Estado</b>
+                        <span>{v ? <span className={`badge ${ESTADO_VENTA_CLASE[v.estado]}`}>{ESTADO_VENTA_LABEL[v.estado]}</span> : '—'}</span>
+                      </div>
+                      <div className="f">
+                        <b>Comisión estimada</b>
+                        <span>{v ? formatMoney((precioVentaArs * honorPct) / 100) : '—'}</span>
+                      </div>
+                      <div className="f">
+                        <b>Seña recibida</b>
+                        <span>{v?.senaRecibida ? formatUsd(v.senaRecibida) : '—'}</span>
+                      </div>
+                      <div className="f">
+                        <b>Publicada</b>
+                        <span>{v ? (v.publicada ? 'Sí' : 'No') : '—'}</span>
+                      </div>
+                      <div className="f">
+                        <b>Cierre estimado</b>
+                        <span>{v?.cierreEstimado ? formatDate(v.cierreEstimado) : '—'}</span>
+                      </div>
+                      <div className="f" style={{ gridColumn: '1/-1' }}>
+                        <b>Interesados activos</b>
+                        <span>{v ? v.interesados.filter((i) => i.etapa !== 'DESCARTADO').length : 0}</span>
+                      </div>
+                    </div>
+                    <Link to="/ventas" className="btn-invoice" style={{ marginTop: 12, display: 'block', textAlign: 'center' }}>
+                      Ver en Ventas y Carteles
+                    </Link>
+                  </div>
+                )}
+
+                <div className="dsec" style={{ marginTop: 22 }}>
+                  <h5>DOCUMENTACIÓN</h5>
+                  {docError && (
+                    <div className="errstate" style={{ marginBottom: 10 }}>
+                      {docError}
+                    </div>
+                  )}
+                  <div className="doclist">
+                    {p.documentos.map((d) => (
+                      <div className="docitem" key={d.id}>
+                        <span style={{ fontSize: 17 }}>📄</span>
+                        <div className="nm">
+                          {d.nombre}
+                          <div className="meta">
+                            {formatDate(d.subidoEn)} · {fmtKB(d.tamanioBytes)}
+                          </div>
+                        </div>
+                        <div className="acts">
+                          <a className="btn-sm" href={`${BASE_URL}${d.url}`} target="_blank" rel="noopener noreferrer">
+                            Ver
+                          </a>
+                          <button className="btn-sm ghostred" onClick={() => eliminarDocumento.mutate(d.id)} title="Eliminar">
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    <label className="dropzone">
+                      {subiendoDoc ? 'Subiendo…' : p.documentos.length ? '+ Adjuntar otro documento' : '+ Adjuntar contrato'}
+                      <small>Arrastrá un PDF acá o hacé clic para elegirlo (máx. 15 MB)</small>
+                      <input
+                        type="file"
+                        accept="application/pdf"
+                        style={{ display: 'none' }}
+                        disabled={subiendoDoc}
+                        onChange={(e) => {
+                          subirDocumento(e.target.files);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="dsec" style={{ marginTop: 22 }}>
+                  <h5>INCIDENCIAS DE LA PROPIEDAD</h5>
+                  <div className="doclist">
+                    {(incidencias.data ?? []).map((i) => (
+                      <div className="docitem" key={i.id}>
+                        <div className="nm">
+                          {i.titulo}
+                          <div className="meta">
+                            {ESTADO_INC_LABEL[i.estado]} · {i.proveedor ? i.proveedor.nombre : 'sin proveedor'}
+                            {i.costo ? ` · ${formatMoney(i.costo)}` : ''}
+                          </div>
+                        </div>
+                        <span className={`badge ${ESTADO_INC_CLASE[i.estado]}`}>{ESTADO_INC_LABEL[i.estado]}</span>
+                      </div>
+                    ))}
+                    <Link to="/incidencias" className="dropzone" style={{ display: 'block' }}>
+                      + Registrar una incidencia
+                      <small>
+                        {incidencias.data?.length
+                          ? 'Un reclamo nuevo del inquilino o una reparación a coordinar'
+                          : 'Esta propiedad no tiene reclamos ni reparaciones registradas'}
+                      </small>
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="dfoot">
+              <button className="btn-danger" disabled={eliminarPropiedad.isPending} onClick={confirmarEliminarPropiedad}>
+                Eliminar propiedad
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+      {gastoModal && p && (
+        <NuevoGastoModal
+          propiedadId={p.id}
+          onClose={() => setGastoModal(false)}
+          onSaved={() => {
+            setGastoModal(false);
+            qc.invalidateQueries({ queryKey: ['gastos', propiedadId] });
+            qc.invalidateQueries({ queryKey: ['caja'] });
+          }}
+        />
+      )}
+      {facturaModal && p && (
+        <FacturaModal propiedadId={p.id} propiedadNombre={p.nombre} onClose={() => setFacturaModal(false)} />
+      )}
+      {reciboModal && p && (
+        <ReciboModal
+          propiedadId={p.id}
+          propiedadNombre={p.nombre}
+          onClose={() => setReciboModal(false)}
+          onEmitido={() => qc.invalidateQueries({ queryKey: ['caja'] })}
+        />
+      )}
+    </>
+  );
+}
+
+function NuevoGastoModal({
+  propiedadId,
+  onClose,
+  onSaved,
+}: {
+  propiedadId: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [descripcion, setDescripcion] = useState('');
+  const [monto, setMonto] = useState('');
+  const [categoria, setCategoria] = useState('');
+  const [destino, setDestino] = useState<'PROPIETARIO' | 'INQUILINO'>('PROPIETARIO');
+  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
+  const [error, setError] = useState<string | null>(null);
+
+  const guardar = useMutation({
+    mutationFn: () =>
+      api.post('/gastos', {
+        propiedadId,
+        mes: fecha.slice(0, 7),
+        descripcion,
+        monto: Number(monto),
+        fecha,
+        categoria,
+        destino,
+      }),
+    onSuccess: onSaved,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo cargar el gasto.'),
+  });
+
+  const puedeGuardar = descripcion.trim() && monto && categoria.trim();
+
+  return (
+    <Modal open onClose={onClose} title="Cargar Gasto" width={460}>
+      {error && <div className="errstate" style={{ marginBottom: 14 }}>{error}</div>}
+      <div className="formgrid">
+        <div className="fg full">
+          <label>Descripción</label>
+          <input value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Ej: Reparación de bomba de agua" />
+        </div>
+        <div className="fg">
+          <label>Monto</label>
+          <input type="number" min={0} step="0.01" value={monto} onChange={(e) => setMonto(e.target.value)} />
+        </div>
+        <div className="fg">
+          <label>Fecha</label>
+          <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+        </div>
+        <div className="fg">
+          <label>Categoría</label>
+          <input value={categoria} onChange={(e) => setCategoria(e.target.value)} placeholder="Ej: Plomería" />
+        </div>
+        <div className="fg">
+          <label>¿A quién se le imputa?</label>
+          <select value={destino} onChange={(e) => setDestino(e.target.value as 'PROPIETARIO' | 'INQUILINO')}>
+            <option value="PROPIETARIO">Propietario</option>
+            <option value="INQUILINO">Inquilino</option>
+          </select>
+        </div>
+      </div>
+      <div className="btnrow">
+        <button className="btn-ghost" onClick={onClose}>
+          Cancelar
+        </button>
+        <button className="btn-dark" disabled={guardar.isPending || !puedeGuardar} onClick={() => guardar.mutate()}>
+          Guardar
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+interface ItemEditable {
+  descripcion: string;
+  monto: string;
+}
+
+function FacturaModal({
+  propiedadId,
+  propiedadNombre,
+  onClose,
+}: {
+  propiedadId: string;
+  propiedadNombre: string;
+  onClose: () => void;
+}) {
+  const mes = mesActualStr();
+
+  // Ítems predeterminados (§3.5: alquiler vigente + gastos trasladados +
+  // deuda arrastrada) — se traen como punto de partida editable, no se
+  // emiten directo: el usuario puede agregar/quitar líneas y cambiar
+  // montos antes de confirmar.
+  const predeterminados = useQuery({
+    queryKey: ['items-predeterminados', propiedadId, mes],
+    queryFn: () =>
+      api.get<{ descripcion: string; monto: number }[]>(
+        `/facturacion/propiedades/${propiedadId}/items-predeterminados?mes=${mes}`,
+      ),
+  });
+
+  const [items, setItems] = useState<ItemEditable[] | null>(null);
+
+  useEffect(() => {
+    if (predeterminados.data && items === null) {
+      setItems(predeterminados.data.map((it) => ({ descripcion: it.descripcion, monto: String(it.monto) })));
+    }
+    // Solo precarga la primera vez que llegan los predeterminados; después
+    // el usuario es dueño del estado.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [predeterminados.data]);
+
+  const emitir = useMutation({
+    mutationFn: () =>
+      api.post<Factura>(`/facturacion/propiedades/${propiedadId}/facturas`, {
+        mes,
+        items: (items ?? [])
+          .filter((it) => it.descripcion.trim())
+          .map((it) => ({ descripcion: it.descripcion.trim(), monto: Number(it.monto) || 0 })),
+      }),
+  });
+
+  const F = emitir.data;
+
+  const actualizarItem = (idx: number, campo: keyof ItemEditable, valor: string) => {
+    setItems((prev) => prev && prev.map((it, i) => (i === idx ? { ...it, [campo]: valor } : it)));
+  };
+  const quitarItem = (idx: number) => {
+    setItems((prev) => prev && prev.filter((_, i) => i !== idx));
+  };
+  const agregarItem = () => {
+    setItems((prev) => [...(prev ?? []), { descripcion: '', monto: '0' }]);
+  };
+
+  const totalEditable = (items ?? []).reduce((acc, it) => acc + (Number(it.monto) || 0), 0);
+
+  return (
+    <Modal open onClose={onClose} title={`Factura — ${propiedadNombre}`} width={560}>
+      {predeterminados.isPending && <div className="loadstate">Cargando ítems…</div>}
+      {predeterminados.isError && <div className="errstate">No se pudieron cargar los ítems de la factura.</div>}
+      {emitir.isError && (
+        <div className="errstate">{emitir.error instanceof ApiError ? emitir.error.message : 'No se pudo emitir la factura.'}</div>
+      )}
+
+      {!F && items && (
+        <>
+          <div className="itemlist">
+            {items.map((it, idx) => (
+              <div className="itemrow" key={idx}>
+                <input
+                  className="itemdesc"
+                  value={it.descripcion}
+                  onChange={(e) => actualizarItem(idx, 'descripcion', e.target.value)}
+                  placeholder="Descripción"
+                />
+                <input
+                  className="itemmonto"
+                  type="number"
+                  step="0.01"
+                  value={it.monto}
+                  onChange={(e) => actualizarItem(idx, 'monto', e.target.value)}
+                />
+                <button className="btn-sm ghostred" onClick={() => quitarItem(idx)} title="Quitar ítem">
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+          <button className="btn-sm" style={{ marginTop: 8 }} onClick={agregarItem}>
+            + Agregar ítem
+          </button>
+          <div className="liqline tot" style={{ marginTop: 14 }}>
+            <span className="ld">Total</span>
+            <span className="lv">{formatMoney(totalEditable)}</span>
+          </div>
+          <div className="btnrow">
+            <button className="btn-ghost" onClick={onClose}>
+              Cancelar
+            </button>
+            <button className="btn-dark" disabled={emitir.isPending || items.length === 0} onClick={() => emitir.mutate()}>
+              Emitir factura
+            </button>
+          </div>
+        </>
+      )}
+
+      {F && (
+        <>
+          <div className="liqcard" style={{ boxShadow: 'none' }}>
+            <div className="liqhead">
+              <div>
+                <h4>Factura N° {F.numero}</h4>
+                <div className="lsub">{mesLabel(mes)}</div>
+              </div>
+              <span className="spacer"></span>
+              <div className="lnet">
+                <b>TOTAL</b>
+                <span>{formatMoney(F.total)}</span>
+              </div>
+            </div>
+            <div className="liqbody">
+              {F.items.map((it) => (
+                <div className="liqline" key={it.id}>
+                  <span className="ld">{it.descripcion}</span>
+                  <span className="lv">{formatMoney(it.monto)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="btnrow noprint">
+            <button className="btn-ghost" onClick={onClose}>
+              Cerrar
+            </button>
+            <button className="btn-dark" onClick={() => window.print()}>
+              ▤ Imprimir
+            </button>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+function ReciboModal({
+  propiedadId,
+  propiedadNombre,
+  onClose,
+  onEmitido,
+}: {
+  propiedadId: string;
+  propiedadNombre: string;
+  onClose: () => void;
+  onEmitido: () => void;
+}) {
+  const mes = mesActualStr();
+  const generar = useMutation({
+    mutationFn: () => api.post<Recibo>(`/facturacion/propiedades/${propiedadId}/recibos`, { mes }),
+    onSuccess: onEmitido,
+  });
+
+  useEffect(() => {
+    generar.mutate();
+    // Se genera una sola vez al abrir el modal, no en cada render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const R = generar.data;
+
+  return (
+    <Modal open onClose={onClose} title={`Recibo — ${propiedadNombre}`} width={520}>
+      {generar.isPending && <div className="loadstate">Generando recibo…</div>}
+      {generar.isError && (
+        <div className="errstate">{generar.error instanceof ApiError ? generar.error.message : 'No se pudo emitir el recibo.'}</div>
+      )}
+      {R && (
+        <>
+          <div className="liqcard" style={{ boxShadow: 'none' }}>
+            <div className="liqhead">
+              <div>
+                <h4>Recibo N° {R.numero}</h4>
+                <div className="lsub">{mesLabel(mes)}</div>
+              </div>
+              <span className="spacer"></span>
+              <div className="lnet">
+                <b>COBRADO</b>
+                <span>{formatMoney(R.montoCobrado)}</span>
+              </div>
+            </div>
+            <div className="liqbody">
+              {R.items.map((it) => (
+                <div className="liqline" key={it.id}>
+                  <span className="ld">{it.descripcion}</span>
+                  <span className="lv">{formatMoney(it.monto)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="btnrow noprint">
+            <button className="btn-ghost" onClick={onClose}>
+              Cerrar
+            </button>
+            <button className="btn-dark" onClick={() => window.print()}>
+              ▤ Imprimir
+            </button>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}

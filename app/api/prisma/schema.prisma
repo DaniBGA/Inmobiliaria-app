@@ -1,0 +1,891 @@
+// Schema de base de datos de SGM_AR.
+// Modelado a partir de "SGM_AR - Documento funcional para produccion.md":
+// §4 (modelo de datos), §3 (conexiones entre módulos) y §5 (reglas de negocio).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Usuarios (nuevo para producción — no existía en el boceto de un solo HTML)
+// ─────────────────────────────────────────────────────────────────────────
+
+enum RolUsuario {
+  ADMIN
+  EQUIPO
+}
+
+model Usuario {
+  id           String     @id @default(uuid())
+  nombre       String
+  email        String     @unique
+  passwordHash String
+  rol          RolUsuario @default(EQUIPO)
+  activo       Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@map("usuarios")
+}
+
+// "Equipo — designados para mostrar" (§2.10): lista de integrantes que
+// alimenta el desplegable "Designado para mostrar" de Propiedades y Clientes.
+model IntegranteEquipo {
+  id     String @id @default(uuid())
+  nombre String @unique
+
+  propiedades Propiedad[]
+  clientes    Cliente[]
+
+  @@map("integrantes_equipo")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Configuración (§3.7: fuente única para todo el sistema; §2.10)
+// Fila única (singleton) — se referencia siempre por id fijo.
+// ─────────────────────────────────────────────────────────────────────────
+
+model Configuracion {
+  id Int @id @default(1)
+
+  // Valores de mercado
+  honorariosDefaultPorcentaje Decimal @default(0) @db.Decimal(5, 2)
+  comisionVentaPorcentaje     Decimal @default(0) @db.Decimal(5, 2)
+  ipc                         Decimal @default(0) @db.Decimal(10, 4)
+  icl                         Decimal @default(0) @db.Decimal(10, 4)
+  dolarReferencia             Decimal @default(0) @db.Decimal(12, 2)
+
+  // Datos de la inmobiliaria (encabezan los comprobantes impresos)
+  empresaNombre    String @default("")
+  empresaCuit      String @default("")
+  empresaDireccion String @default("")
+  empresaContacto  String @default("")
+
+  // Numeración de comprobantes — contadores atómicos (§2.10)
+  proximoNumeroFactura     Int @default(1)
+  proximoNumeroRecibo      Int @default(1)
+  proximoNumeroLiquidacion Int @default(1)
+
+  // Parámetros (§2.10, §5.2)
+  diaVencimientoAlquiler      Int     @default(10)
+  diasAnticipacionAumento     Int     @default(30)
+  diasAnticipacionVencimiento Int     @default(30)
+  saldoInicialCaja            Decimal @default(0) @db.Decimal(14, 2)
+
+  // Contacto público (landing page) — deliberadamente separado de los
+  // datos fiscales de arriba: el WhatsApp/email que se muestra en la web
+  // puede no ser el mismo que encabeza los comprobantes.
+  publicoWhatsapp     String @default("")
+  publicoTelefono     String @default("")
+  publicoEmail        String @default("")
+  publicoInstagramUrl String @default("")
+  publicoDireccion    String @default("")
+  publicoMatricula    String @default("")
+
+  updatedAt DateTime @updatedAt
+
+  @@map("configuracion")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Propiedades, propietarios, inquilinos, contratos (§2.1, §2.3, §4)
+// ─────────────────────────────────────────────────────────────────────────
+
+enum ModalidadPropiedad {
+  ALQUILER
+  VENTA
+}
+
+enum TipoPropiedad {
+  CASA
+  DEPARTAMENTO_DUPLEX
+  QUINTA
+  LOTE
+  CAMPO
+  GALPON
+  LOCAL_OFICINA
+  CABANIAS_HOTELES_OTROS
+  FONDO_DE_COMERCIO
+  COCHERAS
+}
+
+enum TipoHonorarios {
+  LIBRE
+  TRES_POR_CIENTO
+  SEIS_POR_CIENTO
+  OTRO
+}
+
+enum IndiceAjuste {
+  IPC
+  ICL
+}
+
+enum PunitorioFrecuencia {
+  DIA
+  SEMANA
+  MES
+  UNICO
+}
+
+enum PunitorioTipo {
+  PORCENTAJE
+  MONTO_FIJO
+}
+
+model Propietario {
+  id        String   @id @default(uuid())
+  nombre    String
+  telefono  String?
+  email     String?
+  createdAt DateTime @default(now())
+
+  propiedades   Propiedad[]
+  liquidaciones Liquidacion[]
+
+  @@map("propietarios")
+}
+
+model Propiedad {
+  id        String             @id @default(uuid())
+  nombre    String
+  direccion String
+  modalidad ModalidadPropiedad
+  tipo      TipoPropiedad
+
+  // Alquiler vigente (renta actual — regla §5.1: se deduce del historial de aumentos)
+  montoAlquilerVigente Decimal? @db.Decimal(14, 2)
+
+  // Specs para la ficha pública (landing page) — opcionales, no hay
+  // backfill de las propiedades ya cargadas.
+  ambientes    Int?
+  banos        Int?
+  superficieM2 Decimal? @db.Decimal(8, 2)
+
+  // Control de publicación en la landing para ALQUILER — equivalente a
+  // `Venta.publicada`, pero como campo propio acá porque el alquiler no
+  // tiene una ficha satélite como la venta. Solo importa cuando la
+  // propiedad está vacante (ver PublicPropiedadesService): una vacante con
+  // esto en false queda pausada, no aparece en la web pública.
+  alquilerPublicado Boolean @default(true)
+
+  // Honorarios profesionales por propiedad (§2.3, §5.5) — el % de Configuración
+  // es solo el default sugerido cuando honorariosTipo es null.
+  honorariosTipo       TipoHonorarios?
+  honorariosPorcentaje Decimal?        @db.Decimal(5, 2)
+
+  // Designado para mostrar (§2.3, §2.10)
+  designadoId String?
+  designado   IntegranteEquipo? @relation(fields: [designadoId], references: [id], onDelete: SetNull)
+
+  // Contrato de alquiler vigente
+  indice                 IndiceAjuste?
+  frecuenciaAumentoMeses Int?
+  contratoInicio         DateTime?
+  contratoFin            DateTime?
+
+  // Punitorios por contrato (§4, §5.6 — registro y visualización; cálculo
+  // automático sobre pagos tardíos es un pendiente de producción, §7)
+  punitorioFrecuencia PunitorioFrecuencia?
+  punitorioTipo       PunitorioTipo?
+  punitorioValor      Decimal?             @db.Decimal(14, 2)
+
+  propietarioId String?
+  propietario   Propietario? @relation(fields: [propietarioId], references: [id], onDelete: SetNull)
+
+  inquilino         Inquilino?
+  historialAumentos HistorialAumento[]
+  pagos             Pago[]
+  gastos            Gasto[]
+  facturas          Factura[]
+  recibos           Recibo[]
+  liquidacionItems  LiquidacionPropiedad[]
+  incidencias       Incidencia[]
+  carteles          Cartel[]
+  documentos        Documento[]
+  fotos             FotoPropiedad[]
+  venta             Venta?
+  eventosAgenda     EventoAgenda[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // `modalidad` es el filtro más frecuente del sistema (todo "propiedades
+  // alquiladas" / "propiedades en venta" pasa por acá: Cobros, Facturas,
+  // Agenda, Avisos, Ventas). `propietarioId, modalidad` cubre además el
+  // filtro de Liquidaciones (propietario + ALQUILER); `contratoFin` cubre
+  // el rango de vencimientos de Agenda/Avisos.
+  @@index([modalidad])
+  @@index([propietarioId, modalidad])
+  @@index([designadoId])
+  @@index([contratoFin])
+  @@map("propiedades")
+}
+
+// Ficha del inquilino (§2.2) — 1:1 con la propiedad que alquila actualmente.
+model Inquilino {
+  id       String  @id @default(uuid())
+  nombre   String
+  telefono String?
+  email    String?
+
+  propiedadId String    @unique
+  propiedad   Propiedad @relation(fields: [propiedadId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("inquilinos")
+}
+
+// Historial de aumentos (§3.1, §5.1): la renta vigente es el monto del
+// último aumento anterior a la fecha de cálculo.
+model HistorialAumento {
+  id    String   @id @default(uuid())
+  fecha DateTime
+  monto Decimal  @db.Decimal(14, 2)
+
+  propiedadId String
+  propiedad   Propiedad @relation(fields: [propiedadId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([propiedadId, fecha])
+  @@map("historial_aumentos")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Cobros (§2.2, §3.1)
+// ─────────────────────────────────────────────────────────────────────────
+
+enum MedioPago {
+  EFECTIVO
+  TRANSFERENCIA
+  CHEQUE
+  OTRO
+}
+
+model Pago {
+  id            String    @id @default(uuid())
+  mes           DateTime // normalizado al día 1 del mes correspondiente
+  monto         Decimal   @db.Decimal(14, 2)
+  fecha         DateTime
+  medio         MedioPago
+  comprobante   String?
+  observaciones String?
+  anulado       Boolean   @default(false)
+
+  propiedadId String
+  propiedad   Propiedad @relation(fields: [propiedadId], references: [id], onDelete: Cascade)
+
+  // Trazabilidad hacia el movimiento de caja automático que generó (§3.1, §3.8)
+  movimientoCajaId String?         @unique
+  movimientoCaja   MovimientoCaja? @relation(fields: [movimientoCajaId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([propiedadId, mes])
+  @@map("pagos")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Gastos (§3.2: una sola carga, tres destinos)
+// ─────────────────────────────────────────────────────────────────────────
+
+enum DestinoGasto {
+  PROPIETARIO
+  INQUILINO
+  INMOBILIARIA
+}
+
+model Gasto {
+  id          String       @id @default(uuid())
+  mes         DateTime
+  descripcion String
+  monto       Decimal      @db.Decimal(14, 2)
+  fecha       DateTime
+  categoria   String
+  destino     DestinoGasto
+
+  propiedadId String
+  propiedad   Propiedad @relation(fields: [propiedadId], references: [id], onDelete: Cascade)
+
+  // Si nació de una incidencia resuelta con costo (§3.3)
+  incidenciaId String?     @unique
+  incidencia   Incidencia? @relation(fields: [incidenciaId], references: [id], onDelete: SetNull)
+
+  // Egreso automático en Caja que generó este gasto (§3.2)
+  movimientoCajaId String?         @unique
+  movimientoCaja   MovimientoCaja? @relation(fields: [movimientoCajaId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([propiedadId, mes])
+  @@map("gastos")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Factura y recibo al inquilino (§3.5)
+// ─────────────────────────────────────────────────────────────────────────
+
+model Factura {
+  id          String    @id @default(uuid())
+  numero      Int
+  mes         DateTime
+  fecha       DateTime
+  vencimiento DateTime?
+  total       Decimal   @db.Decimal(14, 2)
+
+  propiedadId String
+  propiedad   Propiedad     @relation(fields: [propiedadId], references: [id], onDelete: Cascade)
+  items       FacturaItem[]
+  recibos     Recibo[]
+
+  createdAt DateTime @default(now())
+
+  // A lo sumo una factura vigente por propiedad y mes (§3.5: "vuelve a
+  // facturar el período reemplaza a la anterior")
+  @@unique([propiedadId, mes])
+  @@map("facturas")
+}
+
+model FacturaItem {
+  id                String  @id @default(uuid())
+  descripcion       String
+  monto             Decimal @db.Decimal(14, 2)
+  numeroLiquidacion String? // Usina / Camuzzi
+
+  facturaId String
+  factura   Factura @relation(fields: [facturaId], references: [id], onDelete: Cascade)
+
+  orden Int @default(0)
+
+  @@index([facturaId])
+  @@map("factura_items")
+}
+
+// Recibo: snapshot de los ítems de la factura del mes al momento de emitir
+// (§3.5 — el recibo cuenta siempre la misma historia que la factura, aunque
+// esta se edite después).
+model Recibo {
+  id                   String   @id @default(uuid())
+  numero               Int
+  mes                  DateTime
+  fecha                DateTime
+  montoFacturado       Decimal  @db.Decimal(14, 2)
+  montoCobrado         Decimal  @db.Decimal(14, 2)
+  ajusteSobreFacturado Decimal? @db.Decimal(14, 2)
+
+  propiedadId String
+  propiedad   Propiedad @relation(fields: [propiedadId], references: [id], onDelete: Cascade)
+
+  facturaId String?
+  factura   Factura?     @relation(fields: [facturaId], references: [id], onDelete: SetNull)
+  items     ReciboItem[]
+
+  createdAt DateTime @default(now())
+
+  @@index([propiedadId])
+  @@index([facturaId])
+  @@map("recibos")
+}
+
+model ReciboItem {
+  id          String  @id @default(uuid())
+  descripcion String
+  monto       Decimal @db.Decimal(14, 2)
+
+  reciboId String
+  recibo   Recibo @relation(fields: [reciboId], references: [id], onDelete: Cascade)
+
+  orden Int @default(0)
+
+  @@index([reciboId])
+  @@map("recibo_items")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Liquidación al propietario (§3.4)
+// ─────────────────────────────────────────────────────────────────────────
+
+model Liquidacion {
+  id         String   @id @default(uuid())
+  numero     Int
+  mes        DateTime
+  fecha      DateTime
+  netoAGirar Decimal  @db.Decimal(14, 2)
+
+  propietarioId String
+  propietario   Propietario @relation(fields: [propietarioId], references: [id], onDelete: Cascade)
+
+  detalle LiquidacionPropiedad[]
+
+  // Egreso automático en Caja (§3.4)
+  movimientoCajaId String?         @unique
+  movimientoCaja   MovimientoCaja? @relation(fields: [movimientoCajaId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@unique([propietarioId, mes])
+  @@map("liquidaciones")
+}
+
+// Detalle por propiedad dentro de la liquidación — replica los mismos ítems
+// que la factura del inquilino de esa unidad ese mes (§3.4).
+model LiquidacionPropiedad {
+  id               String  @id @default(uuid())
+  cobradoTotal     Decimal @db.Decimal(14, 2)
+  gastosAbsorbidos Decimal @db.Decimal(14, 2)
+  honorarios       Decimal @db.Decimal(14, 2)
+  neto             Decimal @db.Decimal(14, 2)
+
+  liquidacionId String
+  liquidacion   Liquidacion @relation(fields: [liquidacionId], references: [id], onDelete: Cascade)
+
+  propiedadId String
+  propiedad   Propiedad @relation(fields: [propiedadId], references: [id], onDelete: Restrict)
+
+  items LiquidacionItem[]
+
+  @@index([liquidacionId])
+  @@index([propiedadId])
+  @@map("liquidacion_propiedades")
+}
+
+model LiquidacionItem {
+  id                String  @id @default(uuid())
+  descripcion       String
+  monto             Decimal @db.Decimal(14, 2)
+  numeroLiquidacion String?
+
+  liquidacionPropiedadId String
+  liquidacionPropiedad   LiquidacionPropiedad @relation(fields: [liquidacionPropiedadId], references: [id], onDelete: Cascade)
+
+  orden Int @default(0)
+
+  @@index([liquidacionPropiedadId])
+  @@map("liquidacion_items")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Ventas y carteles (§2.3, §3.6)
+// ─────────────────────────────────────────────────────────────────────────
+
+enum MonedaVenta {
+  ARS
+  USD
+}
+
+enum EstadoVenta {
+  PUBLICADA
+  RESERVADA
+  VENDIDA
+  VENDIDA_POR_TERCEROS
+  PAUSADA
+}
+
+enum EtapaInteresado {
+  CONSULTA
+  VISITA
+  NEGOCIACION
+  RESERVA
+  DESCARTADO
+}
+
+model Venta {
+  id     String      @id @default(uuid())
+  precio Decimal     @db.Decimal(14, 2)
+  moneda MonedaVenta
+  estado EstadoVenta @default(PUBLICADA)
+
+  // Detalle libre cuando estado = VENDIDA_POR_TERCEROS (§2.3)
+  vendidaPorTercerosDetalle String?
+
+  publicada      Boolean   @default(false)
+  senaRecibida   Decimal?  @db.Decimal(14, 2)
+  cierreEstimado DateTime?
+  cierreReal     DateTime?
+  mejorOferta    Decimal?  @db.Decimal(14, 2)
+
+  propiedadId String    @unique
+  propiedad   Propiedad @relation(fields: [propiedadId], references: [id], onDelete: Cascade)
+
+  interesados InteresadoVenta[]
+
+  // Ingreso en USD por seña / comisión de cierre en Caja (§3.6)
+  movimientoCajaSenaId     String?         @unique
+  movimientoCajaSena       MovimientoCaja? @relation("VentaSena", fields: [movimientoCajaSenaId], references: [id], onDelete: SetNull)
+  movimientoCajaComisionId String?         @unique
+  movimientoCajaComision   MovimientoCaja? @relation("VentaComision", fields: [movimientoCajaComisionId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([estado])
+  @@map("ventas")
+}
+
+model InteresadoVenta {
+  id     String          @id @default(uuid())
+  etapa  EtapaInteresado @default(CONSULTA)
+  oferta Decimal?        @db.Decimal(14, 2)
+  notas  String?
+
+  ventaId String
+  venta   Venta  @relation(fields: [ventaId], references: [id], onDelete: Cascade)
+
+  // Si el interesado ya es un cliente registrado en el módulo Clientes
+  clienteId String?
+  cliente   Cliente? @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+
+  // Datos libres cuando el interesado todavía no tiene ficha de cliente
+  nombreLibre String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ventaId])
+  @@index([clienteId])
+  @@map("interesados_venta")
+}
+
+enum EstadoCartel {
+  COLOCADO
+  A_PEDIDO
+  RETIRADO
+}
+
+model Cartel {
+  id              String       @id @default(uuid())
+  tipoCartel      String
+  medida          String?
+  fechaColocacion DateTime?
+  fechaRetiro     DateTime?
+  estado          EstadoCartel @default(A_PEDIDO)
+
+  propiedadId String
+  propiedad   Propiedad @relation(fields: [propiedadId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([propiedadId])
+  @@map("carteles")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Incidencias y proveedores (§2.5, §3.3)
+// ─────────────────────────────────────────────────────────────────────────
+
+enum PrioridadIncidencia {
+  BAJA
+  MEDIA
+  ALTA
+}
+
+enum EstadoIncidencia {
+  ABIERTA
+  EN_CURSO
+  RESUELTA
+}
+
+model Proveedor {
+  id       String  @id @default(uuid())
+  nombre   String
+  rubro    String
+  telefono String?
+  email    String?
+  cuit     String?
+  nota     String?
+
+  incidencias    Incidencia[]
+  pagosProveedor PagoProveedor[]
+
+  createdAt DateTime @default(now())
+
+  @@map("proveedores")
+}
+
+model Incidencia {
+  id             String              @id @default(uuid())
+  titulo         String
+  descripcion    String?
+  rubro          String
+  prioridad      PrioridadIncidencia @default(MEDIA)
+  estado         EstadoIncidencia    @default(ABIERTA)
+  reportadaPor   String?
+  fechaApertura  DateTime            @default(now())
+  fechaEjecucion DateTime?
+  fechaCierre    DateTime?
+  costo          Decimal?            @db.Decimal(14, 2)
+  quienPagaCosto DestinoGasto?
+  abonadaFecha   DateTime?
+  notas          String?
+
+  propiedadId String
+  propiedad   Propiedad @relation(fields: [propiedadId], references: [id], onDelete: Cascade)
+
+  proveedorId String?
+  proveedor   Proveedor? @relation(fields: [proveedorId], references: [id], onDelete: SetNull)
+
+  // Gasto generado automáticamente al marcarse RESUELTA (§3.3)
+  gasto Gasto?
+
+  pagosProveedor PagoProveedorIncidencia[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // `propiedadId, estado` cubre el listado principal de Incidencias;
+  // `proveedorId` cubre "sin proveedor asignado"; `estado, fechaApertura` y
+  // `estado, fechaEjecucion` cubren los dos rangos que arma Agenda
+  // (incidencia abierta / en ejecución dentro del mes visible).
+  @@index([propiedadId, estado])
+  @@index([proveedorId])
+  @@index([estado, fechaApertura])
+  @@index([estado, fechaEjecucion])
+  @@map("incidencias")
+}
+
+// Pago a proveedor — por trabajo individual o "pagar saldo" completo de
+// varios trabajos pendientes a la vez (§2.5, §3.3).
+model PagoProveedor {
+  id    String   @id @default(uuid())
+  monto Decimal  @db.Decimal(14, 2)
+  fecha DateTime
+
+  proveedorId String
+  proveedor   Proveedor @relation(fields: [proveedorId], references: [id], onDelete: Cascade)
+
+  incidencias PagoProveedorIncidencia[]
+
+  // Egreso automático "Pago a proveedor" en Caja, en la fecha del pago (§3.3)
+  movimientoCajaId String?         @unique
+  movimientoCaja   MovimientoCaja? @relation(fields: [movimientoCajaId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([proveedorId])
+  @@map("pagos_proveedor")
+}
+
+// Tabla puente: qué incidencias quedaron saldadas por cada pago a proveedor.
+model PagoProveedorIncidencia {
+  pagoProveedorId String
+  pagoProveedor   PagoProveedor @relation(fields: [pagoProveedorId], references: [id], onDelete: Cascade)
+
+  incidenciaId String
+  incidencia   Incidencia @relation(fields: [incidenciaId], references: [id], onDelete: Cascade)
+
+  @@id([pagoProveedorId, incidenciaId])
+  @@index([incidenciaId])
+  @@map("pagos_proveedor_incidencias")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Clientes (§2.6)
+// ─────────────────────────────────────────────────────────────────────────
+
+enum TipoOperacionCliente {
+  ALQUILAR
+  COMPRAR
+  VENDER
+}
+
+enum ZonaCliente {
+  CENTRO
+  SEMICENTRICO
+  INDIFERENTE
+}
+
+enum EstadoCliente {
+  SIN_CONTACTAR
+  EN_SEGUIMIENTO
+  CERRADO
+}
+
+model Cliente {
+  id       String  @id @default(uuid())
+  nombre   String
+  telefono String?
+  email    String?
+
+  tipoOperacion         TipoOperacionCliente
+  busquedaTipoPropiedad TipoPropiedad?
+  montoDesde            Decimal?             @db.Decimal(14, 2)
+  montoHasta            Decimal?             @db.Decimal(14, 2)
+  zona                  ZonaCliente?
+  detalle               String?
+
+  estado                         EstadoCliente @default(SIN_CONTACTAR)
+  origen                         String?
+  visitaOtraInmobiliariaConQuien String?
+  notas                          String?
+
+  delegadoId String?
+  delegado   IntegranteEquipo? @relation(fields: [delegadoId], references: [id], onDelete: SetNull)
+
+  fechaAlta DateTime @default(now())
+
+  interesadoVentas InteresadoVenta[]
+  eventosAgenda    EventoAgenda[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // `estado` cubre el filtro de "clientes sin contactar" que arma Avisos.
+  @@index([estado])
+  @@index([delegadoId])
+  @@map("clientes")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Agenda (§2.7) — solo los eventos que el usuario carga a mano.
+// Los eventos automáticos (vencimiento de contrato, aumento próximo,
+// incidencia abierta, fecha de ejecución en curso) NO se guardan como
+// registro propio: se calculan en el servicio a partir de Propiedad /
+// Incidencia, tal como especifica el documento (§4, entidad Evento).
+// ─────────────────────────────────────────────────────────────────────────
+
+enum TipoEvento {
+  VISITA
+  REUNION
+  FIRMA_BOLETO
+  FIRMA_ESCRITURA
+  TASACION
+  LLAMADO
+  TAREA
+}
+
+model EventoAgenda {
+  id     String     @id @default(uuid())
+  fecha  DateTime
+  tipo   TipoEvento
+  titulo String
+  hecho  Boolean    @default(false)
+
+  clienteId String?
+  cliente   Cliente? @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+
+  propiedadId String?
+  propiedad   Propiedad? @relation(fields: [propiedadId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([fecha])
+  @@index([clienteId])
+  @@index([propiedadId])
+  @@map("eventos_agenda")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Caja (§2.4, §3.8)
+// ─────────────────────────────────────────────────────────────────────────
+
+enum TipoMovimientoCaja {
+  INGRESO
+  EGRESO
+}
+
+enum Moneda {
+  ARS
+  USD
+  EUR
+}
+
+enum OrigenMovimientoCaja {
+  MANUAL
+  COBRO_ALQUILER
+  GASTO_PROPIEDAD
+  LIQUIDACION_PROPIETARIO
+  PAGO_PROVEEDOR
+  SENA_VENTA
+  COMISION_VENTA
+}
+
+model MovimientoCaja {
+  id         String               @id @default(uuid())
+  fecha      DateTime
+  tipo       TipoMovimientoCaja
+  moneda     Moneda
+  monto      Decimal              @db.Decimal(14, 2)
+  concepto   String
+  categoria  String?
+  medio      String?
+  referencia String?
+  origen     OrigenMovimientoCaja @default(MANUAL)
+
+  // Relaciones inversas hacia el registro que generó el movimiento automático
+  pago          Pago?
+  gasto         Gasto?
+  liquidacion   Liquidacion?
+  pagoProveedor PagoProveedor?
+  ventaSena     Venta?         @relation("VentaSena")
+  ventaComision Venta?         @relation("VentaComision")
+
+  createdAt DateTime @default(now())
+
+  @@index([fecha, moneda])
+  @@map("movimientos_caja")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Documentos (adjuntos reales de contratos — pendiente §7 del documento)
+// ─────────────────────────────────────────────────────────────────────────
+
+model Documento {
+  id           String   @id @default(uuid())
+  nombre       String
+  url          String
+  tamanioBytes Int
+  subidoEn     DateTime @default(now())
+
+  propiedadId String
+  propiedad   Propiedad @relation(fields: [propiedadId], references: [id], onDelete: Cascade)
+
+  @@index([propiedadId])
+  @@map("documentos")
+}
+
+// Fotos de una propiedad (galería para Ventas y, más adelante, para la
+// página web pública — Fase 7 del plan original: la landing solo debería
+// mostrar las de propiedades publicables, ver CartelesService.kpis()).
+// Se guardan como archivos en disco (carpeta uploads/, servida como
+// estática desde main.ts) — no hay integración con almacenamiento en la
+// nube todavía, no hacía falta para el alcance de esta fase.
+model FotoPropiedad {
+  id     String @id @default(uuid())
+  url    String
+  orden  Int    @default(0)
+
+  propiedadId String
+  propiedad   Propiedad @relation(fields: [propiedadId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([propiedadId])
+  @@map("fotos_propiedad")
+}
+
+// Avisos (§2.8) no son un modelo propio: se recalculan siempre a partir de
+// datos reales (deudas, incidencias, contratos, clientes, eventos,
+// liquidaciones — ver AvisosService.generar()). Esta tabla solo guarda qué
+// avisos puntuales el usuario ya "eliminó" de la vista. `clave` incluye,
+// para los grupos donde tiene sentido, un fingerprint del valor que generó
+// el aviso (monto de deuda, fecha de aumento/vencimiento) para que un aviso
+// "distinto" sobre la misma entidad (ej: la deuda de la misma propiedad
+// subió) no quede oculto para siempre — al cambiar el valor, cambia la
+// clave y el aviso nuevo vuelve a aparecer.
+model AvisoDescartado {
+  id        String   @id @default(uuid())
+  grupo     String
+  clave     String
+  createdAt DateTime @default(now())
+
+  @@unique([grupo, clave])
+  @@map("avisos_descartados")
+}

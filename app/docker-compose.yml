@@ -1,0 +1,18 @@
+name: inmobiliaria-app
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sgm_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sgm
+      POSTGRES_PASSWORD: sgm_dev_password
+      POSTGRES_DB: sgm_ar
+    ports:
+      - "5433:5432"
+    volumes:
+      - sgm_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  sgm_postgres_data:

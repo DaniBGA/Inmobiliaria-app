@@ -1,0 +1,11 @@
+{
+  "name": "sgm-ar",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "app",
+    "app/api",
+    "admin",
+    "packages/*"
+  ]
+}

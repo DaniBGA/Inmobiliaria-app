@@ -1,0 +1,11 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+*.log
+.DS_Store
+admin/node_modules/
+web/node_modules/
+app/api/node_modules/
+app/api/uploads/
