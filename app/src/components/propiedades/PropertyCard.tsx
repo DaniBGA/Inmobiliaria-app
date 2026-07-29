@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BASE_URL } from '../../api/client';
 import { type PropiedadPublica } from '../../api/propiedades';
@@ -20,6 +21,61 @@ function gradienteFor(id: string) {
   return GRADIENTES[Math.abs(hash) % GRADIENTES.length];
 }
 
+function PropertyPhotoCarousel({ propiedad }: { propiedad: PropiedadPublica }) {
+  const [indice, setIndice] = useState(0);
+  const fotos = propiedad.fotos;
+
+  if (fotos.length === 0) {
+    return (
+      <div className="property-photo" style={{ background: gradienteFor(propiedad.id) }}>
+        <span className="property-photo-caption">{TIPO_LABEL[propiedad.tipo] ?? propiedad.tipo}</span>
+      </div>
+    );
+  }
+
+  function anterior(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIndice((i) => (i === 0 ? fotos.length - 1 : i - 1));
+  }
+  function siguiente(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIndice((i) => (i === fotos.length - 1 ? 0 : i + 1));
+  }
+
+  return (
+    <div className="property-photo">
+      <img src={`${BASE_URL}${fotos[indice].url}`} alt={propiedad.nombre} />
+      {fotos.length > 1 && (
+        <>
+          <button type="button" className="property-photo-nav prev" onClick={anterior} aria-label="Foto anterior">
+            ‹
+          </button>
+          <button type="button" className="property-photo-nav next" onClick={siguiente} aria-label="Foto siguiente">
+            ›
+          </button>
+          <div className="property-photo-dots">
+            {fotos.map((f, i) => (
+              <button
+                type="button"
+                key={f.id}
+                className={i === indice ? 'active' : ''}
+                aria-label={`Ver foto ${i + 1}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIndice(i);
+                }}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function PropertyCard({ propiedad }: { propiedad: PropiedadPublica }) {
   const contactoInfo = useQuery({
     queryKey: ['contacto-info'],
@@ -27,7 +83,6 @@ export function PropertyCard({ propiedad }: { propiedad: PropiedadPublica }) {
     staleTime: 5 * 60_000,
   });
 
-  const foto = propiedad.fotos[0];
   const precio =
     propiedad.modalidad === 'VENTA' ? formatPrecio(propiedad.precio, propiedad.moneda) : formatMoney(propiedad.montoAlquilerVigente);
   const specs = [
@@ -41,8 +96,8 @@ export function PropertyCard({ propiedad }: { propiedad: PropiedadPublica }) {
 
   return (
     <article className="property-card">
-      <div className="property-photo" style={foto ? undefined : { background: gradienteFor(propiedad.id) }}>
-        {foto ? <img src={`${BASE_URL}${foto.url}`} alt={propiedad.nombre} /> : <span className="property-photo-caption">{TIPO_LABEL[propiedad.tipo] ?? propiedad.tipo}</span>}
+      <div style={{ position: 'relative' }}>
+        <PropertyPhotoCarousel propiedad={propiedad} />
         <span className="property-modalidad">{propiedad.modalidad === 'VENTA' ? 'En venta' : 'Alquiler'}</span>
       </div>
       <div className="property-body">

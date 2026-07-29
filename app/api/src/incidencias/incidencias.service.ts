@@ -38,10 +38,21 @@ export class IncidenciasService {
     return undefined;
   }
 
+  // `pagosProveedor` (tabla puente) se incluye para exponer el pago que
+  // saldó esta incidencia — lo usa el frontend para editar/deshacer el pago
+  // desde acá, sin otro endpoint para "buscar el pago de tal incidencia".
+  // `_count.incidencias` avisa si ese pago cubrió otras incidencias a la vez
+  // (p. ej. "Pagar saldo"), para advertir antes de deshacerlo.
+  private readonly INCLUDE_PAGO = {
+    pagosProveedor: {
+      include: { pagoProveedor: { include: { _count: { select: { incidencias: true } } } } },
+    },
+  };
+
   findAll(estado?: EstadoIncidencia, propiedadId?: string) {
     return this.prisma.incidencia.findMany({
       where: { estado, propiedadId },
-      include: { propiedad: true, proveedor: true },
+      include: { propiedad: true, proveedor: true, ...this.INCLUDE_PAGO },
       orderBy: { fechaApertura: 'desc' },
     });
   }
@@ -49,7 +60,7 @@ export class IncidenciasService {
   findOne(id: string) {
     return this.prisma.incidencia.findUniqueOrThrow({
       where: { id },
-      include: { propiedad: true, proveedor: true, gasto: true },
+      include: { propiedad: true, proveedor: true, gasto: true, ...this.INCLUDE_PAGO },
     });
   }
 
@@ -161,7 +172,24 @@ export class IncidenciasService {
     });
   }
 
-  remove(id: string) {
-    return this.prisma.incidencia.delete({ where: { id } });
+  // El gasto que genera `resolver()` apunta a la incidencia con
+  // `onDelete: SetNull` (schema.prisma) — sin este paso, borrar la
+  // incidencia no borra ese gasto, solo le vacía `incidenciaId`. Queda un
+  // gasto "destino: INMOBILIARIA" huérfano: invisible en Incidencias (ya no
+  // hay incidencia), invisible en Caja (crearDesdeIncidencia nunca generó
+  // movimiento propio) y sin embargo sigue restando de `gananciaPesos`
+  // (caja.service.ts::kpisDelMes) para siempre, sin ninguna pantalla desde
+  // donde corregirlo.
+  async remove(id: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const gasto = await tx.gasto.findUnique({ where: { incidenciaId: id } });
+      if (gasto) {
+        if (gasto.movimientoCajaId) {
+          await tx.movimientoCaja.delete({ where: { id: gasto.movimientoCajaId } });
+        }
+        await tx.gasto.delete({ where: { id: gasto.id } });
+      }
+      return tx.incidencia.delete({ where: { id } });
+    });
   }
 }

@@ -439,6 +439,66 @@ p {
   color: rgba(244, 241, 236, 0.75);
 }
 
+.property-photo-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(20, 37, 59, 0.55);
+  color: #fff;
+  font-size: 18px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.property-photo:hover .property-photo-nav {
+  opacity: 1;
+}
+
+.property-photo-nav:hover {
+  background: rgba(20, 37, 59, 0.85);
+}
+
+.property-photo-nav.prev {
+  left: 10px;
+}
+
+.property-photo-nav.next {
+  right: 10px;
+}
+
+.property-photo-dots {
+  position: absolute;
+  bottom: 10px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+
+.property-photo-dots button {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+}
+
+.property-photo-dots button.active {
+  background: #fff;
+}
+
 .property-modalidad {
   position: absolute;
   top: 12px;
@@ -604,6 +664,13 @@ p {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+}
+
+.hero-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .hero-image span {
@@ -817,6 +884,13 @@ p {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+}
+
+.nosotros-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .nosotros-photo span {

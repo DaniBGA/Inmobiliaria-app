@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { type ModalidadPropiedad, type TipoPropiedad } from '../../api/propiedades';
 import { TIPO_LABEL } from '../../lib/format';
+import fotoHero from '../../images/FOTO1.png';
 
 export function Hero() {
   const navigate = useNavigate();
@@ -59,7 +60,7 @@ export function Hero() {
         </div>
 
         <div className="hero-image">
-          <span>[ imagen — Tandil ]</span>
+          <img src={fotoHero} alt="Tandil" />
         </div>
       </div>
     </section>

@@ -1508,6 +1508,385 @@ Las 3 restantes son más autocontenidas:
       de la landing; Panel General ya no muestra ninguna fila "Vacante".
       Sin errores de consola ni requests fallidos (2026-07-27).
 
+- [x] **Editar y deshacer un pago a proveedor** — hasta ahora, a diferencia
+      de Cobros (anular pago), Gastos (editar/eliminar) y Ventas (deshacer
+      seña/cierre), un pago a proveedor (`PagoProveedor`, botones "Registrar
+      pago" y "Pagar saldo" en Incidencias y Proveedores) no se podía
+      corregir ni deshacer una vez registrado — un error de monto o fecha
+      quedaba pegado para siempre, sin forma de arreglarlo desde la UI.
+
+      `PagosProveedorService` (`app/api/src/proveedores/pagos-proveedor.service.ts`)
+      suma dos métodos nuevos:
+      - `editarPago(pagoId, dto)` — corrige `monto`/`fecha` del pago y, en
+        la misma transacción, del `movimientoCaja` que generó (mismo
+        criterio que `editarPago` de Cobros y `editar` de Gastos: el
+        automático se corrige desde su módulo de origen, no desde Caja).
+      - `anularPago(pagoId)` — borra el pago (cascada sobre la tabla puente
+        `PagoProveedorIncidencia`) y su egreso en Caja, y vuelve a poner
+        `abonadaFecha: null` en todas las incidencias que ese pago saldaba
+        — si venía de "Pagar saldo" y cubría varias a la vez, deshacerlo
+        las libera a todas juntas (un solo movimiento de Caja no se puede
+        deshacer parcialmente). Las incidencias liberadas vuelven a
+        mostrar "Registrar pago".
+
+      Rutas nuevas en `proveedores.controller.ts`:
+      `PATCH /proveedores/pagos/:pagoId` y `DELETE /proveedores/pagos/:pagoId`.
+
+      `IncidenciasService.findAll/findOne` ahora incluyen
+      `pagosProveedor: { pagoProveedor: { ..., _count: { incidencias } } }`
+      para que el frontend sepa qué pago saldó cada incidencia (necesario
+      para poder editarlo/deshacerlo) y si ese pago cubrió otras
+      incidencias a la vez (para advertir antes de deshacerlo).
+
+      `IncidenciasPage.tsx`: junto a "✓ abonado el `<fecha>`" ahora hay
+      botones "Editar pago" (abre `EditarPagoModal`, monto y fecha) y
+      "Deshacer" (con confirmación — el mensaje avisa si el pago cubría
+      más de una incidencia).
+
+      **Bug real encontrado y corregido durante la verificación**: la
+      primera versión de `anularPago()` no devolvía nada (la transacción
+      terminaba en `await tx.pagoProveedor.delete(...)` sin `return`) — el
+      `DELETE` respondía 200 con el body vacío, y `api.delete` del
+      frontend (que siempre intenta `res.json()` salvo status 204) tiraba
+      una excepción de parseo silenciosa: la petición se veía "exitosa" en
+      la red (200), pero `onSuccess` nunca corría, así que Caja/Incidencias
+      no se invalidaban y la tarjeta se quedaba mostrando "abonado" para
+      siempre aunque el backend ya lo hubiera deshecho correctamente. Un
+      script de verificación en crudo (fetch + solo chequear `r.ok`, sin
+      parsear el body) no lo detectó — recién apareció al probarlo con
+      Playwright contra la UI real, que usa el mismo cliente `api.delete`
+      que el resto de la app. Se corrigió agregando `return` antes del
+      `delete` final, siguiendo el mismo patrón que ya usan todos los
+      demás endpoints de baja del proyecto (Gastos, Ventas, Proveedores):
+      nunca devolver `undefined` desde un handler de `@Delete`.
+
+      Probado con Playwright de punta a punta contra la UI real (no solo
+      la API): registrar un pago, editarle el monto (se refleja en Caja al
+      instante), deshacerlo (desaparece de Caja, la incidencia vuelve a
+      ofrecer "Registrar pago", se puede volver a pagar) — y por separado,
+      un "Pagar saldo" de dos incidencias juntas se deshace liberando a
+      ambas a la vez. Sin errores de consola ni requests fallidos
+      (2026-07-29).
+
+- [x] **Editar y eliminar un Gasto desde la ficha de propiedad** — el
+      usuario reportó que en Caja no había ningún botón para corregir un
+      monto. La causa real: el backend de Gastos (`PATCH /gastos/:id`,
+      `DELETE /gastos/:id`) ya existía desde antes, pero **la lista "GASTOS
+      IMPUTADOS" de `PropiedadFichaDrawer.tsx` no tenía ningún botón de
+      editar/eliminar** — y Caja, correctamente, se niega a editar
+      movimientos automáticos y remite a "su módulo de origen". Con Gastos
+      sin UI de edición, un `GASTO_PROPIEDAD` mal cargado no se podía
+      corregir desde ningún lado.
+
+      Se agregaron botones "✎" (editar) y "✕" (eliminar) a cada fila de
+      gasto en esa lista. Solo aparecen en gastos manuales
+      (`incidenciaId == null`) — los gastos generados automáticamente al
+      resolver una incidencia con costo (§3.3) muestran en su lugar el
+      texto "desde Incidencias", porque el backend rechaza (400) editarlos
+      o eliminarlos ahí — se corrigen reabriendo/editando la incidencia,
+      igual que antes. `NuevoGastoModal` ahora acepta un `gasto` opcional
+      para reutilizarse como modal de edición (con su propio botón
+      "Eliminar" además del "✕" directo en la fila).
+
+      Cobros (pagos de alquiler) y Ventas (señas/comisiones) ya tenían esta
+      misma capacidad de editar/deshacer desde su propio módulo — Gastos
+      era el único de los cinco orígenes automáticos de Caja que se había
+      quedado sin ella.
+
+      Probado con Playwright de punta a punta: un gasto manual muestra
+      ambos botones y ninguno aparece en el gasto de una incidencia;
+      editar el monto se refleja al instante en Caja; eliminarlo con el
+      botón rápido de la fila borra también su egreso en Caja. Sin errores
+      de consola ni requests fallidos (2026-07-29).
+
+- [x] **Editar cualquier ingreso/egreso directamente desde Caja** — pedido
+      explícito del usuario: quería poder corregir un monto sin salir de
+      Caja, sea cual sea su origen. Antes, clickear una fila automática no
+      hacía nada — solo mostraba el texto "se edita en su módulo de
+      origen". Ahora **todas las filas son clickeables** y abren un modal
+      de edición específico según `origen`, que llama al mismo endpoint
+      que usa su módulo de origen (así el registro fuente y el movimiento
+      de Caja quedan sincronizados en la misma operación, no hay una
+      segunda fuente de verdad):
+
+      - `COBRO_ALQUILER` → `EditarCobroModal` (monto/fecha/medio vía
+        `PATCH /cobros/pagos/:id`, + "Anular cobro").
+      - `GASTO_PROPIEDAD` → `EditarGastoModal` (trae el detalle completo
+        con el `GET /gastos/:id` nuevo — antes no existía, Caja solo
+        conocía el `gastoId` por la relación inversa, no la descripción ni
+        el destino — y edita con `PATCH /gastos/:id`, + "Eliminar").
+      - `PAGO_PROVEEDOR` → `EditarPagoProveedorModal` (monto/fecha vía
+        `PATCH /proveedores/pagos/:id`, + "Deshacer pago").
+      - `SENA_VENTA` → `EditarSenaModal` (monto/fecha vía
+        `POST /ventas/:id/sena`, + "Quitar seña").
+      - `COMISION_VENTA` → `EditarComisionModal`. Acá hizo falta un cambio
+        de backend: la comisión nunca fue un campo propio de `Venta`, se
+        recalculaba siempre como `precio × porcentaje` dentro de
+        `cerrar()` — no había forma de "poner este número a mano" sin
+        tocar el precio de venta real. Se agregó `comisionManual?` opcional
+        a `CerrarVentaDto`/`ventas.service.ts::cerrar()`: si se manda,
+        reemplaza el cálculo automático para esa venta. + "Deshacer venta".
+      - `LIQUIDACION_PROPIETARIO` → `RegenerarLiquidacionModal`. Este es el
+        único que **no** tiene un campo de monto editable a mano: el neto
+        girado es un cálculo agregado (cobros − gastos − honorarios de
+        varias propiedades ese mes), no un número suelto. El modal explica
+        esto y ofrece "Recalcular liquidación" (vuelve a llamar
+        `POST /liquidaciones/propietarios/:id/:mes`, que ya reemplazaba la
+        liquidación anterior — mismo mecanismo que usa Propietarios y
+        Liquidaciones al reabrir el modal).
+
+      `CajaService.findMes()` ahora incluye la relación inversa de cada
+      movimiento (`pago`, `gasto`, `liquidacion`, `pagoProveedor`,
+      `ventaSena`, `ventaComision`, cada uno solo con los ids que hacen
+      falta) para que el frontend sepa a qué registro pegarle sin una
+      consulta aparte. `invalidarCaja()` en `CajaPage.tsx` se amplió para
+      invalidar los cinco módulos de origen a la vez (antes solo cobros y
+      avisos), ya que ahora cualquier edición desde acá puede tocar
+      cualquiera de ellos.
+
+      Probado de punta a punta (backend con 14 aserciones + Playwright
+      contra la UI real): editar un cobro y un gasto desde Caja actualiza
+      tanto el movimiento como el registro original (`Pago`/`Gasto` en la
+      base); lo mismo confirmado a nivel API para pago a proveedor, seña,
+      `comisionManual` (queda en el valor forzado, no en el calculado) y
+      regenerar liquidación (el neto cambia al corregir un gasto y volver a
+      generar). Sin errores de consola ni requests fallidos (2026-07-29).
+
+- [x] **Imágenes reales del Hero/Nosotros + carrusel de fotos en la landing
+      + editar fotos/dimensiones de una propiedad desde el admin** —
+      pedido del usuario, con las imágenes reales ya puestas en
+      `app/src/images/FOTO1.png` y `app/src/images/FotoNosotros.jpeg`.
+
+      **Landing**: `Hero.tsx` y `Nosotros.tsx` importan esas dos imágenes
+      como módulos ES (mismo patrón que el logo en `Header.tsx`/`Footer.tsx`)
+      y reemplazan el placeholder `[ imagen — ... ]`; `global.css` les
+      agrega `overflow:hidden` + `img{object-fit:cover}` a `.hero-image` y
+      `.nosotros-photo` para que la imagen respete el `border-radius` y el
+      recorte que antes tenía el bloque de gradiente.
+
+      `PropertyCard.tsx` ahora es un carrusel (`PropertyPhotoCarousel`,
+      componente interno con `useState` para el índice actual): si la
+      propiedad tiene 0 fotos, se ve el gradiente placeholder de siempre;
+      con 1 foto, se ve esa sola sin controles; con 2+, aparecen flechas
+      ‹/› (con opacity:0 → 1 solo al hacer hover, `.property-photo-nav` en
+      `global.css`) y dots de posición siempre visibles (para touch, que no
+      tiene hover) — todo maneja `stopPropagation`/`preventDefault` porque
+      la card entera es cliqueable hacia la ficha en el futuro. No hace
+      falta ningún cambio de backend: `/public/propiedades` ya devolvía el
+      array completo de `fotos` ordenado, `PropertyCard.tsx` solo usaba
+      `fotos[0]`.
+
+      **Admin**: hasta ahora, agregar/quitar fotos y cargar
+      ambientes/baños/superficie **solo se podía hacer al crear** la
+      propiedad (`AgregarPropiedadPage.tsx`) — no había forma de
+      corregirlo después si hubo un error de carga o de interpretación al
+      publicar. El backend ya soportaba todo esto sin cambios
+      (`POST/DELETE /propiedades/:id/fotos[/:fotoId]`,
+      `ambientes/banos/superficieM2` ya en `UpdatePropiedadDto`) — lo que
+      faltaba era la UI para las propiedades ya cargadas.
+
+      Se creó `admin/src/components/FotosPropiedad.tsx`, un componente
+      chico y compartido (grilla de fotos con botón "✕" por foto +
+      dropzone de carga múltiple, mismas clases CSS `.dropzone`/
+      `.fotogrid`/`.fotothumb` que ya usaba el alta) que se conecta en dos
+      lugares:
+      - `PropiedadFichaDrawer.tsx` (ficha de alquiler, se abre desde Panel
+        General): botón nuevo "✎ Editar datos" (nombre, dirección, tipo,
+        ambientes, baños, superficie — `EditarDatosGeneralesModal`) y botón
+        "🖼 Fotos (N)" que abre un modal con `FotosPropiedad`.
+      - `VentasPage.tsx` → `SaleModal` (ficha de venta, "✎ Editar ficha" en
+        Ventas y Carteles): se agregaron los mismos 3 campos de dimensiones
+        a la sección "DATOS DE LA PROPIEDAD" que ya editaba
+        nombre/dirección/tipo/honorarios, y una sección "FOTOS" nueva con
+        el mismo componente compartido, justo antes de "FICHA DE VENTA".
+        Ojo con un detalle de esta pantalla: `fichaDe` es una foto fija del
+        momento en que se abrió el modal, así que se pasa
+        `propiedad={(propiedades.data ?? []).find(p => p.id === fichaDe.id) ?? fichaDe}`
+        (mismo criterio que ya usaba `venta={ventaPorPropiedadId.get(...) ?? fichaDe.venta}`)
+        para que, al subir/borrar una foto y refetchear `['propiedades']`,
+        el modal muestre la grilla actualizada sin cerrarse.
+
+      Probado con Playwright de punta a punta: Hero y Nosotros muestran
+      `<img>` real; una propiedad con 3 fotos muestra flechas y 3 dots en
+      su card pública, y clickear "siguiente" cambia la foto mostrada;
+      desde el admin, tanto la ficha de alquiler como la de venta permiten
+      cargar ambientes/baños/superficie (persisten en la base) y
+      subir/eliminar una foto (aparece/desaparece de la base en el mismo
+      acto). Sin errores de consola ni requests fallidos (2026-07-29).
+
+- [x] **Fix de visibilidad: "Publicar propiedad existente" parecía no
+      hacer nada al hacer clic** — reporte del usuario. Auditado a fondo
+      (Playwright automatizando Venta, Alquiler con inquilino, Alquiler
+      vacante y "todos los campos llenos"): en **todos** los casos el guardado
+      funcionaba bien de punta a punta (quedaba en la base y aparecía en
+      Ventas y Carteles), sin errores de consola ni requests fallidos —
+      no había ningún bug de guardado.
+
+      La causa real es de visibilidad, no de lógica: `PublicarExistenteModal`
+      (`VentasPage.tsx`) es un formulario largo (más aún en la rama
+      Alquiler) dentro de un modal que scrollea (`.modal{overflow-y:auto}`),
+      y tanto el mensaje de error como el motivo por el que el botón
+      "Publicar" queda deshabilitado se mostraban **solo arriba del todo**,
+      lejos de donde queda el botón cuando el formulario no entra en una
+      pantalla chica. Con el usuario ya scrolleado hasta el botón, "clic y
+      no pasa nada visible" era literal: sí pasaba algo (un error real del
+      backend, o simplemente que faltaba un campo), pero quedaba fuera de
+      vista. Se confirmó con Playwright forzando un error real
+      (`frecuenciaAumentoMeses: 0`, viola `@Min(1)`) en un viewport chico:
+      antes del fix el error no era visible sin scrollear.
+
+      Fix: se agregó (a) un cálculo de `faltantes` (qué campo falta
+      completar) mostrado justo arriba del botón cuando está deshabilitado
+      ("Falta completar: elegir una propiedad, el monto de alquiler
+      inicial."), y (b) el mensaje de error de la mutación duplicado ahí
+      mismo, además de arriba del todo — así el motivo siempre es visible
+      sin importar el scroll del modal en el momento del clic. Al no
+      encontrarse ningún property específico ni escenario reproducible del
+      lado del guardado, no se tocó ninguna lógica de negocio — solo la
+      visibilidad del feedback.
+
+      Nota aparte, encontrada al auditar los datos reales durante esta
+      investigación (no era la causa del reporte, pero puede confundir a
+      futuro): una propiedad que ya tiene ficha de venta **y** inquilino a
+      la vez (por ejemplo, se publicó primero en venta y después se alquiló
+      desde este mismo modal, o viceversa — comportamiento intencional,
+      con aviso en pantalla) deja de aparecer en el combo "Propiedad" de
+      "Publicar propiedad existente" en **ambos** modos, porque ya no
+      corresponde a un alta nueva — se edita desde "Editar ficha" (Ventas y
+      Carteles) o desde su fila en Panel General, no desde este modal.
+
+- [x] **Bug real: una propiedad publicada como Alquiler vacante (sin
+      inquilino) quedaba invisible en todo el admin** — el usuario aclaró
+      el reporte anterior: el problema no era de visibilidad del error,
+      sino que publicar con modalidad "Alquiler" (dejando destildado "Ya
+      tiene inquilino asignado") **no se veía en ningún lado** del admin,
+      mientras que publicar en "Venta" sí se veía de inmediato en Ventas y
+      Carteles.
+
+      Diagnóstico confirmado con los datos reales del usuario: existía una
+      propiedad ("depto suiza", ALQUILER, `montoAlquilerVigente: 600000`,
+      sin inquilino) que efectivamente se había guardado bien en la base
+      y hasta aparecía en `/public/propiedades` (la landing) — pero **no
+      figuraba en ninguna pantalla del admin**:
+      - Ventas y Carteles la excluye a propósito (`modalidad==='VENTA' ||
+        venta != null` — es alquiler sin ficha de venta, no corresponde).
+      - Panel General ya no muestra vacantes (se sacaron a pedido del
+        usuario en una conversación anterior).
+      - Inquilinos y Cobros (`/cobros/mes/:mes`, `/cobros/inquilinos`)
+        solo muestra propiedades **con inquilino asignado** — una vacante
+        no genera cobro esperado, así que nunca aparecía ahí tampoco.
+
+      Resultado: una vez publicada como alquiler vacante, la única forma de
+      volver a verla era reabrir "Publicar propiedad existente" y
+      encontrarla de nuevo en el combo — no había ninguna pantalla para
+      administrarla (pausarla/publicarla en la web, editar fotos o
+      dimensiones, asignarle inquilino más adelante).
+
+      Fix: `InquilinosPage.tsx` (Inquilinos y Cobros) suma una sección
+      nueva "PROPIEDADES VACANTES" — deliberadamente separada de "COBROS
+      DEL MES" y "FICHAS DE INQUILINOS" (que siguen siendo solo para
+      propiedades ocupadas, sin tocar sus cálculos), con una fila
+      clickeable por cada `ALQUILER` sin inquilino que muestra el alquiler
+      vigente y si está "Publicada en la web" o "Pausada". El clic abre el
+      mismo `PropiedadFichaDrawer` que ya se usa desde Panel General — ahí
+      ya están todos los controles (✎ Editar datos, 🖼 Fotos, el checkbox
+      de "Publicada en la web", "Marcar como vacante"), así que no hizo
+      falta construir nada nuevo, solo hacerla alcanzable desde un lugar
+      que tenga sentido. Se eligió Inquilinos y Cobros (no Panel General)
+      porque el usuario había pedido explícitamente sacar las vacantes de
+      ahí — esta es la sección que sí trata específicamente de alquiler.
+
+      Probado con Playwright de punta a punta: publicar una propiedad como
+      Alquiler sin inquilino desde Ventas y Carteles → no aparece ahí
+      (correcto) → aparece de inmediato en Inquilinos y Cobros →
+      "Propiedades Vacantes" con el monto correcto y "Publicada en la web:
+      Sí" → el clic abre la ficha con todos los controles esperados. Sin
+      errores de consola ni requests fallidos (2026-07-29).
+
+- [x] **Corrección al fix anterior: la propiedad Alquiler-vacante también
+      tiene que verse en la propia grilla de Ventas y Carteles, no solo en
+      Inquilinos y Cobros** — el usuario dio un paso a paso exacto
+      reproduciendo con datos reales ("depto suiza"): crea la propiedad →
+      entra a Ventas y Carteles → la publica en modalidad Alquiler → **la
+      espera ver ahí mismo, junto a las demás publicadas o pausadas** — no
+      en otra pantalla. El fix anterior (sección "Propiedades Vacantes" en
+      Inquilinos y Cobros) era válido pero insuficiente: resolvía que la
+      propiedad fuera *encontrable en algún lugar*, no que apareciera en la
+      pantalla donde el usuario efectivamente la publica y la busca primero.
+
+      Causa raíz exacta: `VentasPage.tsx` arma la grilla ("salegrid") con
+      `propiedadesVenta = propiedades.filter(p => p.modalidad === 'VENTA' ||
+      p.venta != null)`. Publicar como Alquiler-vacante (a diferencia de
+      Venta) **no crea ningún registro `Venta`** — es un flujo enteramente
+      distinto (`PATCH /propiedades/:id` + `POST /propiedades/:id/aumentos`).
+      Entonces la propiedad no cumple ninguna de las dos condiciones del
+      filtro y queda afuera de la grilla, aunque se haya guardado
+      perfectamente bien — exactamente el síntoma reportado ("no aparece la
+      propiedad con las otras propiedades publicadas o pausadas que se
+      muestran ahí").
+
+      Fix: `VentasPage.tsx` — el filtro de la grilla ahora también incluye
+      `p.modalidad === 'ALQUILER' && !p.inquilino` (alquiler vacante, con o
+      sin "Publicada en la web" tildado, igual que una ficha de venta se
+      lista sin importar su flag `publicada`). Como esta propiedad no tiene
+      ficha de venta, se renderiza con una tarjeta simplificada propia
+      (mismas clases `.salecard`/`.badge` que las demás, para que se vea
+      consistente): badge "Alquiler" + "Publicada"/"Pausada", el monto de
+      alquiler vigente en vez de precio, propietario, y un único botón
+      "✎ Editar ficha" que abre el `PropiedadFichaDrawer` ya existente (el
+      mismo que usa Inquilinos y Cobros) en vez del `SaleModal` de venta —
+      editar una ficha de venta inexistente no tendría sentido para una
+      propiedad que no está en venta. La sección "Propiedades Vacantes" de
+      Inquilinos y Cobros del fix anterior se deja como está (sigue siendo
+      útil desde esa pantalla), esto la complementa.
+
+      Probado con Playwright reproduciendo el paso a paso literal del
+      usuario con datos frescos ("TEST Depto Suiza Grid"): crear la
+      propiedad → Ventas y Carteles → "+ Publicar propiedad existente" →
+      modalidad Alquiler → completar monto → Publicar → la tarjeta aparece
+      de inmediato en la misma grilla con "$300.000 ARS/mes" y badge
+      "Publicada" → "Editar ficha" abre el drawer completo. Sin errores de
+      consola ni requests fallidos (2026-07-29).
+
+- [x] **Bug real: borrar una Incidencia dejaba un Gasto huérfano que restaba
+      de la ganancia de la inmobiliaria para siempre, sin ninguna pantalla
+      desde donde corregirlo** — el usuario reportó que borró "de la caja"
+      las incidencias que había pagado la inmobiliaria, y la ganancia del
+      mes seguía en -70000 en vez de volver a 0.
+
+      Causa raíz: `resolver()` una incidencia con costo y
+      `quienPagaCosto: 'INMOBILIARIA'` genera un `Gasto` (destino
+      INMOBILIARIA) vía `crearDesdeIncidencia()` — y por diseño **ese gasto
+      nunca genera su propio movimiento en Caja** (el único egreso real de
+      caja es el pago al proveedor, para no duplicar el egreso). El
+      `gananciaPesos` de `caja.service.ts::kpisDelMes()` resta este `Gasto`
+      consultando la tabla `Gasto` directamente, sin pasar por Caja.
+      `Gasto.incidenciaId` tiene `onDelete: SetNull` (`schema.prisma`), así
+      que borrar la Incidencia (`incidencias.service.ts::remove()`, antes
+      un `prisma.incidencia.delete()` sin más) no borraba el gasto — sólo le
+      vaciaba `incidenciaId`, dejándolo huérfano: invisible en Incidencias
+      (ya no existe la incidencia), invisible en Caja (nunca tuvo
+      movimiento propio), y como además `destino: INMOBILIARIA` no es un
+      valor elegible desde ningún formulario manual de Gastos (sólo
+      `PROPIETARIO`/`INQUILINO`), tampoco había forma de encontrarlo y
+      corregirlo por ahí. Confirmado con los datos reales del usuario: dos
+      gastos huérfanos exactos (`$40.000` + `$30.000` = `$70.000`,
+      `incidenciaId: null`, `movimientoCajaId: null`, `destino:
+      INMOBILIARIA`) — el origen del -70000 reportado.
+
+      Fix: `incidencias.service.ts::remove()` ahora borra en la misma
+      transacción el `Gasto` vinculado a la incidencia (y su movimiento de
+      Caja, si alguna vez lo tuviera) antes de borrar la incidencia, en vez
+      de dejar que el `SetNull` de la FK lo abandone. Además se limpiaron a
+      mano los dos gastos huérfanos ya existentes en la base para que la
+      ganancia del usuario volviera a su valor real de inmediato.
+
+      Probado con la API real: resolver una incidencia de prueba con costo
+      $15.000 a cargo de la inmobiliaria bajó `gananciaPesos` exactamente
+      $15.000 respecto de la base (`2040` → `-12960`); borrar esa incidencia
+      devolvió `gananciaPesos` a `2040` exacto — sin gasto huérfano
+      remanente (2026-07-29).
+
 ## Cómo actualizar este archivo
 
 Cada vez que se implemente una conexión: marcarla `[x]`, agregar la fecha y

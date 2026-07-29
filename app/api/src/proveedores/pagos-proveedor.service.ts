@@ -3,6 +3,7 @@ import { Moneda, OrigenMovimientoCaja, TipoMovimientoCaja } from '@prisma/client
 import { PrismaService } from '../prisma/prisma.service';
 import { CajaService } from '../caja/caja.service';
 import { ProveedoresService } from './proveedores.service';
+import { UpdatePagoProveedorDto } from './dto/update-pago-proveedor.dto';
 
 @Injectable()
 export class PagosProveedorService {
@@ -107,6 +108,62 @@ export class PagosProveedorService {
       });
 
       return pago;
+    });
+  }
+
+  // Corrige un error de carga (monto o fecha mal tipeados) — el registro de
+  // Caja se corrige junto con el pago que lo originó, mismo criterio que
+  // Cobros/Gastos (§3.8).
+  async editarPago(pagoId: string, dto: UpdatePagoProveedorDto) {
+    return this.prisma.$transaction(async (tx) => {
+      const pago = await tx.pagoProveedor.findUniqueOrThrow({ where: { id: pagoId } });
+
+      const actualizado = await tx.pagoProveedor.update({
+        where: { id: pagoId },
+        data: {
+          monto: dto.monto ?? undefined,
+          fecha: dto.fecha ? new Date(dto.fecha) : undefined,
+        },
+      });
+
+      if (pago.movimientoCajaId) {
+        await tx.movimientoCaja.update({
+          where: { id: pago.movimientoCajaId },
+          data: {
+            monto: dto.monto ?? undefined,
+            fecha: dto.fecha ? new Date(dto.fecha) : undefined,
+          },
+        });
+      }
+
+      return actualizado;
+    });
+  }
+
+  // Deshace un pago registrado por error: borra el pago (y en cascada las
+  // incidencias que saldaba, tabla puente) junto con su egreso en Caja, y
+  // vuelve a dejar esas incidencias como pendientes de pago (abonadaFecha en
+  // null) para poder registrar el pago de nuevo, corregido. Si el pago venía
+  // de "Pagar saldo" y cubría varias incidencias, deshacerlo las libera a
+  // todas juntas — es un único movimiento de Caja, no se puede deshacer
+  // parcialmente.
+  async anularPago(pagoId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const pago = await tx.pagoProveedor.findUniqueOrThrow({
+        where: { id: pagoId },
+        include: { incidencias: true },
+      });
+
+      if (pago.movimientoCajaId) {
+        await tx.movimientoCaja.delete({ where: { id: pago.movimientoCajaId } });
+      }
+
+      await tx.incidencia.updateMany({
+        where: { id: { in: pago.incidencias.map((pi) => pi.incidenciaId) } },
+        data: { abonadaFecha: null },
+      });
+
+      return tx.pagoProveedor.delete({ where: { id: pagoId } });
     });
   }
 }

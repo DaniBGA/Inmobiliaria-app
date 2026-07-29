@@ -31,6 +31,13 @@ interface ProveedorConCuenta extends Proveedor {
   saldoAPagar: number;
 }
 
+interface PagoProveedorInfo {
+  id: string;
+  monto: string | number;
+  fecha: string;
+  _count: { incidencias: number };
+}
+
 interface Incidencia {
   id: string;
   titulo: string;
@@ -50,6 +57,7 @@ interface Incidencia {
   propiedad: Propiedad;
   proveedorId: string | null;
   proveedor: Proveedor | null;
+  pagosProveedor: { pagoProveedor: PagoProveedorInfo }[];
 }
 
 const PRIO_LABEL: Record<PrioridadIncidencia, string> = { BAJA: 'BAJA', MEDIA: 'MEDIA', ALTA: 'ALTA' };
@@ -88,6 +96,7 @@ export function IncidenciasPage() {
   const [proveedorDe, setProveedorDe] = useState<Incidencia | null>(null);
   const [resolverDe, setResolverDe] = useState<Incidencia | null>(null);
   const [provModal, setProvModal] = useState<'new' | ProveedorConCuenta | null>(null);
+  const [editarPagoDe, setEditarPagoDe] = useState<PagoProveedorInfo | null>(null);
 
   const propiedades = useQuery({
     queryKey: ['propiedades'],
@@ -129,6 +138,21 @@ export function IncidenciasPage() {
       api.post(`/proveedores/${proveedorId}/pagar-saldo`, { fecha: new Date().toISOString().slice(0, 10) }),
     onSuccess: invalidarProveedores,
   });
+  const anularPago = useMutation({
+    mutationFn: (pagoId: string) => api.delete(`/proveedores/pagos/${pagoId}`),
+    onSuccess: invalidarProveedores,
+  });
+
+  function confirmarAnularPago(pago: PagoProveedorInfo) {
+    const otras = pago._count.incidencias - 1;
+    const msg =
+      otras > 0
+        ? `Este pago se registró con "Pagar saldo" y también saldó otras ${otras} incidencia${otras === 1 ? '' : 's'} del mismo proveedor. Deshacerlo las va a dejar a todas como pendientes de pago de nuevo. ¿Continuar?`
+        : '¿Deshacer este pago? La incidencia vuelve a quedar pendiente de pago.';
+    if (window.confirm(msg)) {
+      anularPago.mutate(pago.id);
+    }
+  }
 
   if (incidencias.isLoading || propiedades.isLoading) {
     return (
@@ -308,9 +332,36 @@ export function IncidenciasPage() {
                       )}
                       {i.estado === 'RESUELTA' &&
                         (i.abonadaFecha ? (
-                          <span className="pdate" style={{ color: 'var(--green)', fontWeight: 700 }}>
-                            ✓ abonado el {formatDate(i.abonadaFecha)}
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span className="pdate" style={{ color: 'var(--green)', fontWeight: 700 }}>
+                              ✓ abonado el {formatDate(i.abonadaFecha)}
+                            </span>
+                            {i.pagosProveedor[0] && (
+                              <>
+                                <button
+                                  className="btn-sm"
+                                  title="Corregir el monto o la fecha del pago"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditarPagoDe(i.pagosProveedor[0].pagoProveedor);
+                                  }}
+                                >
+                                  Editar pago
+                                </button>
+                                <button
+                                  className="btn-sm ghostred"
+                                  title="Deshacer este pago"
+                                  disabled={anularPago.isPending}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    confirmarAnularPago(i.pagosProveedor[0].pagoProveedor);
+                                  }}
+                                >
+                                  Deshacer
+                                </button>
+                              </>
+                            )}
+                          </div>
                         ) : puedePagar ? (
                           <button
                             className="btn-sm solid"
@@ -481,6 +532,16 @@ export function IncidenciasPage() {
           onClose={() => setProvModal(null)}
           onSaved={() => {
             setProvModal(null);
+            invalidarProveedores();
+          }}
+        />
+      )}
+      {editarPagoDe && (
+        <EditarPagoModal
+          pago={editarPagoDe}
+          onClose={() => setEditarPagoDe(null)}
+          onSaved={() => {
+            setEditarPagoDe(null);
             invalidarProveedores();
           }}
         />
@@ -775,6 +836,50 @@ function ResolverModal({
         </button>
         <button className="btn-dark" disabled={guardar.isPending} onClick={() => guardar.mutate()}>
           Marcar Resuelta
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function EditarPagoModal({
+  pago,
+  onClose,
+  onSaved,
+}: {
+  pago: PagoProveedorInfo;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [monto, setMonto] = useState(String(pago.monto));
+  const [fecha, setFecha] = useState(pago.fecha.slice(0, 10));
+  const [error, setError] = useState<string | null>(null);
+
+  const guardar = useMutation({
+    mutationFn: () => api.patch(`/proveedores/pagos/${pago.id}`, { monto: Number(monto), fecha }),
+    onSuccess: onSaved,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo corregir el pago.'),
+  });
+
+  return (
+    <Modal open onClose={onClose} title="Editar Pago a Proveedor" width={380}>
+      {error && <div className="errstate" style={{ marginBottom: 14 }}>{error}</div>}
+      <div className="formgrid">
+        <div className="fg">
+          <label>Monto</label>
+          <input type="number" min={0.01} step="0.01" value={monto} onChange={(e) => setMonto(e.target.value)} />
+        </div>
+        <div className="fg">
+          <label>Fecha</label>
+          <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+        </div>
+      </div>
+      <div className="btnrow">
+        <button className="btn-ghost" onClick={onClose}>
+          Cancelar
+        </button>
+        <button className="btn-dark" disabled={guardar.isPending || !monto} onClick={() => guardar.mutate()}>
+          Guardar
         </button>
       </div>
     </Modal>

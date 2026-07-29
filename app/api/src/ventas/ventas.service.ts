@@ -161,7 +161,8 @@ export class VentasService {
       venta.propiedad,
       Number(configuracion.honorariosDefaultPorcentaje),
     );
-    const comision = Math.round(precioCierre * (porcentaje / 100) * 100) / 100;
+    const comision =
+      dto.comisionManual ?? Math.round(precioCierre * (porcentaje / 100) * 100) / 100;
 
     return this.prisma.$transaction(async (tx) => {
       if (venta.movimientoCajaComisionId) {

@@ -5,6 +5,8 @@ import { PageHeader } from '../components/PageHeader';
 import { Modal } from '../components/Modal';
 import { formatMoney, formatUsd, formatDate } from '../lib/format';
 import { honorariosLabel, resolverPorcentajeHonorarios, type TipoHonorarios } from '../lib/honorarios';
+import { FotosPropiedad, type FotoPropiedadItem } from '../components/FotosPropiedad';
+import { PropiedadFichaDrawer } from '../components/PropiedadFichaDrawer';
 
 type EstadoVenta = 'PUBLICADA' | 'RESERVADA' | 'VENDIDA' | 'VENDIDA_POR_TERCEROS' | 'PAUSADA';
 type EtapaInteresado = 'CONSULTA' | 'VISITA' | 'NEGOCIACION' | 'RESERVA' | 'DESCARTADO';
@@ -56,6 +58,12 @@ interface Propiedad {
   honorariosPorcentaje: string | number | null;
   venta: VentaResumen | null;
   inquilino: { nombre: string } | null;
+  montoAlquilerVigente: string | number | null;
+  alquilerPublicado: boolean;
+  ambientes: number | null;
+  banos: number | null;
+  superficieM2: string | number | null;
+  fotos: FotoPropiedadItem[];
 }
 
 interface PropietarioOpcion {
@@ -181,6 +189,7 @@ export function VentasPage() {
   } | null>(null);
   const [cartelModal, setCartelModal] = useState<'new' | Cartel | null>(null);
   const [publicarModal, setPublicarModal] = useState(false);
+  const [fichaAlquilerId, setFichaAlquilerId] = useState<string | null>(null);
 
   const propiedades = useQuery({
     queryKey: ['propiedades'],
@@ -275,8 +284,19 @@ export function VentasPage() {
   // desaparecer de acá, solo dejar de listarse como una venta activa. Por
   // eso el filtro no es solo `modalidad === 'VENTA'`, sino también cualquier
   // propiedad que ya tenga una ficha de venta asociada.
+  //
+  // Además, publicar una propiedad como Alquiler vacante (sin inquilino,
+  // vía "+ Publicar propiedad existente") no crea ninguna ficha de venta
+  // — es un flujo enteramente distinto (PATCH modalidad + POST aumentos).
+  // Sin esto, esa propiedad quedaba guardada correctamente pero invisible
+  // en esta grilla (el usuario la publica acá y "no aparece con las demás
+  // publicadas o pausadas"), aunque sí aparecía en la landing pública.
   const propiedadesVenta = (propiedades.data ?? [])
-    .filter((p) => (p.modalidad === 'VENTA' || p.venta != null) && (!filtroTipo || p.tipo === filtroTipo))
+    .filter(
+      (p) =>
+        (p.modalidad === 'VENTA' || p.venta != null || (p.modalidad === 'ALQUILER' && !p.inquilino)) &&
+        (!filtroTipo || p.tipo === filtroTipo),
+    )
     .filter((p) => {
       if (!filtroEtapa) return true;
       const v = ventaPorPropiedadId.get(p.id) ?? p.venta;
@@ -369,6 +389,64 @@ export function VentasPage() {
           )}
           {propiedadesVenta.map((p) => {
             const v = ventaPorPropiedadId.get(p.id) ?? p.venta;
+
+            // Alquiler vacante publicado desde acá mismo (sin ficha de venta,
+            // ver el filtro de arriba) — es una operación distinta a una
+            // venta, así que se muestra con una tarjeta simplificada en vez
+            // de forzarla en los campos de precio/interesados de venta.
+            if (p.modalidad === 'ALQUILER' && !v) {
+              return (
+                <div className="salecard" key={p.id}>
+                  <div className="shead">
+                    <div className="stop">
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <h4>{p.nombre}</h4>
+                        <div className="saddr">
+                          {p.direccion} · {TIPO_LABEL[p.tipo] ?? p.tipo}
+                        </div>
+                      </div>
+                      <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                        <span className="badge alquilada">Alquiler</span>
+                        <span className={`badge ${p.alquilerPublicado ? 'publicada' : 'pausada'}`}>
+                          {p.alquilerPublicado ? 'Publicada' : 'Pausada'}
+                        </span>
+                      </span>
+                    </div>
+                    <div className="sprice">
+                      {p.montoAlquilerVigente != null ? formatMoney(p.montoAlquilerVigente) : 'Consultar'}
+                      <small>ARS/mes</small>
+                    </div>
+                  </div>
+                  <div className="sbody">
+                    <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 10 }}>
+                      Vacante — disponible para alquilar. No tiene ficha de venta porque no está en venta.
+                    </div>
+                    <div className="srow">
+                      <span>Propietario</span>
+                      <b>{p.propietario?.nombre ?? '—'}</b>
+                    </div>
+                    <div className="srow">
+                      <span>Publicada en la web</span>
+                      <b>{p.alquilerPublicado ? 'Sí' : 'No'}</b>
+                    </div>
+                    <div className="srow">
+                      <span>La muestra</span>
+                      <b>
+                        {p.designado?.nombre ?? (
+                          <span style={{ color: 'var(--muted)', fontWeight: 600 }}>sin designar</span>
+                        )}
+                      </b>
+                    </div>
+                  </div>
+                  <div className="sfoot">
+                    <button className="btn-sm" style={{ flex: 1 }} onClick={() => setFichaAlquilerId(p.id)}>
+                      ✎ Editar ficha
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+
             const estado = v?.estado ?? 'PUBLICADA';
             const alquilada = p.modalidad === 'ALQUILER';
             const precio = Number(v?.precio ?? 0);
@@ -672,11 +750,12 @@ export function VentasPage() {
 
       {fichaDe && (
         <SaleModal
-          propiedad={fichaDe}
+          propiedad={(propiedades.data ?? []).find((p) => p.id === fichaDe.id) ?? fichaDe}
           venta={ventaPorPropiedadId.get(fichaDe.id) ?? fichaDe.venta}
           propietarios={propietarios.data ?? []}
           delegados={delegados.data ?? []}
           onClose={() => setFichaDe(null)}
+          onFotosChange={() => qc.invalidateQueries({ queryKey: ['propiedades'] })}
           onSaved={() => {
             setFichaDe(null);
             invalidarVentas();
@@ -758,6 +837,7 @@ export function VentasPage() {
           }}
         />
       )}
+      {fichaAlquilerId && <PropiedadFichaDrawer propiedadId={fichaAlquilerId} onClose={() => setFichaAlquilerId(null)} />}
     </>
   );
 }
@@ -770,6 +850,7 @@ function SaleModal({
   onClose,
   onSaved,
   onDeleted,
+  onFotosChange,
 }: {
   propiedad: Propiedad;
   venta: VentaResumen | null;
@@ -778,6 +859,7 @@ function SaleModal({
   onClose: () => void;
   onSaved: () => void;
   onDeleted: () => void;
+  onFotosChange: () => void;
 }) {
   const puedeEditarEstado = !venta || venta.estado === 'PUBLICADA' || venta.estado === 'PAUSADA';
 
@@ -791,6 +873,9 @@ function SaleModal({
   const [designadoId, setDesignadoId] = useState(propiedad.designadoId ?? '');
   const [honorariosTipo, setHonorariosTipo] = useState<TipoHonorarios>(propiedad.honorariosTipo ?? null);
   const [honorariosPorcentaje, setHonorariosPorcentaje] = useState(String(propiedad.honorariosPorcentaje ?? ''));
+  const [ambientes, setAmbientes] = useState(String(propiedad.ambientes ?? ''));
+  const [banos, setBanos] = useState(String(propiedad.banos ?? ''));
+  const [superficieM2, setSuperficieM2] = useState(String(propiedad.superficieM2 ?? ''));
 
   const [precio, setPrecio] = useState(String(venta?.precio ?? ''));
   const [moneda, setMoneda] = useState<'ARS' | 'USD'>(venta?.moneda ?? 'ARS');
@@ -810,6 +895,9 @@ function SaleModal({
         designadoId: designadoId || undefined,
         honorariosTipo: honorariosTipo || undefined,
         honorariosPorcentaje: honorariosTipo === 'OTRO' && honorariosPorcentaje ? Number(honorariosPorcentaje) : undefined,
+        ambientes: ambientes ? Number(ambientes) : undefined,
+        banos: banos ? Number(banos) : undefined,
+        superficieM2: superficieM2 ? Number(superficieM2) : undefined,
       });
       return api.post(`/propiedades/${propiedad.id}/venta`, {
         precio: Number(precio),
@@ -906,7 +994,22 @@ function SaleModal({
             />
           </div>
         )}
+        <div className="fg">
+          <label>Ambientes</label>
+          <input type="number" min={0} value={ambientes} onChange={(e) => setAmbientes(e.target.value)} placeholder="Opcional" />
+        </div>
+        <div className="fg">
+          <label>Baños</label>
+          <input type="number" min={0} value={banos} onChange={(e) => setBanos(e.target.value)} placeholder="Opcional" />
+        </div>
+        <div className="fg">
+          <label>Superficie (m²)</label>
+          <input type="number" min={0} step="0.01" value={superficieM2} onChange={(e) => setSuperficieM2(e.target.value)} placeholder="Opcional" />
+        </div>
       </div>
+
+      <div className="secttl">FOTOS</div>
+      <FotosPropiedad propiedadId={propiedad.id} fotos={propiedad.fotos} onChange={onFotosChange} />
 
       <div className="secttl">FICHA DE VENTA</div>
       <div className="formgrid">
@@ -1080,6 +1183,18 @@ function PublicarExistenteModal({
       ? !!propiedadId && !!precio
       : !!propiedadId && !!montoAlquilerInicial && (!tieneInquilino || !!inqNombre.trim());
 
+  // El formulario de Alquiler es largo — el botón "Publicar" queda abajo de
+  // todo, lejos del mensaje de error (arriba del todo) o de por qué sigue
+  // deshabilitado. Sin esto, si falta un campo o falla el guardado, desde el
+  // scroll donde está el botón "no pasa nada visible" (parece que el clic no
+  // hizo nada, cuando en realidad sí hay un motivo, solo que está fuera de
+  // vista).
+  const faltantes: string[] = [];
+  if (!propiedadId) faltantes.push('elegir una propiedad');
+  if (modalidad === 'VENTA' && !precio) faltantes.push('el precio');
+  if (modalidad === 'ALQUILER' && !montoAlquilerInicial) faltantes.push('el monto de alquiler inicial');
+  if (modalidad === 'ALQUILER' && tieneInquilino && !inqNombre.trim()) faltantes.push('el nombre del inquilino');
+
   return (
     <Modal open onClose={onClose} title="Publicar propiedad existente" width={560}>
       {error && <div className="errstate" style={{ marginBottom: 14 }}>{error}</div>}
@@ -1245,6 +1360,12 @@ function PublicarExistenteModal({
         </div>
       )}
 
+      {error && <div className="errstate" style={{ marginTop: 14 }}>{error}</div>}
+      {!puedeGuardar && faltantes.length > 0 && (
+        <div className="hint" style={{ marginTop: 14, textAlign: 'right' }}>
+          Falta completar: {faltantes.join(', ')}.
+        </div>
+      )}
       <div className="btnrow">
         <button className="btn-ghost" onClick={onClose}>
           Cancelar

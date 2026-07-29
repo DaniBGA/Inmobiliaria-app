@@ -4,6 +4,7 @@ import { api, ApiError } from '../api/client';
 import { PageHeader } from '../components/PageHeader';
 import { Modal } from '../components/Modal';
 import { AlquilarPropiedadModal, type PropiedadParaAlquilar } from '../components/AlquilarPropiedadModal';
+import { PropiedadFichaDrawer } from '../components/PropiedadFichaDrawer';
 import { formatMoney, formatDate, mesActualStr, sumarMesesStr, mesLabel } from '../lib/format';
 
 interface Inquilino {
@@ -70,6 +71,8 @@ const MEDIOS = [
 
 interface PropiedadDb extends PropiedadParaAlquilar {
   inquilino: { nombre: string } | null;
+  montoAlquilerVigente: string | number | null;
+  alquilerPublicado: boolean;
 }
 
 export function InquilinosPage() {
@@ -77,6 +80,7 @@ export function InquilinosPage() {
   const [busqueda, setBusqueda] = useState('');
   const [modalFila, setModalFila] = useState<FilaCobro | null>(null);
   const [alquilarModal, setAlquilarModal] = useState(false);
+  const [fichaId, setFichaId] = useState<string | null>(null);
   const qc = useQueryClient();
 
   const kpis = useQuery({
@@ -102,6 +106,14 @@ export function InquilinosPage() {
     // "Avisos" usa para armar los reclamos de deuda.
     qc.invalidateQueries({ queryKey: ['avisos'] });
   }
+
+  // Propiedades de alquiler sin inquilino asignado — no generan cobros ni
+  // fichas (por eso no aparecen en ninguna tabla de arriba), pero siguen
+  // siendo parte de la cartera de alquiler y necesitan un lugar desde donde
+  // se las pueda encontrar y gestionar (publicarlas/pausarlas en la web,
+  // asignarles inquilino, editar sus datos) — antes de esto no había
+  // ninguna pantalla del admin donde una propiedad así fuera visible.
+  const vacantes = (propiedades.data ?? []).filter((p) => p.modalidad === 'ALQUILER' && !p.inquilino);
 
   const filasVisibles = (resumen.data?.filas ?? []).filter((f) => (f.esperado ?? 0) > 0);
   const progreso = resumen.data && resumen.data.totales.esperado > 0
@@ -308,6 +320,50 @@ export function InquilinosPage() {
             <div className="empty">Sin inquilinos que coincidan con la búsqueda.</div>
           )}
         </div>
+
+        <div className="secttl" style={{ marginTop: 26 }}>PROPIEDADES VACANTES</div>
+        <div className="tablewrap">
+          <table>
+            <thead>
+              <tr>
+                <th>PROPIEDAD</th>
+                <th style={{ textAlign: 'right' }}>ALQUILER</th>
+                <th>PUBLICADA EN LA WEB</th>
+              </tr>
+            </thead>
+            <tbody>
+              {vacantes.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="empty">
+                    No hay propiedades de alquiler vacantes.
+                  </td>
+                </tr>
+              )}
+              {vacantes.map((p) => (
+                <tr key={p.id} className="movrow" onClick={() => setFichaId(p.id)} title="Clic para ver la ficha de la propiedad">
+                  <td>
+                    <div className="pname">{p.nombre}</div>
+                    <div className="psub">{p.direccion}</div>
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    <span className="money">
+                      {p.montoAlquilerVigente != null ? formatMoney(p.montoAlquilerVigente) : '—'}
+                    </span>
+                  </td>
+                  <td>
+                    {p.alquilerPublicado ? (
+                      <span className="badge disponible">
+                        <span className="dot"></span>Sí
+                      </span>
+                    ) : (
+                      <span style={{ color: 'var(--muted)' }}>Pausada</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </main>
 
       {modalFila && (
@@ -328,6 +384,7 @@ export function InquilinosPage() {
           onSaved={() => setAlquilarModal(false)}
         />
       )}
+      {fichaId && <PropiedadFichaDrawer propiedadId={fichaId} onClose={() => setFichaId(null)} />}
     </>
   );
 }

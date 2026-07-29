@@ -4,6 +4,7 @@ import { PagosProveedorService } from './pagos-proveedor.service';
 import { CreateProveedorDto } from './dto/create-proveedor.dto';
 import { UpdateProveedorDto } from './dto/update-proveedor.dto';
 import { RegistrarPagoProveedorDto } from './dto/registrar-pago-proveedor.dto';
+import { UpdatePagoProveedorDto } from './dto/update-pago-proveedor.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('proveedores')
@@ -42,5 +43,15 @@ export class ProveedoresController {
   @Post(':id/pagar-saldo')
   pagarSaldo(@Param('id') id: string, @Body() dto: RegistrarPagoProveedorDto) {
     return this.pagosProveedorService.pagarSaldo(id, dto.fecha);
+  }
+
+  @Patch('pagos/:pagoId')
+  editarPago(@Param('pagoId') pagoId: string, @Body() dto: UpdatePagoProveedorDto) {
+    return this.pagosProveedorService.editarPago(pagoId, dto);
+  }
+
+  @Delete('pagos/:pagoId')
+  anularPago(@Param('pagoId') pagoId: string) {
+    return this.pagosProveedorService.anularPago(pagoId);
   }
 }

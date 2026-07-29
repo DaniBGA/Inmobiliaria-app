@@ -47,6 +47,18 @@ export class CajaService {
         fecha: { gte: desde, lt: hasta },
         ...(moneda ? { moneda } : {}),
       },
+      // Los ids de la relación inversa (§3.8) le permiten al frontend editar
+      // un movimiento automático desde Caja sin otra consulta: sabe a qué
+      // Pago/Gasto/Liquidación/PagoProveedor/Venta pegarle sin tener que
+      // buscarlo por otro lado.
+      include: {
+        pago: { select: { id: true } },
+        gasto: { select: { id: true } },
+        liquidacion: { select: { id: true, propietarioId: true, mes: true } },
+        pagoProveedor: { select: { id: true } },
+        ventaSena: { select: { id: true } },
+        ventaComision: { select: { id: true } },
+      },
       orderBy: { fecha: 'asc' },
     });
   }

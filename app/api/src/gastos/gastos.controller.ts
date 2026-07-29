@@ -14,6 +14,11 @@ export class GastosController {
     return this.gastosService.findAll(propiedadId, mes);
   }
 
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.gastosService.findOne(id);
+  }
+
   @Post()
   crear(@Body() dto: CreateGastoDto) {
     return this.gastosService.crear(dto);

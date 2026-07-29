@@ -1,4 +1,5 @@
 import { useCountUp } from '../../hooks/useCountUp';
+import fotoNosotros from '../../images/FotoNosotros.jpeg';
 
 const STATS = [
   { target: 12, sufijo: '+', label: 'Años de experiencia' },
@@ -25,7 +26,7 @@ export function Nosotros() {
     <section id="nosotros" className="section">
       <div className="container nosotros-inner">
         <div className="nosotros-photo">
-          <span>[ retrato — Facundo Paris ]</span>
+          <img src={fotoNosotros} alt="Facundo Paris" />
         </div>
 
         <div>

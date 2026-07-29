@@ -20,6 +20,24 @@ interface Movimiento {
   medio: string | null;
   referencia: string | null;
   origen: string;
+  // Id del registro que originó este movimiento automático (§3.8) — permite
+  // editarlo/deshacerlo desde acá sin tener que ir a buscarlo a su módulo.
+  pago?: { id: string } | null;
+  gasto?: { id: string } | null;
+  liquidacion?: { id: string; propietarioId: string; mes: string } | null;
+  pagoProveedor?: { id: string } | null;
+  ventaSena?: { id: string } | null;
+  ventaComision?: { id: string } | null;
+}
+
+interface GastoDetalle {
+  id: string;
+  descripcion: string;
+  monto: string | number;
+  fecha: string;
+  categoria: string;
+  destino: 'PROPIETARIO' | 'INQUILINO' | 'INMOBILIARIA';
+  propiedad: { nombre: string };
 }
 
 interface CajaKpis {
@@ -118,11 +136,19 @@ export function CajaPage() {
     queryFn: () => api.get<ResumenAnual>(`/reportes/resumen-anual/${anio}`),
   });
 
+  // Editar/deshacer desde Caja puede tocar cualquiera de los cinco módulos
+  // de origen (Cobros, Gastos, Proveedores/Incidencias, Ventas,
+  // Liquidaciones) — se invalida todo junto en vez de tratar de acertarle
+  // solo a la sección que corresponde a cada caso.
   function invalidarCaja() {
     qc.invalidateQueries({ queryKey: ['caja'] });
     qc.invalidateQueries({ queryKey: ['cobros'] });
-    // El "Pago de alquiler" también puede cambiar los reclamos de deuda
-    // que muestra Avisos.
+    qc.invalidateQueries({ queryKey: ['gastos'] });
+    qc.invalidateQueries({ queryKey: ['proveedores'] });
+    qc.invalidateQueries({ queryKey: ['incidencias'] });
+    qc.invalidateQueries({ queryKey: ['ventas'] });
+    qc.invalidateQueries({ queryKey: ['reportes'] });
+    qc.invalidateQueries({ queryKey: ['propiedades'] });
     qc.invalidateQueries({ queryKey: ['avisos'] });
   }
 
@@ -320,13 +346,12 @@ export function CajaPage() {
                 </tr>
               )}
               {filasPagina.map(({ m, saldo }) => {
-                const esManual = m.origen === 'MANUAL';
                 return (
                   <tr
                     key={m.id}
-                    className={esManual ? 'movrow' : undefined}
-                    title={esManual ? 'Clic para editar este movimiento' : undefined}
-                    onClick={esManual ? () => setModal(m) : undefined}
+                    className="movrow"
+                    title="Clic para editar este movimiento"
+                    onClick={() => setModal(m)}
                   >
                     <td>
                       <span className="pdate">{formatDate(m.fecha)}</span>
@@ -334,7 +359,7 @@ export function CajaPage() {
                     <td>
                       <div className="pname">{m.concepto}</div>
                       {m.origen !== 'MANUAL' ? (
-                        <div className="psub">automático · se edita en su módulo de origen ({ORIGEN_LABEL[m.origen] ?? m.origen})</div>
+                        <div className="psub">automático · generado desde {ORIGEN_LABEL[m.origen] ?? m.origen}</div>
                       ) : (
                         m.referencia && <div className="psub">Ref: {m.referencia}</div>
                       )}
@@ -479,7 +504,7 @@ export function CajaPage() {
         </div>
       </main>
 
-      {modal && (
+      {modal === 'new' || (modal && modal.origen === 'MANUAL') ? (
         <NuevoMovimientoModal
           mesActual={mes}
           movimiento={modal === 'new' ? null : modal}
@@ -489,6 +514,17 @@ export function CajaPage() {
             invalidarCaja();
           }}
         />
+      ) : (
+        modal && (
+          <EditarMovimientoAutomaticoModal
+            movimiento={modal}
+            onClose={() => setModal(null)}
+            onSaved={() => {
+              setModal(null);
+              invalidarCaja();
+            }}
+          />
+        )
       )}
     </>
   );
@@ -748,6 +784,471 @@ function NuevoMovimientoModal({
         </button>
         <button className="btn-dark" disabled={guardar.isPending || !puedeGuardar} onClick={() => guardar.mutate()}>
           Guardar Movimiento
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// Editar un movimiento automático desde Caja (§3.8): cada origen tiene su
+// propio endpoint de corrección (mismo que usa su módulo de origen), así que
+// el egreso/ingreso en Caja y el registro que lo generó quedan sincronizados
+// en la misma operación — no hay que ir a buscarlo a otra pantalla.
+function EditarMovimientoAutomaticoModal({
+  movimiento,
+  onClose,
+  onSaved,
+}: {
+  movimiento: Movimiento;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  switch (movimiento.origen) {
+    case 'COBRO_ALQUILER':
+      return <EditarCobroModal movimiento={movimiento} onClose={onClose} onSaved={onSaved} />;
+    case 'GASTO_PROPIEDAD':
+      return <EditarGastoModal movimiento={movimiento} onClose={onClose} onSaved={onSaved} />;
+    case 'PAGO_PROVEEDOR':
+      return <EditarPagoProveedorModal movimiento={movimiento} onClose={onClose} onSaved={onSaved} />;
+    case 'SENA_VENTA':
+      return <EditarSenaModal movimiento={movimiento} onClose={onClose} onSaved={onSaved} />;
+    case 'COMISION_VENTA':
+      return <EditarComisionModal movimiento={movimiento} onClose={onClose} onSaved={onSaved} />;
+    case 'LIQUIDACION_PROPIETARIO':
+      return <RegenerarLiquidacionModal movimiento={movimiento} onClose={onClose} onSaved={onSaved} />;
+    default:
+      return null;
+  }
+}
+
+function EditarCobroModal({
+  movimiento,
+  onClose,
+  onSaved,
+}: {
+  movimiento: Movimiento;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const pagoId = movimiento.pago!.id;
+  const [monto, setMonto] = useState(String(movimiento.monto));
+  const [fecha, setFecha] = useState(movimiento.fecha.slice(0, 10));
+  const [medio, setMedio] = useState(movimiento.medio ?? 'TRANSFERENCIA');
+  const [error, setError] = useState<string | null>(null);
+
+  const guardar = useMutation({
+    mutationFn: () => api.patch(`/cobros/pagos/${pagoId}`, { monto: Number(monto), fecha, medio }),
+    onSuccess: onSaved,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo corregir el cobro.'),
+  });
+  const anular = useMutation({
+    mutationFn: () => api.post(`/cobros/pagos/${pagoId}/anular`),
+    onSuccess: onSaved,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo anular el cobro.'),
+  });
+
+  function confirmarAnular() {
+    if (window.confirm('¿Anular este cobro? Ese mes vuelve a quedar pendiente para el inquilino.')) {
+      anular.mutate();
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Editar Cobro de Alquiler" width={400}>
+      {error && <div className="errstate" style={{ marginBottom: 14 }}>{error}</div>}
+      <div className="formgrid">
+        <div className="fg full">
+          <label>Concepto</label>
+          <div style={{ fontWeight: 600 }}>{movimiento.concepto}</div>
+        </div>
+        <div className="fg">
+          <label>Monto</label>
+          <input type="number" min={0.01} step="0.01" value={monto} onChange={(e) => setMonto(e.target.value)} />
+        </div>
+        <div className="fg">
+          <label>Fecha</label>
+          <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+        </div>
+        <div className="fg full">
+          <label>Medio</label>
+          <select value={medio} onChange={(e) => setMedio(e.target.value)}>
+            {MEDIOS_PAGO.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="btnrow">
+        <button className="btn-sm ghostred" style={{ marginRight: 'auto' }} disabled={anular.isPending} onClick={confirmarAnular}>
+          Anular cobro
+        </button>
+        <button className="btn-ghost" onClick={onClose}>
+          Cancelar
+        </button>
+        <button className="btn-dark" disabled={guardar.isPending || !monto} onClick={() => guardar.mutate()}>
+          Guardar
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+const GASTO_DESTINO_LABEL: Record<GastoDetalle['destino'], string> = {
+  PROPIETARIO: 'Propietario',
+  INQUILINO: 'Inquilino',
+  INMOBILIARIA: 'Inmobiliaria',
+};
+
+function EditarGastoModal({
+  movimiento,
+  onClose,
+  onSaved,
+}: {
+  movimiento: Movimiento;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const gastoId = movimiento.gasto!.id;
+  const gasto = useQuery({
+    queryKey: ['gastos', 'detalle', gastoId],
+    queryFn: () => api.get<GastoDetalle>(`/gastos/${gastoId}`),
+  });
+
+  if (gasto.isLoading || !gasto.data) {
+    return (
+      <Modal open onClose={onClose} title="Editar Gasto" width={420}>
+        <div className="loadstate">Cargando…</div>
+      </Modal>
+    );
+  }
+
+  return <EditarGastoForm gasto={gasto.data} onClose={onClose} onSaved={onSaved} />;
+}
+
+function EditarGastoForm({
+  gasto,
+  onClose,
+  onSaved,
+}: {
+  gasto: GastoDetalle;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [descripcion, setDescripcion] = useState(gasto.descripcion);
+  const [monto, setMonto] = useState(String(gasto.monto));
+  const [categoria, setCategoria] = useState(gasto.categoria);
+  const [destino, setDestino] = useState(gasto.destino);
+  const [fecha, setFecha] = useState(gasto.fecha.slice(0, 10));
+  const [error, setError] = useState<string | null>(null);
+
+  const guardar = useMutation({
+    mutationFn: () =>
+      api.patch(`/gastos/${gasto.id}`, {
+        descripcion,
+        monto: Number(monto),
+        fecha,
+        categoria,
+        destino,
+      }),
+    onSuccess: onSaved,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo corregir el gasto.'),
+  });
+  const eliminar = useMutation({
+    mutationFn: () => api.delete(`/gastos/${gasto.id}`),
+    onSuccess: onSaved,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo eliminar el gasto.'),
+  });
+
+  function confirmarEliminar() {
+    if (window.confirm('¿Eliminar este gasto? Se borra también el egreso correspondiente en Caja.')) {
+      eliminar.mutate();
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Editar Gasto — ${gasto.propiedad.nombre}`} width={460}>
+      {error && <div className="errstate" style={{ marginBottom: 14 }}>{error}</div>}
+      <div className="formgrid">
+        <div className="fg full">
+          <label>Descripción</label>
+          <input value={descripcion} onChange={(e) => setDescripcion(e.target.value)} />
+        </div>
+        <div className="fg">
+          <label>Monto</label>
+          <input type="number" min={0.01} step="0.01" value={monto} onChange={(e) => setMonto(e.target.value)} />
+        </div>
+        <div className="fg">
+          <label>Fecha</label>
+          <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+        </div>
+        <div className="fg">
+          <label>Categoría</label>
+          <input value={categoria} onChange={(e) => setCategoria(e.target.value)} />
+        </div>
+        <div className="fg">
+          <label>¿A quién se le imputa?</label>
+          <select value={destino} onChange={(e) => setDestino(e.target.value as GastoDetalle['destino'])}>
+            {(['PROPIETARIO', 'INQUILINO'] as const).map((d) => (
+              <option key={d} value={d}>
+                {GASTO_DESTINO_LABEL[d]}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="btnrow">
+        <button className="btn-sm ghostred" style={{ marginRight: 'auto' }} disabled={eliminar.isPending} onClick={confirmarEliminar}>
+          Eliminar
+        </button>
+        <button className="btn-ghost" onClick={onClose}>
+          Cancelar
+        </button>
+        <button className="btn-dark" disabled={guardar.isPending || !descripcion.trim() || !monto} onClick={() => guardar.mutate()}>
+          Guardar
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function EditarPagoProveedorModal({
+  movimiento,
+  onClose,
+  onSaved,
+}: {
+  movimiento: Movimiento;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const pagoId = movimiento.pagoProveedor!.id;
+  const [monto, setMonto] = useState(String(movimiento.monto));
+  const [fecha, setFecha] = useState(movimiento.fecha.slice(0, 10));
+  const [error, setError] = useState<string | null>(null);
+
+  const guardar = useMutation({
+    mutationFn: () => api.patch(`/proveedores/pagos/${pagoId}`, { monto: Number(monto), fecha }),
+    onSuccess: onSaved,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo corregir el pago.'),
+  });
+  const deshacer = useMutation({
+    mutationFn: () => api.delete(`/proveedores/pagos/${pagoId}`),
+    onSuccess: onSaved,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo deshacer el pago.'),
+  });
+
+  function confirmarDeshacer() {
+    if (
+      window.confirm(
+        '¿Deshacer este pago a proveedor? Si con "Pagar saldo" cubrió más de un trabajo, todos vuelven a quedar pendientes de pago juntos.',
+      )
+    ) {
+      deshacer.mutate();
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Editar Pago a Proveedor" width={380}>
+      {error && <div className="errstate" style={{ marginBottom: 14 }}>{error}</div>}
+      <div className="formgrid">
+        <div className="fg full">
+          <label>Concepto</label>
+          <div style={{ fontWeight: 600 }}>{movimiento.concepto}</div>
+        </div>
+        <div className="fg">
+          <label>Monto</label>
+          <input type="number" min={0.01} step="0.01" value={monto} onChange={(e) => setMonto(e.target.value)} />
+        </div>
+        <div className="fg">
+          <label>Fecha</label>
+          <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+        </div>
+      </div>
+      <div className="btnrow">
+        <button className="btn-sm ghostred" style={{ marginRight: 'auto' }} disabled={deshacer.isPending} onClick={confirmarDeshacer}>
+          Deshacer pago
+        </button>
+        <button className="btn-ghost" onClick={onClose}>
+          Cancelar
+        </button>
+        <button className="btn-dark" disabled={guardar.isPending || !monto} onClick={() => guardar.mutate()}>
+          Guardar
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function EditarSenaModal({
+  movimiento,
+  onClose,
+  onSaved,
+}: {
+  movimiento: Movimiento;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const ventaId = movimiento.ventaSena!.id;
+  const [monto, setMonto] = useState(String(movimiento.monto));
+  const [fecha, setFecha] = useState(movimiento.fecha.slice(0, 10));
+  const [error, setError] = useState<string | null>(null);
+
+  const guardar = useMutation({
+    mutationFn: () => api.post(`/ventas/${ventaId}/sena`, { monto: Number(monto), fecha }),
+    onSuccess: onSaved,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo corregir la seña.'),
+  });
+  const quitar = useMutation({
+    mutationFn: () => api.delete(`/ventas/${ventaId}/sena`),
+    onSuccess: onSaved,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo quitar la seña.'),
+  });
+
+  function confirmarQuitar() {
+    if (window.confirm('¿Quitar esta seña? La propiedad vuelve a "Publicada" y se borra el ingreso en Caja.')) {
+      quitar.mutate();
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Editar Seña de Venta" width={380}>
+      {error && <div className="errstate" style={{ marginBottom: 14 }}>{error}</div>}
+      <div className="formgrid">
+        <div className="fg full">
+          <label>Concepto</label>
+          <div style={{ fontWeight: 600 }}>{movimiento.concepto}</div>
+        </div>
+        <div className="fg">
+          <label>Monto (USD)</label>
+          <input type="number" min={0.01} step="0.01" value={monto} onChange={(e) => setMonto(e.target.value)} />
+        </div>
+        <div className="fg">
+          <label>Fecha</label>
+          <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+        </div>
+      </div>
+      <div className="btnrow">
+        <button className="btn-sm ghostred" style={{ marginRight: 'auto' }} disabled={quitar.isPending} onClick={confirmarQuitar}>
+          Quitar seña
+        </button>
+        <button className="btn-ghost" onClick={onClose}>
+          Cancelar
+        </button>
+        <button className="btn-dark" disabled={guardar.isPending || !monto} onClick={() => guardar.mutate()}>
+          Guardar
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function EditarComisionModal({
+  movimiento,
+  onClose,
+  onSaved,
+}: {
+  movimiento: Movimiento;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const ventaId = movimiento.ventaComision!.id;
+  const [monto, setMonto] = useState(String(movimiento.monto));
+  const [fecha, setFecha] = useState(movimiento.fecha.slice(0, 10));
+  const [error, setError] = useState<string | null>(null);
+
+  const guardar = useMutation({
+    mutationFn: () => api.post(`/ventas/${ventaId}/cerrar`, { fecha, comisionManual: Number(monto) }),
+    onSuccess: onSaved,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo corregir la comisión.'),
+  });
+  const deshacer = useMutation({
+    mutationFn: () => api.delete(`/ventas/${ventaId}/cerrar`),
+    onSuccess: onSaved,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo deshacer el cierre.'),
+  });
+
+  function confirmarDeshacer() {
+    if (window.confirm('¿Deshacer esta venta? Vuelve a "Reservada" y se borra la comisión registrada en Caja.')) {
+      deshacer.mutate();
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Editar Comisión de Venta" width={380}>
+      {error && <div className="errstate" style={{ marginBottom: 14 }}>{error}</div>}
+      <div className="formgrid">
+        <div className="fg full">
+          <label>Concepto</label>
+          <div style={{ fontWeight: 600 }}>{movimiento.concepto}</div>
+        </div>
+        <div className="fg">
+          <label>Monto (USD)</label>
+          <input type="number" min={0.01} step="0.01" value={monto} onChange={(e) => setMonto(e.target.value)} />
+        </div>
+        <div className="fg">
+          <label>Fecha de cierre</label>
+          <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+        </div>
+        <div className="fg full hint">
+          Este monto queda fijo como comisión de esta venta — no se vuelve a calcular a partir del precio.
+        </div>
+      </div>
+      <div className="btnrow">
+        <button className="btn-sm ghostred" style={{ marginRight: 'auto' }} disabled={deshacer.isPending} onClick={confirmarDeshacer}>
+          Deshacer venta
+        </button>
+        <button className="btn-ghost" onClick={onClose}>
+          Cancelar
+        </button>
+        <button className="btn-dark" disabled={guardar.isPending || !monto} onClick={() => guardar.mutate()}>
+          Guardar
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function RegenerarLiquidacionModal({
+  movimiento,
+  onClose,
+  onSaved,
+}: {
+  movimiento: Movimiento;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const propietarioId = movimiento.liquidacion!.propietarioId;
+  const mesStr = movimiento.liquidacion!.mes.slice(0, 7);
+  const [error, setError] = useState<string | null>(null);
+
+  const regenerar = useMutation({
+    mutationFn: () => api.post(`/liquidaciones/propietarios/${propietarioId}/${mesStr}`),
+    onSuccess: onSaved,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo recalcular la liquidación.'),
+  });
+
+  return (
+    <Modal open onClose={onClose} title="Liquidación a Propietario" width={420}>
+      {error && <div className="errstate" style={{ marginBottom: 14 }}>{error}</div>}
+      <div className="fg full">
+        <label>Concepto</label>
+        <div style={{ fontWeight: 600 }}>{movimiento.concepto}</div>
+      </div>
+      <div className="cfgnote" style={{ marginTop: 14 }}>
+        <i>△</i>
+        <span>
+          Este egreso no es un monto suelto: se calcula automáticamente a partir de lo cobrado, los gastos absorbidos y
+          los honorarios de ese mes para este propietario. Si corregiste algún cobro o gasto, recalculá la liquidación
+          para que este movimiento en Caja quede al día — no se edita un número a mano acá.
+        </span>
+      </div>
+      <div className="btnrow">
+        <button className="btn-ghost" onClick={onClose}>
+          Cerrar
+        </button>
+        <button className="btn-dark" disabled={regenerar.isPending} onClick={() => regenerar.mutate()}>
+          Recalcular liquidación
         </button>
       </div>
     </Modal>

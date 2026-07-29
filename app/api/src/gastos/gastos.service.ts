@@ -35,6 +35,16 @@ export class GastosService {
     });
   }
 
+  // Usado para editar un gasto desde Caja (§3.8): ahí solo se conoce el
+  // `gastoId` vía la relación inversa del movimiento, no el propiedadId, así
+  // que hace falta poder pedir un gasto suelto por id.
+  findOne(id: string) {
+    return this.prisma.gasto.findUniqueOrThrow({
+      where: { id },
+      include: { propiedad: true },
+    });
+  }
+
   // §3.2: alta manual (ficha de propiedad, Liquidaciones) — genera SIEMPRE
   // el egreso automático en Caja, a diferencia de los gastos que nacen de
   // una incidencia (ver crearDesdeIncidencia).

@@ -5,6 +5,7 @@ import { api, ApiError, BASE_URL } from '../api/client';
 import { Modal } from './Modal';
 import { formatMoney, formatUsd, formatDate, mesActualStr, mesLabel } from '../lib/format';
 import { honorariosLabel, type TipoHonorarios } from '../lib/honorarios';
+import { FotosPropiedad, type FotoPropiedadItem } from './FotosPropiedad';
 
 type Modalidad = 'ALQUILER' | 'VENTA';
 type IndiceAjuste = 'IPC' | 'ICL' | null;
@@ -52,6 +53,10 @@ interface PropiedadFicha {
   direccion: string;
   modalidad: Modalidad;
   tipo: string;
+  ambientes: number | null;
+  banos: number | null;
+  superficieM2: string | number | null;
+  fotos: FotoPropiedadItem[];
   montoAlquilerVigente: string | number | null;
   alquilerPublicado: boolean;
   honorariosTipo: TipoHonorarios;
@@ -87,6 +92,7 @@ interface Gasto {
   fecha: string;
   categoria: string;
   destino: 'PROPIETARIO' | 'INQUILINO' | 'INMOBILIARIA';
+  incidenciaId: string | null;
 }
 interface Incidencia {
   id: string;
@@ -171,9 +177,11 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
   const [error, setError] = useState<string | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
   const [subiendoDoc, setSubiendoDoc] = useState(false);
-  const [gastoModal, setGastoModal] = useState(false);
+  const [gastoModal, setGastoModal] = useState<'new' | Gasto | null>(null);
   const [facturaModal, setFacturaModal] = useState(false);
   const [reciboModal, setReciboModal] = useState(false);
+  const [datosModal, setDatosModal] = useState(false);
+  const [fotosModal, setFotosModal] = useState(false);
 
   const propiedad = useQuery({
     queryKey: ['propiedades', propiedadId],
@@ -212,6 +220,21 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
     qc.invalidateQueries({ queryKey: ['caja'] });
     qc.invalidateQueries({ queryKey: ['avisos'] });
     qc.invalidateQueries({ queryKey: ['renta-vigente', propiedadId] });
+  }
+
+  const eliminarGasto = useMutation({
+    mutationFn: (gastoId: string) => api.delete(`/gastos/${gastoId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['gastos', propiedadId] });
+      qc.invalidateQueries({ queryKey: ['caja'] });
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo eliminar el gasto.'),
+  });
+
+  function confirmarEliminarGasto(g: Gasto) {
+    if (window.confirm(`¿Eliminar el gasto "${g.descripcion}"? Se borra también el egreso correspondiente en Caja.`)) {
+      eliminarGasto.mutate(g.id);
+    }
   }
 
   const aplicarAumento = useMutation({
@@ -356,7 +379,13 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
               </div>
               {aumentoInminente && <span className="badge alerta">Alerta Aumento</span>}
               {vencido && <span className="badge vencido">Vencido</span>}
-              <button className="dclose" onClick={onClose} style={{ marginLeft: 'auto' }}>
+              <button className="btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setDatosModal(true)}>
+                ✎ Editar datos
+              </button>
+              <button className="btn-sm" onClick={() => setFotosModal(true)}>
+                🖼 Fotos ({p.fotos.length})
+              </button>
+              <button className="dclose" onClick={onClose}>
                 ✕
               </button>
             </div>
@@ -541,7 +570,7 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
                   <div className="dsec" style={{ marginTop: 22 }}>
                     <h5 style={{ display: 'flex', alignItems: 'center' }}>
                       GASTOS IMPUTADOS
-                      <button className="btn-sm" style={{ marginLeft: 'auto', padding: '4px 10px' }} onClick={() => setGastoModal(true)}>
+                      <button className="btn-sm" style={{ marginLeft: 'auto', padding: '4px 10px' }} onClick={() => setGastoModal('new')}>
                         + Cargar gasto
                       </button>
                     </h5>
@@ -557,7 +586,33 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
                                 <span className="gastotag">{DESTINO_LABEL[g.destino]}</span>
                               </span>
                             </span>
-                            <span style={{ color: 'var(--red)', whiteSpace: 'nowrap' }}>− {formatMoney(g.monto)}</span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
+                              <span style={{ color: 'var(--red)' }}>− {formatMoney(g.monto)}</span>
+                              {g.incidenciaId ? (
+                                <span style={{ fontSize: 10.5, color: 'var(--muted)' }} title="Generado al resolver una incidencia con costo — se edita desde Incidencias y Proveedores">
+                                  desde Incidencias
+                                </span>
+                              ) : (
+                                <>
+                                  <button
+                                    className="btn-sm"
+                                    style={{ padding: '2px 8px' }}
+                                    title="Editar gasto"
+                                    onClick={() => setGastoModal(g)}
+                                  >
+                                    ✎
+                                  </button>
+                                  <button
+                                    className="btn-sm ghostred"
+                                    style={{ padding: '2px 8px' }}
+                                    title="Eliminar gasto"
+                                    onClick={() => confirmarEliminarGasto(g)}
+                                  >
+                                    ✕
+                                  </button>
+                                </>
+                              )}
+                            </span>
                           </div>
                         ))
                       ) : (
@@ -733,9 +788,10 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
       {gastoModal && p && (
         <NuevoGastoModal
           propiedadId={p.id}
-          onClose={() => setGastoModal(false)}
+          gasto={gastoModal === 'new' ? null : gastoModal}
+          onClose={() => setGastoModal(null)}
           onSaved={() => {
-            setGastoModal(false);
+            setGastoModal(null);
             qc.invalidateQueries({ queryKey: ['gastos', propiedadId] });
             qc.invalidateQueries({ queryKey: ['caja'] });
           }}
@@ -752,45 +808,176 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
           onEmitido={() => qc.invalidateQueries({ queryKey: ['caja'] })}
         />
       )}
+      {datosModal && p && (
+        <EditarDatosGeneralesModal
+          propiedad={p}
+          onClose={() => setDatosModal(false)}
+          onSaved={() => {
+            setDatosModal(false);
+            qc.invalidateQueries({ queryKey: ['propiedades'] });
+          }}
+        />
+      )}
+      {fotosModal && p && (
+        <Modal open onClose={() => setFotosModal(false)} title={`Fotos — ${p.nombre}`} width={520}>
+          <FotosPropiedad
+            propiedadId={p.id}
+            fotos={p.fotos}
+            onChange={() => qc.invalidateQueries({ queryKey: ['propiedades', propiedadId] })}
+          />
+          <div className="btnrow">
+            <button className="btn-dark" onClick={() => setFotosModal(false)}>
+              Cerrar
+            </button>
+          </div>
+        </Modal>
+      )}
     </>
+  );
+}
+
+function EditarDatosGeneralesModal({
+  propiedad,
+  onClose,
+  onSaved,
+}: {
+  propiedad: PropiedadFicha;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [nombre, setNombre] = useState(propiedad.nombre);
+  const [direccion, setDireccion] = useState(propiedad.direccion);
+  const [tipo, setTipo] = useState(propiedad.tipo);
+  const [ambientes, setAmbientes] = useState(String(propiedad.ambientes ?? ''));
+  const [banos, setBanos] = useState(String(propiedad.banos ?? ''));
+  const [superficieM2, setSuperficieM2] = useState(String(propiedad.superficieM2 ?? ''));
+  const [error, setError] = useState<string | null>(null);
+
+  const guardar = useMutation({
+    mutationFn: () =>
+      api.patch(`/propiedades/${propiedad.id}`, {
+        nombre,
+        direccion,
+        tipo,
+        ambientes: ambientes ? Number(ambientes) : undefined,
+        banos: banos ? Number(banos) : undefined,
+        superficieM2: superficieM2 ? Number(superficieM2) : undefined,
+      }),
+    onSuccess: onSaved,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo guardar la propiedad.'),
+  });
+
+  return (
+    <Modal open onClose={onClose} title={`Editar Datos — ${propiedad.nombre}`} width={460}>
+      {error && <div className="errstate" style={{ marginBottom: 14 }}>{error}</div>}
+      <div className="formgrid">
+        <div className="fg full">
+          <label>Nombre</label>
+          <input value={nombre} onChange={(e) => setNombre(e.target.value)} />
+        </div>
+        <div className="fg full">
+          <label>Dirección</label>
+          <input value={direccion} onChange={(e) => setDireccion(e.target.value)} />
+        </div>
+        <div className="fg full">
+          <label>Tipo de propiedad</label>
+          <select value={tipo} onChange={(e) => setTipo(e.target.value)}>
+            {Object.entries(TIPO_LABEL).map(([v, l]) => (
+              <option key={v} value={v}>
+                {l}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="fg">
+          <label>Ambientes</label>
+          <input type="number" min={0} value={ambientes} onChange={(e) => setAmbientes(e.target.value)} placeholder="Opcional" />
+        </div>
+        <div className="fg">
+          <label>Baños</label>
+          <input type="number" min={0} value={banos} onChange={(e) => setBanos(e.target.value)} placeholder="Opcional" />
+        </div>
+        <div className="fg">
+          <label>Superficie (m²)</label>
+          <input type="number" min={0} step="0.01" value={superficieM2} onChange={(e) => setSuperficieM2(e.target.value)} placeholder="Opcional" />
+        </div>
+      </div>
+      <div className="cfgnote">
+        <i>△</i>
+        <span>Ambientes, baños y superficie son los datos que se muestran en la ficha pública de la landing.</span>
+      </div>
+      <div className="btnrow">
+        <button className="btn-ghost" onClick={onClose}>
+          Cancelar
+        </button>
+        <button className="btn-dark" disabled={guardar.isPending || !nombre.trim() || !direccion.trim()} onClick={() => guardar.mutate()}>
+          Guardar
+        </button>
+      </div>
+    </Modal>
   );
 }
 
 function NuevoGastoModal({
   propiedadId,
+  gasto,
   onClose,
   onSaved,
 }: {
   propiedadId: string;
+  gasto: Gasto | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [descripcion, setDescripcion] = useState('');
-  const [monto, setMonto] = useState('');
-  const [categoria, setCategoria] = useState('');
-  const [destino, setDestino] = useState<'PROPIETARIO' | 'INQUILINO'>('PROPIETARIO');
-  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
+  const esEdicion = !!gasto;
+  const [descripcion, setDescripcion] = useState(gasto?.descripcion ?? '');
+  const [monto, setMonto] = useState(gasto ? String(gasto.monto) : '');
+  const [categoria, setCategoria] = useState(gasto?.categoria ?? '');
+  const [destino, setDestino] = useState<'PROPIETARIO' | 'INQUILINO'>(
+    gasto?.destino === 'INQUILINO' ? 'INQUILINO' : 'PROPIETARIO',
+  );
+  const [fecha, setFecha] = useState(gasto ? gasto.fecha.slice(0, 10) : new Date().toISOString().slice(0, 10));
   const [error, setError] = useState<string | null>(null);
 
   const guardar = useMutation({
     mutationFn: () =>
-      api.post('/gastos', {
-        propiedadId,
-        mes: fecha.slice(0, 7),
-        descripcion,
-        monto: Number(monto),
-        fecha,
-        categoria,
-        destino,
-      }),
+      esEdicion
+        ? api.patch(`/gastos/${gasto!.id}`, {
+            descripcion,
+            monto: Number(monto),
+            fecha,
+            categoria,
+            destino,
+          })
+        : api.post('/gastos', {
+            propiedadId,
+            mes: fecha.slice(0, 7),
+            descripcion,
+            monto: Number(monto),
+            fecha,
+            categoria,
+            destino,
+          }),
     onSuccess: onSaved,
-    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo cargar el gasto.'),
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo guardar el gasto.'),
   });
+
+  const eliminar = useMutation({
+    mutationFn: () => api.delete(`/gastos/${gasto!.id}`),
+    onSuccess: onSaved,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo eliminar el gasto.'),
+  });
+
+  function confirmarEliminar() {
+    if (window.confirm('¿Eliminar este gasto? Se borra también el egreso correspondiente en Caja.')) {
+      eliminar.mutate();
+    }
+  }
 
   const puedeGuardar = descripcion.trim() && monto && categoria.trim();
 
   return (
-    <Modal open onClose={onClose} title="Cargar Gasto" width={460}>
+    <Modal open onClose={onClose} title={esEdicion ? 'Editar Gasto' : 'Cargar Gasto'} width={460}>
       {error && <div className="errstate" style={{ marginBottom: 14 }}>{error}</div>}
       <div className="formgrid">
         <div className="fg full">
@@ -818,6 +1005,16 @@ function NuevoGastoModal({
         </div>
       </div>
       <div className="btnrow">
+        {esEdicion && (
+          <button
+            className="btn-sm ghostred"
+            style={{ marginRight: 'auto' }}
+            disabled={eliminar.isPending}
+            onClick={confirmarEliminar}
+          >
+            Eliminar
+          </button>
+        )}
         <button className="btn-ghost" onClick={onClose}>
           Cancelar
         </button>
