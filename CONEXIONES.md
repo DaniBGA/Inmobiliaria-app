@@ -2549,6 +2549,56 @@ Las 3 restantes son más autocontenidas:
       "Por colocar"; editarlo a "Colocado" lo saca de esa cuenta. `tsc
       --noEmit` limpio en `app/api/` y `admin/` (2026-07-30).
 
+## Favicon de la landing y optimización de índices de base de datos
+
+Pedido explícito del usuario antes del deploy a Hostinger — dos cosas
+independientes:
+
+- [x] Favicon (ícono de pestaña del navegador) de la landing pública —
+      usa `LOGO PNG.-10` (el isotipo solo, mismo archivo que la marca de
+      agua de los comprobantes), copiado a `app/public/favicon.png` y
+      referenciado con `<link rel="icon">` en `app/index.html`. No existía
+      ningún favicon antes. Verificado: `GET /favicon.png` en el dev
+      server de la landing responde 200 con `image/png` (2026-07-30).
+- [x] Índices nuevos en Prisma — se revisó el schema completo (ya estaba
+      bastante indexado, con comentarios explicando cada `@@index`) contra
+      el código real de los servicios (no se inventó nada especulativo:
+      cada índice agregado corresponde a un `findMany`/`aggregate` real
+      encontrado por grep). Se encontraron dos huecos genuinos, los dos
+      con la misma forma: una consulta que filtra **solo por `mes`**,
+      mientras el único índice existente sobre esa tabla tenía otra
+      columna como líder (lo que hace que Postgres no pueda usarlo para
+      ese filtro):
+      1. `Liquidacion` — `AvisosService.liquidacionesListas()` (se corre
+         cada vez que se abre Avisos), `CajaService.kpisDelMes()` y
+         `ReportesService.resumenAnual()` (esta última **12 veces por
+         reporte**, una por mes del año) hacen `liquidacion.findMany({
+         where: { mes } })` sin `propietarioId` — el único índice
+         existente era el `@@unique([propietarioId, mes])`, inútil para
+         un filtro que no incluye `propietarioId`. Se agregó
+         `@@index([mes])`.
+      2. `Gasto` — los mismos dos servicios (`CajaService.kpisDelMes()`,
+         `ReportesService.resumenAnual()`) hacen
+         `gasto.aggregate({ where: { mes, destino: 'INMOBILIARIA' } })`
+         sin `propiedadId` — el único índice existente era
+         `[propiedadId, mes]`, mismo problema. Se agregó
+         `@@index([mes, destino])` (cubre el filtro exacto de esas dos
+         consultas, y de paso cualquier otro filtro futuro por solo mes).
+      Migración `20260730210413_optimizar_indices_mes` — puramente
+      aditiva (`CREATE INDEX`, dos líneas), sin ningún riesgo de pérdida
+      de datos ni downtime real a este volumen de datos. Confirmado con
+      `\di` en psql que ambos índices quedaron creados; `tsc --noEmit`
+      limpio y backend reiniciado sin errores.
+      **Deliberadamente NO se tocó nada más** — se revisaron también
+      `Cartel.tipoCartel` (filtrado en `count()`/`kpis()`) e
+      `InteresadoVenta.etapa` (filtrado en `kpis()`) como posibles
+      candidatos, pero esas tablas son chicas (carteles/interesados de una
+      sola inmobiliaria, decenas de filas) — un índice ahí no cambiaría
+      nada perceptible y agregar índices sin un motivo real solo suma
+      overhead de escritura, así que se dejaron como estaban, siguiendo
+      el pedido explícito de "si no se puede optimizar, no intentes nada
+      arriesgado" (2026-07-30).
+
 ## Cómo actualizar este archivo
 
 Cada vez que se implemente una conexión: marcarla `[x]`, agregar la fecha y

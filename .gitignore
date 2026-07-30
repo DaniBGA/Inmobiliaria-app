@@ -9,3 +9,5 @@ admin/node_modules/
 web/node_modules/
 app/api/node_modules/
 app/api/uploads/
+deploy/.env
+deploy/.env.deploy

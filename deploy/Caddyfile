@@ -1,0 +1,65 @@
+# Caddyfile de producción — SGM_AR
+#
+# Reemplazá "tudominio.com" por el dominio real en TODAS las apariciones
+# de este archivo antes de copiarlo a /etc/caddy/Caddyfile en el VPS.
+#
+# Un solo dominio, tres destinos (decisión tomada con el usuario: ruta
+# /api en vez de un subdominio aparte):
+#   tudominio.com/          -> landing pública (app/dist, estático)
+#   tudominio.com/admin/*   -> panel de administración (admin/dist, estático)
+#   tudominio.com/api/*     -> backend NestJS (proxy a 127.0.0.1:3000,
+#                              "handle_path" saca el prefijo /api antes de
+#                              reenviar, porque el backend no tiene ningún
+#                              prefijo global — sus rutas son planas
+#                              /propiedades, /public/.., etc.)
+#
+# Caddy gestiona HTTPS (Let's Encrypt) y el redirect http->https solo, sin
+# configuración extra, en cuanto el DNS del dominio apunte a este VPS.
+
+tudominio.com {
+	encode gzip zstd
+
+	# --- Backend (NestJS) ---
+	# /api/uploads/... también cae acá y llega al backend como /uploads/...
+	# (que es el prefijo real que sirve `useStaticAssets` en main.ts) —
+	# funciona porque handle_path saca /api antes de reenviar.
+	handle_path /api/* {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	# --- Panel de administración (SPA bajo /admin/) ---
+	# `/admin/*` no matchea `/admin` sin la barra final, así que sin este
+	# redirect esa URL caería en el bloque `handle` de abajo (la landing) en
+	# vez de mostrar el panel.
+	redir /admin /admin/ permanent
+
+	handle_path /admin/* {
+		root * /var/www/sgm/admin/dist
+		try_files {path} /index.html
+		file_server
+	}
+
+	# --- Landing pública (SPA en la raíz) ---
+	handle {
+		root * /var/www/sgm/app/dist
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+
+	log {
+		output file /var/log/caddy/sgm.log
+		format json
+	}
+}
+
+# Opcional: si también vas a usar "www.tudominio.com", descomentá esto para
+# que redirija a la versión sin www (recomendado, evita contenido duplicado).
+# www.tudominio.com {
+# 	redir https://tudominio.com{uri} permanent
+# }

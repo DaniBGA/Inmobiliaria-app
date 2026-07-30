@@ -347,7 +347,15 @@ model Gasto {
 
   createdAt DateTime @default(now())
 
+  // `propiedadId, mes` ya cubre `findParaMes()` (Facturas/Liquidaciones).
+  // `mes, destino` es para las agregaciones que filtran SOLO por mes (sin
+  // propiedad puntual) — `CajaService.kpisDelMes()` y
+  // `ReportesService.resumenAnual()` (esta última la corre 12 veces, una
+  // por mes del año) hacen `gasto.aggregate({ where: { mes, destino:
+  // 'INMOBILIARIA' } })`, y el índice de arriba no sirve para eso porque
+  // tiene `propiedadId` como columna líder.
   @@index([propiedadId, mes])
+  @@index([mes, destino])
   @@map("gastos")
 }
 
@@ -453,6 +461,12 @@ model Liquidacion {
 
   createdAt DateTime @default(now())
 
+  // El unique de abajo ya cubre búsquedas `propietarioId (+ mes)`, pero no
+  // ayuda a las que filtran SOLO por mes, sin propietario — que son reales:
+  // `AvisosService.liquidacionesListas()` (se corre cada vez que se abre
+  // Avisos), `CajaService.kpisDelMes()` y `ReportesService.resumenAnual()`
+  // (esta última 12 veces, una por mes del año).
+  @@index([mes])
   @@unique([propietarioId, mes])
   @@map("liquidaciones")
 }

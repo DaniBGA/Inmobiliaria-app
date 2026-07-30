@@ -1,0 +1,26 @@
+name: sgm-prod
+
+# Mismo servicio que app/docker-compose.yml (dev), con dos diferencias a
+# propósito para producción:
+# 1. El puerto de Postgres se publica solo en 127.0.0.1, no en 0.0.0.0 —
+#    el único que necesita hablarle es el backend Node en el mismo VPS, no
+#    hace falta (ni conviene) exponerlo a internet.
+# 2. La contraseña sale de una variable de entorno (POSTGRES_PASSWORD en el
+#    .env de este mismo directorio, ver deploy/env.postgres.example) en vez
+#    de estar hardcodeada como en dev.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sgm_postgres_prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sgm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD en deploy/.env}
+      POSTGRES_DB: sgm_ar
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - sgm_postgres_prod_data:/var/lib/postgresql/data
+
+volumes:
+  sgm_postgres_prod_data:
