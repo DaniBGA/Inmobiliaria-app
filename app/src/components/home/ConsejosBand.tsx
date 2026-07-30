@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchContactoInfo } from '../../api/configuracionPublica';
+import { useRevealOnScroll } from '../../hooks/useRevealOnScroll';
 
 const TIPS = [
   {
@@ -22,6 +23,7 @@ export function ConsejosBand() {
     queryFn: fetchContactoInfo,
     staleTime: 5 * 60_000,
   });
+  const { ref, visible } = useRevealOnScroll<HTMLDivElement>();
 
   return (
     <section className="section dark">
@@ -31,7 +33,7 @@ export function ConsejosBand() {
           Preguntas frecuentes
         </h2>
 
-        <div className="consejos-grid">
+        <div className={`consejos-grid reveal${visible ? ' visible' : ''}`} ref={ref}>
           {TIPS.map((t) => (
             <div className="consejo-card" key={t.titulo}>
               <h3>{t.titulo}</h3>

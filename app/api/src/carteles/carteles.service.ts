@@ -36,10 +36,9 @@ export class CartelesService {
     return this.prisma.cartel.create({
       data: {
         propiedadId: dto.propiedadId,
-        tipoCartel: dto.tipoCartel,
+        tipoCartel: dto.tipoCartel ?? EstadoCartel.COLOCADO,
         medida: dto.medida,
         fechaColocacion: dto.fechaColocacion ? new Date(dto.fechaColocacion) : new Date(),
-        estado: EstadoCartel.COLOCADO,
       },
     });
   }
@@ -52,17 +51,16 @@ export class CartelesService {
         medida: dto.medida,
         fechaColocacion: dto.fechaColocacion ? new Date(dto.fechaColocacion) : undefined,
         fechaRetiro: dto.fechaRetiro ? new Date(dto.fechaRetiro) : undefined,
-        estado: dto.estado,
       },
     });
   }
 
-  // Retirar el cartel: marca estado y fecha de retiro en un solo paso.
+  // Retirar el cartel: marca tipoCartel y fecha de retiro en un solo paso.
   retirar(id: string, fechaStr?: string) {
     return this.prisma.cartel.update({
       where: { id },
       data: {
-        estado: EstadoCartel.RETIRADO,
+        tipoCartel: EstadoCartel.RETIRADO,
         fechaRetiro: fechaStr ? new Date(fechaStr) : new Date(),
       },
     });
@@ -78,9 +76,9 @@ export class CartelesService {
   // las de venta.
   async kpis() {
     const [colocados, aPedido, retirados] = await Promise.all([
-      this.prisma.cartel.count({ where: { estado: EstadoCartel.COLOCADO } }),
-      this.prisma.cartel.count({ where: { estado: EstadoCartel.A_PEDIDO } }),
-      this.prisma.cartel.count({ where: { estado: EstadoCartel.RETIRADO } }),
+      this.prisma.cartel.count({ where: { tipoCartel: EstadoCartel.COLOCADO } }),
+      this.prisma.cartel.count({ where: { tipoCartel: EstadoCartel.A_PEDIDO } }),
+      this.prisma.cartel.count({ where: { tipoCartel: EstadoCartel.RETIRADO } }),
     ]);
 
     const propiedadesPublicadas = await this.prisma.propiedad.findMany({
@@ -90,7 +88,7 @@ export class CartelesService {
           { modalidad: 'ALQUILER', inquilino: null },
         ],
       },
-      include: { carteles: { where: { estado: { not: EstadoCartel.RETIRADO } } } },
+      include: { carteles: { where: { tipoCartel: { not: EstadoCartel.RETIRADO } } } },
     });
     const publicadasSinCartel = propiedadesPublicadas.filter((p) => p.carteles.length === 0).length;
 

@@ -136,7 +136,20 @@ export class PropiedadesService {
     return ultimo?.monto ?? null;
   }
 
-  // §3.1: próximo aumento = último aumento + frecuencia del contrato.
+  // §3.1: el precio se mantiene fijo durante los `frecuenciaAumentoMeses`
+  // meses posteriores al último aumento, y el aumento entra en vigencia el
+  // día 1 de un mes — nunca a mitad de mes. Si el último aumento no cayó
+  // justo el día 1 (lo normal: un contrato casi siempre arranca a mitad de
+  // mes), ese mes inicial es parcial y no cuenta como uno de los
+  // `frecuenciaAumentoMeses` completos — por eso hay que redondear hacia
+  // arriba un mes más. P. ej. contrato desde el 27/07 con frecuencia
+  // trimestral: julio es parcial, ago-sep-oct son los 3 meses completos al
+  // precio viejo, y el aumento entra el 01/11 (no el 01/10, que sería a
+  // mitad del 3er mes completo). Si el último aumento hubiese caído el
+  // 01/07 en cambio, los 3 meses completos son jul-ago-sep y el aumento
+  // entra el 01/10. Se calcula con componentes año/mes/día vía `Date.UTC`
+  // (nunca `setMonth` sobre la fecha original) para no depender del día del
+  // mes de origen ni sufrir su overflow en meses cortos.
   async proximoAumento(propiedadId: string) {
     const propiedad = await this.prisma.propiedad.findUniqueOrThrow({
       where: { id: propiedadId },
@@ -150,9 +163,10 @@ export class PropiedadesService {
     });
     if (!ultimo) return null;
 
-    const proxima = new Date(ultimo.fecha);
-    proxima.setMonth(proxima.getMonth() + propiedad.frecuenciaAumentoMeses);
-    return proxima;
+    const ultimaFecha = new Date(ultimo.fecha);
+    const mesParcial = ultimaFecha.getUTCDate() === 1 ? 0 : 1;
+    const mesesAAgregar = propiedad.frecuenciaAumentoMeses + mesParcial;
+    return new Date(Date.UTC(ultimaFecha.getUTCFullYear(), ultimaFecha.getUTCMonth() + mesesAAgregar, 1));
   }
 
   async registrarAumento(propiedadId: string, dto: RegistrarAumentoDto) {

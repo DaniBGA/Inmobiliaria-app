@@ -19,9 +19,9 @@ export class ClientesController {
     return this.clientesService.findAll(q, estado, tipoOperacion);
   }
 
-  @Get('kpis')
-  kpis() {
-    return this.clientesService.kpis();
+  @Get('stats-por-origen')
+  statsPorOrigen() {
+    return this.clientesService.statsPorOrigen();
   }
 
   @Get(':id')

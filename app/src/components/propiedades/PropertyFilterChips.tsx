@@ -11,12 +11,14 @@ const FILTROS: { label: string; tipo: TipoPropiedad | null }[] = [
 export function PropertyFilterChips({
   activo,
   onChange,
+  onLight,
 }: {
   activo: TipoPropiedad | null;
   onChange: (tipo: TipoPropiedad | null) => void;
+  onLight?: boolean;
 }) {
   return (
-    <div className="filter-chips">
+    <div className={`filter-chips${onLight ? ' on-light' : ''}`}>
       {FILTROS.map((f) => (
         <button
           key={f.label}

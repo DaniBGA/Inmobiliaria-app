@@ -42,4 +42,11 @@ export class CreateIncidenciaDto {
   @ValidateNested()
   @Type(() => ProveedorNuevoDto)
   proveedorNuevo?: ProveedorNuevoDto;
+
+  // Fecha de visita del proveedor (§2.7) cuando ya se asigna proveedor al
+  // crear la incidencia; si no se manda, se precarga hoy (igual que en
+  // asignarProveedor).
+  @IsOptional()
+  @IsDateString()
+  fechaEjecucion?: string;
 }

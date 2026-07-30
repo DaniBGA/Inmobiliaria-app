@@ -138,6 +138,20 @@ enum PunitorioTipo {
   MONTO_FIJO
 }
 
+// Servicios trasladables al inquilino que puede tener habilitados una
+// propiedad (§3.5) — determina qué ítems de FacturasService::itemsPredeterminados()
+// se ofrecen al emitir la factura del mes (antes eran 5 líneas fijas para
+// todas las propiedades, aunque no tuvieran, por ejemplo, expensas).
+// Default = las 5 para no cambiar el comportamiento de las propiedades ya
+// cargadas.
+enum ServicioFacturable {
+  EXPENSAS
+  USINA
+  CAMUZZI
+  OBRAS_SANITARIAS
+  RETRIBUTIVAS
+}
+
 model Propietario {
   id        String   @id @default(uuid())
   nombre    String
@@ -163,9 +177,18 @@ model Propiedad {
 
   // Specs para la ficha pública (landing page) — opcionales, no hay
   // backfill de las propiedades ya cargadas.
-  ambientes    Int?
-  banos        Int?
-  superficieM2 Decimal? @db.Decimal(8, 2)
+  ambientes          Int?
+  dormitorios        Int?
+  banos              Int?
+  cochera            Boolean  @default(false)
+  superficieM2       Decimal? @db.Decimal(8, 2)
+  superficieCubierta Decimal? @db.Decimal(8, 2)
+  descripcion        String?
+
+  // Qué ítems de servicios se ofrecen al emitir la factura del mes (ver
+  // enum ServicioFacturable) — no incluye "Alquiler" (siempre presente en
+  // ALQUILER) ni "Deuda arrastrada" (siempre calculada, no es un servicio).
+  serviciosHabilitados ServicioFacturable[] @default([EXPENSAS, USINA, CAMUZZI, OBRAS_SANITARIAS, RETRIBUTIVAS])
 
   // Control de publicación en la landing para ALQUILER — equivalente a
   // `Venta.publicada`, pero como campo propio acá porque el alquiler no
@@ -449,7 +472,8 @@ model LiquidacionPropiedad {
   propiedadId String
   propiedad   Propiedad @relation(fields: [propiedadId], references: [id], onDelete: Restrict)
 
-  items LiquidacionItem[]
+  items  LiquidacionItem[]
+  gastos LiquidacionGasto[]
 
   @@index([liquidacionId])
   @@index([propiedadId])
@@ -469,6 +493,25 @@ model LiquidacionItem {
 
   @@index([liquidacionPropiedadId])
   @@map("liquidacion_items")
+}
+
+// Desglose de "gastos absorbidos" (§3.4) — antes solo se guardaba el total
+// en `LiquidacionPropiedad.gastosAbsorbidos`; se agrega el detalle línea por
+// línea (normalmente uno por Incidencia resuelta con costo a cargo del
+// propietario, `descripcion` = título de la incidencia) para poder mostrar
+// cuál incidencia específica se absorbió, no solo un monto genérico.
+model LiquidacionGasto {
+  id          String  @id @default(uuid())
+  descripcion String
+  monto       Decimal @db.Decimal(14, 2)
+
+  liquidacionPropiedadId String
+  liquidacionPropiedad   LiquidacionPropiedad @relation(fields: [liquidacionPropiedadId], references: [id], onDelete: Cascade)
+
+  orden Int @default(0)
+
+  @@index([liquidacionPropiedadId])
+  @@map("liquidacion_gastos")
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -561,11 +604,10 @@ enum EstadoCartel {
 
 model Cartel {
   id              String       @id @default(uuid())
-  tipoCartel      String
+  tipoCartel      EstadoCartel @default(A_PEDIDO)
   medida          String?
   fechaColocacion DateTime?
   fechaRetiro     DateTime?
-  estado          EstadoCartel @default(A_PEDIDO)
 
   propiedadId String
   propiedad   Propiedad @relation(fields: [propiedadId], references: [id], onDelete: Cascade)
@@ -707,6 +749,16 @@ enum EstadoCliente {
   CERRADO
 }
 
+// Por dónde llegó el cliente — de dónde se contacta más, para el gráfico de
+// torta de §2.6.
+enum OrigenCliente {
+  INSTAGRAM
+  PAGINA_WEB
+  EN_PERSONA
+  FACEBOOK
+  CONTACTOS
+}
+
 model Cliente {
   id       String  @id @default(uuid())
   nombre   String
@@ -720,8 +772,8 @@ model Cliente {
   zona                  ZonaCliente?
   detalle               String?
 
-  estado                         EstadoCliente @default(SIN_CONTACTAR)
-  origen                         String?
+  estado                         EstadoCliente  @default(SIN_CONTACTAR)
+  origen                         OrigenCliente?
   visitaOtraInmobiliariaConQuien String?
   notas                          String?
 
@@ -758,6 +810,7 @@ enum TipoEvento {
   TASACION
   LLAMADO
   TAREA
+  OTRO
 }
 
 model EventoAgenda {

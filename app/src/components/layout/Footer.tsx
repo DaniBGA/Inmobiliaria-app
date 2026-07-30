@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchContactoInfo } from '../../api/configuracionPublica';
+import { waLink } from '../../lib/format';
 import logo from '../../logos/LOGO PNG.-02.png';
 
 export function Footer() {
@@ -20,11 +21,23 @@ export function Footer() {
             Más de una década acompañando a familias e inversores de Tandil en la compra, venta y alquiler de
             propiedades.
           </p>
-          {c?.instagramUrl && (
-            <a href={c.instagramUrl} target="_blank" rel="noopener noreferrer" className="footer-social">
-              Instagram
-            </a>
-          )}
+          <div className="footer-social-row">
+            {c?.instagramUrl && (
+              <a href={c.instagramUrl} target="_blank" rel="noopener noreferrer" className="footer-social">
+                Instagram
+              </a>
+            )}
+            {c?.whatsapp && (
+              <a
+                href={waLink(c.whatsapp, 'Hola! Quiero más información sobre sus propiedades.')}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="footer-social"
+              >
+                WhatsApp
+              </a>
+            )}
+          </div>
         </div>
 
         <div className="footer-col">
@@ -44,7 +57,8 @@ export function Footer() {
         </div>
       </div>
       <div className="container footer-bottom">
-        <span>© {anio} Facundo Paris Propiedades</span>
+        <span>© {anio} Facundo Paris Propiedades. Todos los derechos reservados.</span>
+        <span>Tandil, Buenos Aires</span>
       </div>
     </footer>
   );

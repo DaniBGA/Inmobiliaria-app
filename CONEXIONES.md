@@ -26,8 +26,27 @@ Se actualiza a medida que se implementa cada sección. Convención:
 
 ## 3.1 El flujo central del alquiler
 
-- [x] Contrato → próximo aumento = último aumento + frecuencia —
-      `api/src/propiedades/propiedades.service.ts::proximoAumento()` (2026-07-22)
+- [x] Contrato → próximo aumento = día 1 del mes en que corresponde el
+      próximo aumento, contando solo meses **completos** al precio vigente —
+      `api/src/propiedades/propiedades.service.ts::proximoAumento()`
+      (2026-07-22; **corregido dos veces el 2026-07-30**:
+      1) la versión original hacía `ultimo.fecha.setMonth(+frecuencia)`,
+      que conservaba el día-de-mes original en vez de normalizar a "01" y
+      además sufría overflow en meses cortos (31-ene + 1 mes daba 3-mar).
+      2) la primera corrección (`Date.UTC(año, mesUltimo + frecuencia, 1)`)
+      seguía mal si el contrato/último aumento no arrancaba el día 1: un
+      contrato desde el 27/07 con frecuencia trimestral daba 01/10, pero
+      julio es un mes *parcial* (solo del 27 al 31) y no cuenta como uno
+      de los 3 meses completos al precio viejo — los 3 meses completos son
+      ago-sep-oct, y el aumento recién entra en vigencia el 01/11. Caso
+      real reportado por el usuario desde la ficha de un alquiler.
+      Fórmula final: si `ultimo.fecha` no cae el día 1, se suma un mes
+      extra antes de tomar el día 1 (`mesesAAgregar = frecuencia + (dia===1
+      ? 0 : 1)`). Verificado con 4 casos vía API: 27-jul trimestral →
+      01-nov (caso real del usuario), 01-ene trimestral (día 1 exacto) →
+      01-abr, 31-ene cuatrimestral → 01-jun, 15-jul mensual → 01-sep.
+      Avisos y Agenda reusan esta misma función, así que heredan la
+      corrección sin cambios propios.)
 - [x] Próximo aumento → evento en Agenda (automático, no persistido) —
       `api/src/agenda/agenda.service.ts::eventosDelMes()` (2026-07-22,
       probado: propiedad con aumento el 2026-07-28 apareció como evento
@@ -164,6 +183,19 @@ Se actualiza a medida que se implementa cada sección. Convención:
       boceto (que sí permitía cargar un costo estimado desde la apertura),
       no un bug del frontend — si se quiere el KPI con datos reales hay que
       agregar `costo` a `CreateIncidenciaDto`/`UpdateIncidenciaDto`.
+- [x] "Nueva incidencia" con proveedor ya asignado desde el alta → también
+      pide la fecha de visita ahí mismo (antes solo se podía cargar al
+      asignar/reasignar proveedor por separado, vía `AsignarProveedorModal`)
+      — `CreateIncidenciaDto.fechaEjecucion` (opcional, `@IsDateString`),
+      `IncidenciasService.crear()` usa `dto.fechaEjecucion ?? hoy` en vez de
+      siempre hoy cuando `proveedorId` está presente; en
+      `IncidenciasPage.tsx`, el campo "Fecha de visita / ejecución" del
+      modal de alta aparece condicionalmente en cuanto se elige un proveedor
+      (existente o nuevo), igual que en `AsignarProveedorModal`. Como
+      `AgendaService.eventosDelMes()` ya leía `fechaEjecucion` de cualquier
+      incidencia EN_CURSO para el evento automático "Ejecución agendada",
+      esta fecha cargada en el alta aparece sola en Agenda sin tocar nada
+      del lado de Agenda (2026-07-30).
 
 ## 3.4 Liquidación al propietario
 
@@ -204,6 +236,65 @@ Se actualiza a medida que se implementa cada sección. Convención:
       (activo/alerta/vencido/porvencer) depende de días de alerta que la API
       todavía no expone como estado calculado.
 
+- [x] **2026-07-30, pedido del usuario: liquidación editable antes de emitir
+      + "gastos absorbidos" itemizado por incidencia.** Antes, `generar()`
+      calculaba y persistía todo en un solo paso (auto-disparado al abrir el
+      modal, sin ningún ítem tocable), y "gastos absorbidos" era un único
+      Decimal sin desglose — la ficha nunca decía CUÁL incidencia se había
+      absorbido, solo un monto suelto.
+      - **Editable**: `LiquidacionesService` se separó en
+        `calcularDetalle()` (privado, computa todo — cobrado de la factura
+        del mes o predeterminados, gastos, honorarios — acepta un
+        `overridePorPropiedad` opcional), `previsualizar()` (lo llama sin
+        override, no persiste nada — nuevo `GET
+        /liquidaciones/propietarios/:id/:mes/preview`, mismo rol que
+        `itemsPredeterminados()` para Facturas) y `generar()` (acepta
+        `detalle?: { propiedadId, items }[]` opcional en el body — si se
+        manda, esos ítems reemplazan a los de la factura/predeterminados
+        solo para el cálculo de `cobradoTotal` y de la base de honorarios;
+        si no se manda, el comportamiento es idéntico al de antes).
+        `PropietariosPage.tsx::LiquidacionModal` ahora hace GET al
+        `/preview` al abrir (sin persistir), muestra el lado "Cobrado" de
+        cada propiedad como lista editable (`+ Agregar item`, cambiar
+        descripción/monto, input "Liq" numérico igual al de Facturas —
+        mismo campo `numeroLiquidacion`, mismo filtro `.replace(/\D/g,
+        '')`) y recalcula honorarios/neto en vivo con la misma fórmula que
+        el backend (`porcentajeHonorarios` resuelto viaja en la respuesta
+        del preview solo para esto, no se persiste). Al tocar "Emitir
+        liquidación" recién ahí se llama `POST .../:mes` con el `detalle`
+        editado. **A propósito no se hizo editable**: "Gastos absorbidos"
+        y los honorarios en sí — siguen saliendo siempre de
+        Incidencias/Gastos reales y del % configurado en la propiedad
+        (decisión explícita del usuario al elegir el alcance, para no
+        desincronizar la liquidación de esos módulos).
+      - **Itemizado por incidencia**: se agregó el modelo `LiquidacionGasto`
+        (mismo patrón que `LiquidacionItem`, migración puramente aditiva
+        `20260730082321_liquidacion_gastos_detalle`) que guarda cada gasto
+        con destino PROPIETARIO de ese mes con su propia `descripcion` (que
+        ya es el título de la incidencia que lo originó —
+        `incidencias.service.ts::resolver()` crea el Gasto con
+        `descripcion: incidencia.titulo`) y `monto`, en vez de solo la suma.
+        `PropietariosPage.tsx` reemplazó la línea genérica "↳ Gastos
+        absorbidos" por una línea por cada gasto real (`↳ {descripcion}`),
+        tanto en la vista previa editable como en la liquidación ya
+        emitida.
+      - Migración de schema previa relacionada: se hizo con
+        `Cartel.tipoCartel` primero (bugfix anterior de esta misma sesión,
+        no relacionado a esta entrada) — mencionado acá solo porque ambas
+        requirieron parar el backend (`start:dev`) antes de correr
+        `prisma migrate dev`/`generate` (el motor de Prisma en Windows
+        bloquea su propio `.dll` mientras el proceso está corriendo).
+      Probado con Playwright de punta a punta con datos de prueba (`TEST
+      Propietario Liq` / `TEST Depto Liquidacion`, una incidencia real
+      resuelta con costo a cargo del propietario): la vista previa muestra
+      "TEST Reparación de bomba de agua" en vez de "Gastos absorbidos"
+      genérico; editar Alquiler a 350000 y agregar un ítem manual de 5000
+      con Liq N° 99 actualiza el total en vivo a $289.000 (350000 + 5000 −
+      45000 de gasto − 21000 de honorarios = 289000, verificado);
+      "Emitir liquidación" persiste exactamente esos valores y los
+      muestra en la vista final. `tsc --noEmit` limpio en `app/api/` y
+      `admin/`. Datos de prueba limpiados al terminar.
+
 ## 3.5 Factura y recibo al inquilino
 
 - [x] Factura se prellena con ítems predeterminados en este orden: Alquiler
@@ -212,9 +303,177 @@ Se actualiza a medida que se implementa cada sección. Convención:
       + "Deuda arrastrada" si corresponde —
       `api/src/facturacion/facturas.service.ts::itemsPredeterminados()`
       (2026-07-22, probado: incluyó correctamente Alquiler 100000 y un gasto
-      trasladado de 8000). Falta: número de liquidación como campo propio de
-      Usina/Camuzzi ya modelado en `FacturaItem.numeroLiquidacion`, falta
-      probarlo desde el frontend.
+      trasladado de 8000). ~~Falta: número de liquidación como campo propio
+      de Usina/Camuzzi ya modelado en `FacturaItem.numeroLiquidacion`, falta
+      probarlo desde el frontend.~~ **Resuelto 2026-07-30**: pedido
+      explícito del usuario — se agregó un input "Liq" (numérico, filtra
+      cualquier caracter no dígito con `.replace(/\D/g, '')`) al lado del
+      monto de **cada** ítem de la factura en `FacturaModal`
+      (`PropiedadFichaDrawer.tsx`), no solo Usina/Camuzzi — el campo ya
+      existía en el modelo para cualquier ítem, así que no tenía sentido
+      limitar la UI a dos casos. Se guarda en `FacturaItem.numeroLiquidacion`
+      al emitir (el DTO y `emitir()` ya lo aceptaban desde antes, solo
+      faltaba la UI) y se muestra en la vista de factura ya emitida como
+      "· Liq N° X" junto a la descripción. No se agregó carry-forward de
+      este campo entre meses (a diferencia del monto) porque el número de
+      liquidación de un servicio cambia mes a mes — cargarlo de nuevo cada
+      vez es lo esperado.
+      Probado con Playwright sobre una propiedad real (`asdawdawd`):
+      aparecen 6 inputs "Liq", uno por ítem; escribir "AB1234cd" en el de
+      Expensas queda filtrado a "1234"; al emitir, la factura muestra
+      "Expensas del mes · Liq N° 1234". **Nota de higiene de datos**: este
+      test emitió una factura real para el mes en curso sobre una
+      propiedad que no es de prueba (nombre `asdawdawd`, no tiene prefijo
+      `TEST`) — se la volvió a emitir de inmediato con los mismos montos
+      pero sin el "1234" de prueba para no dejar ese residuo, pero el
+      número de factura avanzó (de 32 a 33) y si había una factura previa
+      real de julio para esa propiedad, sus montos no se pudieron
+      recuperar (no se guardó copia antes de sobreescribirla). Avisar al
+      usuario.
+      **Corregido 2026-07-30**: el ítem "Alquiler" (y, por la misma causa,
+      el "esperado" de Cobros/Deuda en `cobros.service.ts`) daba 0/null
+      cada vez que se facturaba el MISMO mes en que arrancó el contrato con
+      un día distinto al 1 (lo normal) — `rentaVigente()` comparaba
+      `historialAumento.fecha <= mesStringAFecha(mes)` y `mesStringAFecha`
+      siempre da el día 1, así que un contrato iniciado, p. ej., el 27
+      quedaba "después" del punto de referencia del mes y no se encontraba
+      ningún alquiler vigente. Se agregó `finDeMes()` en
+      `api/src/common/fecha.util.ts` y se lo usa como referencia en vez del
+      día 1 en `itemsPredeterminados()`, `resumenMes()`, `deudaAcumulada()`
+      y `mesesPendientes()` — así un alquiler o aumento cargado cualquier
+      día del mes cuenta para todo ese mes. Verificado por API: propiedad
+      con contrato iniciado "hoy" (día 30) → Alquiler = 250000 (antes daba
+      0) en el mes actual, y el mes siguiente arrastra correctamente los
+      montos de servicios de la factura anterior.
+- [x] Membrete de la inmobiliaria en la factura impresa/PDF — pedido
+      explícito del usuario, que adjuntó una hoja membretada real de
+      "Facundo París Propiedades" como referencia exacta a calcar. Se
+      agregó markup nuevo dentro del bloque `F && (...)` (factura ya
+      emitida) de `FacturaModal` (`PropiedadFichaDrawer.tsx`), visible
+      **solo al imprimir** (clase `printonly`, `display:none` en pantalla,
+      reabierta dentro de `@media print` en `global.css`) para no ensuciar
+      la vista en pantalla del modal:
+      - Encabezado (`.comp-membrete`): logo completo (`LOGO PNG.-02`,
+        wordmark + isotipo) + dirección y contacto de la inmobiliaria,
+        separado por una regla horizontal — igual que la hoja de
+        referencia.
+      - Marca de agua (`.comp-marcaagua`): el isotipo solo (`LOGO
+        PNG.-10`), `opacity:.05`, tamaño grande, posicionado detrás del
+        contenido (`z-index:0` vs. `z-index:1` en membrete/cuerpo/pie).
+      - Matrícula: franja de texto vertical fija sobre el margen derecho
+        de la hoja (`writing-mode:vertical-rl`), tomada de
+        `Configuracion.publicoMatricula` (mismo campo que ya alimentaba la
+        landing page, reutilizado acá — es el mismo dato real en ambos
+        lados, no tenía sentido duplicarlo).
+      - Pie (`.comp-pie`): logo chico + dirección centrada + contacto,
+        con una regla horizontal arriba, igual disposición que la hoja de
+        referencia.
+      Los dos logos se copiaron de `app/src/logos/` (donde viven para la
+      landing) a `admin/src/images/logo-comprobante.png` y
+      `logo-marca-agua.png` — son proyectos Vite separados, sin resolución
+      de módulos cruzada entre ellos.
+      Los datos de encabezado/pie salen de `Configuracion.empresaNombre/
+      empresaDireccion/empresaContacto` — campos que ya existían
+      ("encabezan todos los comprobantes que se imprimen", comentario
+      propio del schema) pero estaban vacíos en la base real; se
+      completaron con los datos reales de la hoja membretada que mandó el
+      usuario (dirección, los dos teléfonos + "Administraciones", email) vía
+      una actualización directa en la fila singleton de `Configuracion`,
+      editable después desde Configuración → "DATOS FISCALES" como
+      cualquier otro dato de la empresa.
+      **Nota de implementación de CSS**: `.printonly{display:none}` tiene
+      que declararse ANTES del bloque `@media print` en el archivo — a
+      igual especificidad, en cascada gana la regla que aparece después en
+      el archivo, y `@media print{ .printonly{display:block} }` necesita
+      ser esa última regla para poder reabrir el elemento al imprimir sin
+      que la versión "siempre oculto" la vuelva a tapar.
+      **Extendido el mismo día (2026-07-30, pedido de seguimiento)**: el
+      "alcance: solo Factura" de arriba quedó corto — el usuario pidió el
+      mismo membrete también para la Liquidación de Propietarios. Como ya
+      había dos lugares reales usándolo, se sacó el membrete de
+      `FacturaModal` a un componente compartido nuevo,
+      `admin/src/components/ComprobanteImpreso.tsx` (`<ComprobanteImpreso
+      cfg={...}>{contenido facturado}</ComprobanteImpreso>`, con
+      encabezado/marca de agua/matrícula/pie adentro), y `LiquidacionModal`
+      (`PropietariosPage.tsx`) ahora lo envuelve igual que Factura — mismo
+      `useQuery(['configuracion'])` agregado ahí (antes esa página no
+      consultaba Configuración para nada). Recibo sigue sin membrete, no
+      pedido todavía.
+      También en el mismo pedido: la marca de agua se agrandó bastante
+      (`width:320px`→`600px`) y pasó de `position:absolute` (dentro del
+      flujo de `.comprobante`) a `position:fixed` centrada verticalmente
+      (`top:50%;transform:translateY(-50%)`) — mismo criterio que ya usaba
+      la matrícula y ahora también el pie, para que quede centrada en la
+      hoja sin importar cuánto contenido tenga el comprobante arriba.
+- [x] Botón de WhatsApp junto a "Imprimir" en Factura y Liquidación —
+      mismo pedido de seguimiento, implementado en dos pasadas:
+      1. **Primera versión (corregida el mismo día)**: mandaba solo un
+         mensaje de texto prearmado vía `https://wa.me/<teléfono>?text=...`
+         con el detalle completo del comprobante. El usuario aclaró que
+         eso no era lo que pedía — quería el **PDF real** adjunto, no un
+         resumen en texto.
+      2. **Corrección**: WhatsApp click-to-chat (`wa.me`) no soporta
+         adjuntar archivos de ningún modo — esa es una limitación real del
+         protocolo, no algo que faltara conectar. Mandar el PDF 100%
+         automático requeriría dar de alta WhatsApp Business API con Meta
+         (verificación de número, plantillas aprobadas, costo por
+         mensaje) — un proyecto de integración aparte. Se le preguntó al
+         usuario cómo prefería resolverlo con lo que hay disponible ahora
+         y eligió: **generar el PDF real, descargarlo automáticamente, y
+         abrir WhatsApp con el chat correcto ya abierto** para adjuntarlo
+         a mano (un paso manual, pero sin cuentas ni costos nuevos).
+      Implementado con `jspdf` + `html2canvas` (dependencias nuevas,
+      `admin/package.json`) en `admin/src/lib/pdfComprobante.ts::
+      descargarPdfComprobante(nodo, nombreArchivo)`: clona el nodo
+      `.comprobante` (el mismo que arma `<ComprobanteImpreso>` para
+      `@media print`) fuera de pantalla, fuerza visible SOLO en el clon el
+      membrete/marca de agua/matrícula/pie (normalmente `display:none`
+      fuera de impresión) y convierte sus `position:fixed` (pensados para
+      pegarse al borde de la hoja física real al imprimir) a `absolute`
+      relativo a `.comprobante` — tiene sentido distinto capturar un nodo
+      suelto con html2canvas que imprimir una página real. Rasteriza con
+      html2canvas, corta en páginas A4 con jsPDF si el contenido es largo,
+      y dispara la descarga (`pdf.save(...)`). `ComprobanteImpreso` ahora
+      expone su nodo raíz vía `forwardRef` para que ambos modales puedan
+      agarrarlo. El botón (`onClick` async) muestra "Generando PDF…"
+      mientras rasteriza, y al terminar abre `wa.me` con un texto corto
+      pidiendo adjuntar el PDF ya descargado (ya no manda el desglose
+      completo en texto — ahora vive en el PDF).
+      El botón sigue siendo condicional — solo aparece si el inquilino
+      (Factura) o el propietario (Liquidación) tienen `telefono` cargado,
+      igual criterio que el botón de WhatsApp de Proveedores.
+      **Dato real**: en la base de producción, ningún propietario tiene
+      `telefono` cargado todavía (2 inquilinos sí: "Juan alpaca" y "luis
+      tolosa") — el botón de Liquidación no le va a aparecer al usuario
+      hasta que cargue teléfonos de propietarios; no es un bug.
+      **Dos bugs reales encontrados y corregidos al verificar con
+      Playwright (no en la primera pasada de código, en la prueba real):**
+      1. El PDF pesaba **10-11 MB** cada uno — `html2canvas` a `scale:2` +
+         `canvas.toDataURL('image/png')` (sin pérdida) sobre una página con
+         texto y degradados no comprime bien. Se bajó a `scale:1.5` +
+         `image/jpeg` calidad `.92` (fondo opaco vía
+         `backgroundColor:'#ffffff'`, JPEG no soporta transparencia) →
+         **~118 KB**, sin pérdida de nitidez visible en el texto.
+      2. El logo del membrete y del pie (`.comp-logo`/`.comp-pielogo`) se
+         renderizaban a su tamaño nativo (1088×414px), desbordando toda la
+         página — su tamaño (`height:52px`/`26px`) vivía solo dentro de
+         `@media print`, que nunca se aplica al clon fuera de pantalla que
+         captura `html2canvas`. Se agregó el mismo ajuste explícito en
+         `descargarPdfComprobante()` que ya se hacía para
+         membrete/pie/marca de agua/matrícula. Verificado de nuevo tras el
+         fix: logos correctamente chicos, 63-118 KB según el comprobante.
+      Nota cosmética menor detectada en la última verificación: el texto
+      vertical de la matrícula queda levemente pegado al borde derecho de
+      la página en el PDF (no en la impresión real vía navegador) — no se
+      tocó, es un detalle menor y no afecta la legibilidad del resto.
+- [x] Editar Datos (ficha de propiedad) incluye los campos nuevos de
+      dormitorios, cochera, superficie cubierta y descripción —
+      `admin/src/components/PropiedadFichaDrawer.tsx::EditarDatosGeneralesModal`
+      (2026-07-30; antes solo tenía ambientes/baños/superficie total, así
+      que una propiedad cargada con estos datos nuevos en "Agregar
+      Propiedad" no tenía forma de editarlos después). Probado con
+      Playwright: los 4 campos aparecen y quedan precargados con los
+      valores reales de la propiedad.
 - [x] Ítems editables y eliminables antes de emitir — `EmitirFacturaDto.items`
       acepta el array editado; si se omite, usa los predeterminados (2026-07-22)
 - [x] Al emitir, ítems quedan guardados en `FacturaItem` (reemplaza factura
@@ -299,6 +558,61 @@ Se actualiza a medida que se implementa cada sección. Convención:
       `EN_SEGUIMIENTO`, `CERRADO`) — el frontend sigue al backend, no al
       boceto, en este punto.
 
+- [x] **2026-07-30, pedido del usuario: propietario nuevo → también Cliente,
+      y "Origen" pasa de texto libre a gráfico de torta.**
+      - **`Cliente.origen` es ahora un enum fijo `OrigenCliente`**
+        (`INSTAGRAM`, `PAGINA_WEB`, `EN_PERSONA`, `FACEBOOK`, `CONTACTOS`),
+        antes `String?` de texto libre — migración
+        `20260730084820_cliente_origen_enum` mapea los valores libres reales
+        que había en la base ("Portal web" → `PAGINA_WEB`) en vez de
+        perderlos. De paso se encontró y corrigió `public.controller.ts`
+        (el alta de Cliente desde el formulario de contacto de la landing
+        pública) que mandaba `origen: 'Landing web'` como string suelto —
+        ahora manda `OrigenCliente.PAGINA_WEB` (la landing **es** la página
+        web de la inmobiliaria, mismo balde).
+      - **`GET /clientes/stats-por-origen`** (reemplaza a `GET
+        /clientes/kpis`, que se eliminó por completo — sin otros usos)
+        devuelve las 5 categorías siempre, incluso en 0, para que el
+        gráfico y su leyenda no cambien de forma según los datos
+        (`ClientesService.statsPorOrigen()`, `groupBy` sobre `origen`).
+      - **`ClientesPage.tsx`**: los 4 recuadros KPI (Total/Buscan
+        alquilar/Buscan comprar/Sin contactar) se reemplazaron por un
+        panel "ORIGEN DE LOS CLIENTES" con un gráfico de torta nuevo
+        (`admin/src/components/charts/MultiDonut.tsx` — generalización de
+        `MiniDonut.tsx` de 2 a N porciones, misma técnica de
+        `stroke-dasharray`/`stroke-dashoffset` acumulado) + leyenda con el
+        conteo real de cada categoría. El selector "Origen" del modal de
+        alta/edición de cliente pasó de `<input>` libre a `<select>` con
+        las 5 opciones.
+      - **`AgregarPropiedadPage.tsx`**: al cargar un propietario **nuevo**
+        (no uno ya existente elegido de la lista), ahora también se crea un
+        `Cliente` (`tipoOperacion: VENDER` → aparece en Clientes con el
+        badge "PROPIETARIO", `estado: EN_SEGUIMIENTO` — no
+        `SIN_CONTACTAR`, porque ya tiene una relación activa con la
+        inmobiliaria, a diferencia de un lead frío). Se agregó un select
+        "Origen del propietario nuevo" (mismas 5 opciones) que solo
+        aparece cuando se está tipeando un nombre nuevo, y pasó a ser
+        **obligatorio** en ese caso — sin elegir origen, "Guardar
+        propiedad" queda deshabilitado — para que ningún cliente nuevo
+        entre sin poder clasificarse en el gráfico.
+      Probado con Playwright de punta a punta: el gráfico muestra
+      correctamente los 2 clientes reales existentes (migrados a "Página
+      web"); crear una propiedad con propietario nuevo "TEST Propietario
+      Origen E2E" + origen "Facebook" → el botón de guardar queda
+      deshabilitado hasta elegir origen → al guardar, aparece un Cliente
+      nuevo con `tipoOperacion: VENDER`, `estado: EN_SEGUIMIENTO`,
+      `origen: FACEBOOK`, y `stats-por-origen` refleja el conteo
+      actualizado de inmediato. Cero errores de consola, `tsc --noEmit`
+      limpio en `app/api/` y `admin/`. Datos de prueba limpiados.
+- [x] Backfill de datos reales: el propietario "Juan salomon" existía desde
+      antes de que se implementara "propietario nuevo → también Cliente"
+      (arriba) y por eso no tenía Cliente asociado — el usuario lo detectó
+      porque no aparecía en la sección Clientes. Se insertó manualmente el
+      `Cliente` faltante (`tipoOperacion: VENDER`, `estado: EN_SEGUIMIENTO`,
+      `origen: EN_PERSONA` — confirmado con el usuario, no inventado) para
+      que quede igual de completo que si se hubiera creado con la
+      funcionalidad nueva desde el principio (2026-07-30).
+
 ## 2.7 Agenda
 
 - [x] Frontend admin — `admin/src/pages/AgendaPage.tsx`: calendario mensual
@@ -321,6 +635,17 @@ Se actualiza a medida que se implementa cada sección. Convención:
       el boceto sí, porque todo vivía en una sola página) — acá son
       informativos nomás, ya que abrir esa ficha implicaría navegar a otro
       módulo del admin.
+- [x] Tipo de evento manual "Otro" — el enum `TipoEvento` (Prisma) tenía
+      solo 7 valores fijos (VISITA/REUNION/FIRMA_BOLETO/FIRMA_ESCRITURA/
+      TASACION/LLAMADO/TAREA) sin ninguna categoría genérica para lo que no
+      encaja en esas — se agregó `OTRO` al enum (migración
+      `20260730091839_evento_tipo_otro`, aditiva, sin pérdida de datos) y a
+      los mapas `TIPO_MANUAL_LABEL/CLASE/ICO` de `AgendaPage.tsx` (aparece
+      solo en el `<select>` porque ya itera `Object.entries(...)`). La
+      descripción específica de qué es el evento sigue yendo en el campo
+      "Título" (texto libre, ya existía) — no se agregó un campo de texto
+      libre aparte para el tipo, siguiendo la misma convención de categoría
+      fija + título libre que ya usan el resto de los tipos (2026-07-30).
 
 ## 2.8 Avisos — grupos que no están en el mapa de conexiones del §3
 
@@ -356,6 +681,40 @@ Las 3 restantes son más autocontenidas:
       `cliente`/`propiedad` en el include pero no los expone en el objeto
       devuelto — así que esas dos tarjetas se muestran sin botones de envío
       habilitados, reflejando fielmente lo que la API devuelve hoy.
+- [x] Botón "Descargar PDF" en las tarjetas de "LIQUIDACIONES LISTAS" —
+      pedido explícito del usuario, que primero preguntó si se podía hacer
+      que WhatsApp mande el PDF adjunto sin subirlo a mano. Aclarado:
+      **sigue sin ser posible** — los links `wa.me` (y tampoco `mailto:`,
+      que ya usaba el botón "Email" de esta misma página) no soportan
+      adjuntar archivos bajo ningún método; automatizarlo del todo
+      requeriría WhatsApp Business API (cuenta con Meta, aprobación,
+      costo) — un proyecto aparte que el usuario ya había descartado antes
+      (§3.5). Se le preguntó explícitamente el alcance y eligió **solo
+      agregar el botón de descarga** (no email 100% automático con SMTP,
+      que hubiera requerido credenciales reales de un servicio de correo).
+      Implementado en `admin/src/pages/AvisosPage.tsx`: al hacer clic,
+      trae la liquidación YA EMITIDA de ese propietario/mes (`GET
+      /liquidaciones/propietarios/:id/:mes`, no la vista previa) y arma un
+      comprobante oculto fuera de pantalla (`position:fixed;left:-10000px`)
+      con el mismo `<ComprobanteImpreso>` + membrete que ya usan Factura y
+      Liquidación, para generar el PDF con `descargarPdfComprobante()` —
+      mismo mecanismo, ahora disparado sin ningún modal abierto de por
+      medio. El cuerpo del comprobante (encabezado + ítems + gastos
+      absorbidos + honorarios + total) se sacó a un componente nuevo,
+      `admin/src/components/LiquidacionComprobante.tsx::
+      LiquidacionComprobanteBody`, porque ya lo necesitaban dos lugares
+      reales (el modal de `PropietariosPage.tsx` y ahora Avisos) — de paso
+      se sacaron de `PropietariosPage.tsx` los tipos `LiquidacionItem/
+      GastoDetalle/LiquidacionDetalle/Liquidacion` que quedaban duplicados.
+      El botón solo aparece en tarjetas de "Liquidación lista" (nuevo campo
+      `AvisoItem.liquidacionPdf?: {propietarioId, propietarioNombre}`,
+      completado solo en ese grupo) — el resto de los avisos no lo
+      muestran. Verificado con Playwright sobre datos reales (liquidación
+      N° 79 de "Juan salomon", julio 2026, ya existente en la base): el
+      botón aparece solo en esa tarjeta, descarga un PDF válido y liviano
+      (~100-150 KB, mismo rango que el resto de los comprobantes) con el
+      membrete, monto y número de liquidación correctos, sin errores de
+      consola.
 
 ## 3.7 Configuración como fuente única
 
@@ -1848,6 +2207,36 @@ Las 3 restantes son más autocontenidas:
       "Publicada" → "Editar ficha" abre el drawer completo. Sin errores de
       consola ni requests fallidos (2026-07-29).
 
+- [x] **Simplificación 2026-07-30: tarjetas clickeables en "Fichas de
+      Inquilinos" + "Editar ficha" removido de las tarjetas de Alquiler en
+      Ventas y Carteles** — pedido explícito del usuario. Ahora que
+      Inquilinos y Cobros ya tiene un lugar para cada alquiler (ocupado en
+      "Fichas de Inquilinos", vacante en "Propiedades Vacantes"), los
+      botones "Editar ficha" del fix anterior en Ventas y Carteles quedaban
+      duplicados y confusos — esa pantalla vuelve a ser exclusivamente
+      sobre Ventas.
+      - `InquilinosPage.tsx`: las tarjetas `.tcard` de "Fichas de
+        Inquilinos" (antes de solo lectura) ahora abren el mismo
+        `PropiedadFichaDrawer` al hacer clic, reusando el `fichaId` que ya
+        existía para las filas de "Propiedades Vacantes" — mismo drawer,
+        mismo estado, sin duplicar lógica.
+      - `VentasPage.tsx`: se eliminó el botón "✎ Editar ficha" de la
+        tarjeta simplificada de Alquiler-vacante (junto con el estado
+        `fichaAlquilerId` y el `PropiedadFichaDrawer` que ya no se usaban
+        ahí — quedó como tarjeta de solo lectura, informativa) y también
+        de la tarjeta compartida Venta/Alquiler cuando `alquilada` es
+        `true` (una propiedad que ya no está en venta, mostrada solo por
+        su historial — ese botón abría el `SaleModal` de edición de venta,
+        que no tiene sentido para una propiedad que ya no está a la
+        venta). El botón se mantiene sin cambios para propiedades
+        genuinamente en modalidad Venta.
+      Probado con Playwright: clic en la tarjeta de "luis tolosa" abre el
+      drawer con el contrato completo; en Ventas y Carteles, cero botones
+      "Editar ficha" quedan visibles en ninguna tarjeta de Alquiler
+      (vacante, publicada o con historial de venta), mientras que
+      "Registrar seña"/"Vendida por terceros" siguen intactos donde
+      corresponde. Sin errores de consola ni requests fallidos.
+
 - [x] **Bug real: borrar una Incidencia dejaba un Gasto huérfano que restaba
       de la ganancia de la inmobiliaria para siempre, sin ninguna pantalla
       desde donde corregirlo** — el usuario reportó que borró "de la caja"
@@ -1886,6 +2275,279 @@ Las 3 restantes son más autocontenidas:
       $15.000 respecto de la base (`2040` → `-12960`); borrar esa incidencia
       devolvió `gananciaPesos` a `2040` exacto — sin gasto huérfano
       remanente (2026-07-29).
+
+- [x] **Rediseño visual completo de la landing pública, calcado del boceto
+      "Facundo Paris Propiedades (2).html"** — el usuario pidió aplicar el
+      diseño de ese archivo (paleta, tipografía, secciones, pantalla de
+      carga) manteniendo intacta toda la lógica de datos real del CRM ya
+      construida (propiedades públicas, contacto, stats por tipo).
+
+      El archivo de referencia es un export de una herramienta de
+      prototipado (4.7MB, HTML+CSS+JS embebidos como un string JSON dentro
+      de un `<script type="__bundler/template">`) — se extrajo y decodificó
+      con un script Node (`JSON.parse` de esa línea) para poder leer el
+      markup/CSS/JS real, ya que el archivo crudo excede el límite de
+      lectura de archivos.
+
+      Cambios de diseño (`app/src/styles/global.css` reescrito casi por
+      completo, más ajustes puntuales por componente):
+      - Paleta nueva: navy `#12273A`, teal `#26BFBB`/`#0E7C79`, crema
+        `#EDECEA`, off-white `#F6F5F3` — reemplaza la paleta anterior
+        (`#14253b`/`#2e97ab`/`#f4f1ec`).
+      - Tipografía: Montserrat como única familia (antes Gotham para
+        títulos + Montserrat para labels) — usa los archivos reales del kit
+        de marca en `app/fonts/` (Regular/Medium/SemiBold/Bold), no Google
+        Fonts como el boceto original. `fonts.css` limpiado de los
+        `@font-face` de Gotham que quedaron sin uso.
+      - **Pantalla de carga** (`components/layout/Splash.tsx`, nuevo) — logo
+        + barra de progreso animada (2.4s + 0.6s fade), montada en
+        `App.tsx` antes que `Header`. Puramente cosmética: no bloquea ni
+        depende de que los datos reales terminen de cargar (esos siguen
+        con sus propios `loadstate` por sección). Respeta
+        `prefers-reduced-motion`.
+      - **Header**: nav oscura sticky que se achica al hacer scroll (ya
+        existía esa mecánica); se reemplazó el teléfono de contacto por un
+        ícono de Instagram + píldora "Consultar" de WhatsApp, ambos
+        dinámicos desde `/public/contacto-info` (antes solo mostraba
+        teléfono).
+      - **Hero**: reescrito con foto de fondo (`FOTO1.png`) + degradé,
+        badge con matrícula, tarjeta blanca de stats flotando entre el
+        hero y el carrusel, y un **carrusel de propiedad destacada nuevo**
+        (`HeroCarousel` dentro de `Hero.tsx`) que — a diferencia del
+        boceto, que usa 5 propiedades de ejemplo hardcodeadas — consulta
+        `listarPropiedades({ limit: 5 })` real y rota automáticamente cada
+        5.5s; si no hay propiedades publicadas, el bloque simplemente no
+        se renderiza. El buscador (tabs Comprar/Alquiler + selector de
+        tipo) se conservó funcional, solo se reskineó como "search card".
+      - **Sección Propiedades**: pasó a banda oscura (`section dark`) con
+        tarjetas claras encima, siguiendo el boceto; se sumaron badge de
+        modalidad (punto + texto) y pastilla de precio flotando sobre la
+        foto, más un link centrado "Ver todo el catálogo" al pie (antes
+        estaba arriba a la derecha, como en el boceto).
+      - **Modal de detalle de propiedad** (nuevo, en `PropertyCard.tsx`) —
+        no existía antes; el botón "Ver detalle" abre una ficha con galería
+        propia, specs y botón de WhatsApp. Como el modelo `Propiedad` no
+        tiene un campo de descripción libre, el modal no fabrica texto: solo
+        muestra datos reales (tipo, modalidad, ambientes, baños,
+        superficie).
+      - **Servicios** ("Cómo trabajamos"): se mantuvo el contenido de 3
+        pasos ya existente (no el de 4 categorías del boceto, que es un
+        modelo de contenido distinto) pero se sumó la banda CTA
+        "Desarrolladores e inversores" del boceto, con el link de WhatsApp
+        real (no hardcodeado).
+      - **Nosotros**: se invirtió el orden de columnas (texto a la
+        izquierda, foto a la derecha, como el boceto — antes era al
+        revés), se sumó la pastilla flotante "1826 · Matrícula habilitada"
+        sobre la foto y las 3 badges ("Corredor matriculado", etc.). Se
+        conservaron los contadores animados (`useCountUp`) ya existentes
+        —el boceto no los tiene— como una mejora que no contradice el
+        pedido de "aplicar el diseño".
+      - **Contacto**: se sumaron las filas de contacto (Teléfono/Email/
+        Oficina) con ícono, antes ausentes — reusan los mismos datos de
+        `/public/contacto-info` que ya alimentaban el botón de WhatsApp.
+      - **Footer** y **botón flotante de WhatsApp**: reskineados (el
+        flotante pasó de pill con pulso abajo-izquierda a círculo simple
+        abajo-derecha, como el boceto).
+      - Se mantuvieron intactas (no están en este boceto v2, pero sí eran
+        funcionalidad real ya conectada al backend) las secciones "Explorá
+        por tipo" (`/public/propiedades/stats-por-tipo`) y "Consejos
+        inmobiliarios" — solo se les aplicó la paleta/tipografía nueva vía
+        las mismas clases CSS reescritas, para que no desentonen.
+      - `useRevealOnScroll` (ya existía, se usaba solo en una sección) se
+        aplicó a todas las secciones restyleadas para el fade-in al hacer
+        scroll que tiene el boceto en casi todos sus bloques.
+
+      **Bug real encontrado y corregido durante la verificación**: el modal
+      de detalle se renderizaba como hijo del `<article class="property-card">`,
+      que tiene `transform` en su `:hover`. Un ancestro con `transform`
+      activo se convierte en el *containing block* de sus descendientes
+      `position: fixed` — así que al pasar el mouse por la tarjeta para
+      clickear "Ver detalle", el overlay del modal (`position:fixed;
+      inset:0`) quedaba acotado al recuadro de la tarjeta en vez de cubrir
+      toda la pantalla, y los clics en el resto de la página (el header, la
+      siguiente sección) volvían a colarse por encima del modal. Fix:
+      `PropertyDetailModal` se renderiza con `createPortal(..., document.body)`
+      en vez de como hijo directo de la tarjeta — patrón estándar de React
+      para modales, evita cualquier problema de *containing block* de
+      ancestros. Encontrado con Playwright real (un test con solo
+      `page.evaluate`/fetch no lo hubiera detectado — hizo falta un click
+      real disparando el `:hover`).
+
+      Verificado con Playwright: splash visible al cargar y se oculta sola
+      después de ~3s; con 0 propiedades publicadas todas las secciones
+      muestran su estado vacío correctamente sin romper layout; publicando
+      una propiedad de prueba (ficha de venta con ambientes/baños/
+      superficie) aparece de inmediato en la tarjeta con badge/precio/specs
+      correctos, y el modal abre y cierra sin bloquear el resto de la
+      página; página `/propiedades` standalone con la variante de filtros
+      "on-light" se ve consistente con el resto. Responsive verificado en
+      390px (menú mobile, stats en 2 columnas). Cero errores de consola,
+      cero requests fallidos, `tsc --noEmit` limpio en `app/` (2026-07-30).
+
+- [x] **Fotos reales de fondo (Hero + "Encontrá lo que buscás") y efecto
+      parallax en textos/imágenes** — el usuario agregó dos fotos nuevas en
+      `app/src/images/`: `fondoHero.HEIC` (foto real de la oficina, para el
+      fondo del Hero) y `FondoEncontraLoQueBuscas.jpeg` (foto de manos,
+      para la banda "Explorá por tipo / Encontrá lo que buscás").
+
+      `fondoHero.HEIC` es formato Apple (HEIF) — ningún navegador lo
+      decodifica en un `<img>`, así que no se podía usar tal cual. Se
+      convirtió una sola vez a `fondoHero.jpg` con `ffmpeg` (`-frames:v 1
+      -update 1`, ya que el HEIC traía la foto como múltiples tiles HEVC
+      que ffmpeg recompone) — el `.jpg` resultante (5712×3212) es el que se
+      importa desde `Hero.tsx`; el `.HEIC` original queda en la carpeta
+      como fuente, sin usarse en el build.
+
+      **Efecto colateral detectado**: al agregar estas fotos, el usuario
+      borró del disco `FotoNosotros.jpeg` (la foto que usaba la sección
+      Nosotros) — `Nosotros.tsx` todavía la importaba, lo que rompía el
+      build (`Cannot find name 'fotoNosotros'` / import inexistente). Se
+      sacó el `<img>` y el import; la sección ahora muestra un placeholder
+      prolijo ("Foto próximamente") sobre el mismo fondo degradé que ya
+      existía como fallback, hasta que se agregue una foto dedicada para
+      Nosotros — no se reusó ninguna de las dos fotos nuevas ahí para no
+      duplicar la misma imagen en dos secciones distintas de la home.
+
+      **Parallax** (`hooks/useParallax.ts`, nuevo) — hook chico basado en
+      `getBoundingClientRect()` + `requestAnimationFrame` (sin librerías)
+      que traslada un elemento en `translate3d(0, y, 0)` proporcional a la
+      distancia entre su centro y el centro del viewport; `speed` positivo
+      lo mueve en el mismo sentido del scroll (fondos), negativo en
+      sentido contrario (capas de texto, para separarlas del fondo).
+      Respeta `prefers-reduced-motion` igual que `Splash.tsx`. Aplicado a:
+      - Hero: foto de fondo (`speed 0.15`) + bloque de texto (`speed
+        -0.08`).
+      - Banda "Encontrá lo que buscás": foto de fondo nueva, al 30% de
+        opacidad con un degradé oscuro encima para que el texto siga
+        siendo legible (`speed 0.12`) + el título (`speed -0.06`) — esta
+        banda no tenía ninguna imagen antes.
+      - Nosotros: el placeholder/foto (`speed 0.1`), complementando el
+        zoom Ken Burns que ya tenía.
+      Las imágenes con parallax se sobredimensionan en CSS (`height:132%;
+      top:-16%` dentro de un contenedor con `overflow:hidden`) para que el
+      desplazamiento nunca deje ver un borde vacío.
+
+      Verificado con Playwright: el `transform` de la foto del Hero y de la
+      banda cambia al hacer scroll (confirmado leyendo el estilo inline
+      antes/después de un `scrollBy`), ambas fotos se ven correctamente
+      encuadradas (no rotadas ni recortadas raro, un riesgo real al
+      convertir HEIC), la sección Nosotros no rompe con el placeholder, y
+      `tsc --noEmit` sigue limpio (2026-07-30).
+
+- [x] **Agregar Propiedad: dormitorios, cochera, superficie cubierta,
+      descripción y servicios facturables — más fix real de honorarios y
+      pre-carga de ítems en "Emitir factura"** — pedido con varias partes,
+      todas tocando el mismo circuito Propiedad → Factura → Liquidación.
+
+      **Campos nuevos en `Propiedad`** (migración aditiva, sin backfill):
+      `dormitorios Int?`, `cochera Boolean @default(false)`,
+      `superficieCubierta Decimal?` (la ya existente `superficieM2` pasa a
+      significar "superficie total"), `descripcion String?` — esta última
+      cierra un hueco real: el modal de detalle de la landing (ver sección
+      anterior) no mostraba descripción porque el modelo no tenía ese
+      campo; ahora existe, aunque cablearlo en el modal público queda para
+      cuando haya contenido cargado.
+
+      **`serviciosHabilitados ServicioFacturable[]`** (enum nuevo:
+      `EXPENSAS|USINA|CAMUZZI|OBRAS_SANITARIAS|RETRIBUTIVAS`, default = los
+      5, para no cambiar el comportamiento de las propiedades ya
+      cargadas) — antes `FacturasService.itemsPredeterminados()` ofrecía
+      siempre esas 5 líneas fijas al abrir una factura, tuviera o no la
+      propiedad ese servicio. Ahora se eligen al cargar la propiedad
+      (checkboxes "Servicios que se facturan" en Agregar Propiedad, dentro
+      de DATOS DE ALQUILER) y solo esas se ofrecen.
+
+      **Se sacaron de "DATOS DE ALQUILER" en Agregar Propiedad**: "Vigente
+      desde", "Contrato — inicio", "Contrato — fin" y "Ya tiene inquilino
+      asignado" (con sus campos de contacto del inquilino). No hizo falta
+      tocar el backend: `propiedades.service.ts::create()` ya usaba
+      `new Date()` como fallback cuando estas fechas no llegan, así que la
+      propiedad se sigue creando bien, vacante — asignar inquilino y fechas
+      de contrato se hace después desde Ventas y Carteles / Inquilinos y
+      Cobros, como ya pasa con "Publicar propiedad existente".
+
+      **Bug real corregido — honorarios calculados sobre el total
+      facturado, no sobre el alquiler**: en
+      `liquidaciones.service.ts::generar()`, `honorarios =
+      cobradoTotal * pct/100`, donde `cobradoTotal` sumaba TODOS los ítems
+      de la factura (alquiler + expensas + servicios trasladados + deuda
+      arrastrada) — la inmobiliaria terminaba cobrándose comisión sobre
+      plata que solo intermedia (paga la luz del inquilino y no le
+      correspondía honorario por eso). Fix: `honorarios` ahora se calcula
+      sobre el monto del ítem "Alquiler" únicamente. Confirmado con la API
+      real: con `cobradoTotal=123000` (alquiler 100000 + Usina 15000 +
+      Camuzzi 8000) y honorarios al 10%, antes hubiera dado `12300`; ahora
+      da exactamente `10000` (10% de 100000).
+
+      **`itemsPredeterminados()` ahora precarga con la factura anterior**:
+      antes, los ítems de servicios (Expensas/Usina/Camuzzi/Obras
+      Sanitarias/Retributivas) siempre arrancaban en $0 cada mes — había
+      que retipear a mano montos que casi nunca cambian. Ahora busca la
+      última factura anterior de la propiedad y precarga cada servicio con
+      su monto de esa factura (el alquiler sigue viniendo de
+      `rentaVigente()`, dinámico y correcto; "Deuda arrastrada" se sigue
+      recalculando siempre, nunca se copia). Confirmado con la API real:
+      factura de julio con Usina=15000/Camuzzi=8000 → los ítems
+      predeterminados de agosto llegan con esos mismos montos.
+
+      **`FacturaModal` (botón "Emitir factura" en la ficha de la
+      propiedad) suma un selector de honorarios**: mismo set de opciones
+      que "Editar ficha" (Usar % por defecto / Libre / 3% / 6% / Otro %),
+      con una línea de vista previa "Honorarios (X% de $Y)" calculada en
+      vivo sobre el monto que esté cargado en el ítem "Alquiler" del
+      formulario (no sobre el total). Al confirmar "Emitir factura", si el
+      % cambió respecto del que tenía la propiedad, primero hace `PATCH
+      /propiedades/:id` (mismo endpoint que "Editar ficha") y recién
+      después emite la factura — el % elegido queda guardado para esta y
+      las próximas liquidaciones, no es un valor de un solo uso.
+
+      Probado con Playwright real de punta a punta: propiedad de prueba con
+      Usina/Camuzzi habilitados (sin Expensas/Obras Sanitarias/
+      Retributivas) → el modal de factura solo ofrece esos dos ítems;
+      cambiar el % a 15 y el monto de Alquiler a 200000 en vivo actualiza
+      la vista previa a exactamente $30.000; agregar Usina=50000 (llevando
+      el total a $250.000) **no mueve** el preview de honorarios; al
+      confirmar "Emitir factura", la propiedad queda con
+      `honorariosTipo=OTRO, honorariosPorcentaje=15` (verificado por API
+      después de cerrar el navegador). Formulario de Agregar Propiedad
+      verificado con Playwright: los 5 campos nuevos están, los 4 campos
+      sacados de "DATOS DE ALQUILER" ya no están, los 5 checkboxes de
+      servicios están. Cero errores de consola, `tsc --noEmit` limpio en
+      `admin/` y `app/api/` (2026-07-30).
+
+- [x] **Cartel: "Tipo de cartel" y "Estado" se fusionaron en un solo campo,
+      "Medida" pasó de texto libre a Chico/Grande** — pedido explícito del
+      usuario: quería que "tipo de cartel" ofreciera 3 opciones fijas
+      (Colocado/Retirado/Por colocar). Como el modelo ya tenía exactamente
+      ese concepto en un campo separado `estado: EstadoCartel` (antes
+      mostrado como "A pedido"), mantener los dos hubiera sido
+      redundante — se eliminó `estado` y `Cartel.tipoCartel` pasó de
+      `String` (texto libre tipo "Cartel de obra") a `EstadoCartel`.
+      Migración (`20260730075719_cartel_tipo_es_estado`) escrita a mano
+      (no la que generó `prisma migrate dev --create-only` por defecto,
+      que hubiera tirado todo a `A_PEDIDO`): copia el valor real de
+      `estado` a la columna nueva antes de borrar ambas columnas viejas,
+      así ningún cartel existente cambia de estado real por la migración
+      (se descarta a propósito el texto libre viejo de `tipoCartel`, no el
+      dato de estado). Actualizado en cascada: DTOs
+      (`create-cartel.dto.ts`/`update-cartel.dto.ts`), `carteles.service.ts`
+      (`create`/`update`/`retirar`/`kpis`, antes `create()` forzaba
+      siempre `COLOCADO` sin importar el formulario — ahora se puede crear
+      un cartel directamente como "Por colocar"), `VentasPage.tsx` (columna
+      "ESTADO" de la tabla eliminada por duplicada, badge único bajo "TIPO
+      DE CARTEL"; el modal ya no tiene un input de texto libre para tipo
+      ni un select de estado aparte — un solo select con las 3 opciones,
+      disponible tanto al crear como al editar) y el export CSV de
+      Reportes (`ConfiguracionPage.tsx`, quitó la columna "Estado"
+      duplicada). "Medida" pasó de `<input>` libre a `<select>` con
+      Chico/Grande/Sin especificar (sin migración: sigue siendo
+      `String?`, solo se restringen las opciones del formulario).
+      Probado con Playwright: el select de "Tipo de cartel" ofrece
+      exactamente `['Colocado', 'Retirado', 'Por colocar']`, el de
+      "Medida" `['Sin especificar', 'Chico', 'Grande']`; crear un cartel
+      como "Por colocar"/"Grande" lo muestra así en la tabla y en el KPI
+      "Por colocar"; editarlo a "Colocado" lo saca de esa cuenta. `tsc
+      --noEmit` limpio en `app/api/` y `admin/` (2026-07-30).
 
 ## Cómo actualizar este archivo
 

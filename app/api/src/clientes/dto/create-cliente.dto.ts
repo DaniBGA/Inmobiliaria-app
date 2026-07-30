@@ -5,7 +5,7 @@ import {
   IsOptional,
   IsString,
 } from 'class-validator';
-import { EstadoCliente, TipoOperacionCliente, TipoPropiedad, ZonaCliente } from '@prisma/client';
+import { EstadoCliente, OrigenCliente, TipoOperacionCliente, TipoPropiedad, ZonaCliente } from '@prisma/client';
 
 export class CreateClienteDto {
   @IsString()
@@ -47,8 +47,8 @@ export class CreateClienteDto {
   estado?: EstadoCliente;
 
   @IsOptional()
-  @IsString()
-  origen?: string;
+  @IsEnum(OrigenCliente)
+  origen?: OrigenCliente;
 
   @IsOptional()
   @IsString()

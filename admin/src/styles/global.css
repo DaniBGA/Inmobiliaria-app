@@ -69,6 +69,9 @@ body.navmin .navtoggle{left:53px}
 .btn-dark{background:var(--ink);color:#fff;border:0;border-radius:11px;padding:11px 18px;font-weight:700;font-size:13px;transition:opacity .15s}
 .btn-dark:hover{opacity:.85}
 .btn-dark:disabled{opacity:.5;cursor:not-allowed}
+.btn-whatsapp{background:#25D366;color:#fff;border:0;border-radius:11px;padding:11px 18px;font-weight:700;font-size:13px;transition:opacity .15s;display:inline-flex;align-items:center;gap:6px;text-decoration:none;cursor:pointer}
+.btn-whatsapp:hover{opacity:.85}
+.btn-whatsapp:disabled{opacity:.5;cursor:not-allowed}
 
 main{padding:16px 32px 60px}
 
@@ -219,8 +222,9 @@ tfoot .money{font-size:15px}
 .fg{display:flex;flex-direction:column;gap:6px;min-width:0}
 .fg.full{grid-column:1/-1}
 .fg label{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--muted)}
-.fg input,.fg select{border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13.5px;background:var(--bg);width:100%;min-width:0}
-.fg input:focus,.fg select:focus{outline:2px solid var(--indigo);border-color:transparent}
+.fg input,.fg select,.fg textarea{border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13.5px;background:var(--bg);width:100%;min-width:0;font-family:inherit}
+.fg textarea{resize:vertical}
+.fg input:focus,.fg select:focus,.fg textarea:focus{outline:2px solid var(--indigo);border-color:transparent}
 .fsec{grid-column:1/-1;font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--muted);font-weight:700;margin-top:10px;border-top:1px solid var(--border2);padding-top:16px}
 .modal .btnrow{display:flex;gap:10px;margin-top:26px;justify-content:flex-end;flex-wrap:wrap}
 
@@ -381,6 +385,7 @@ textarea:focus{outline:none;border-color:var(--ink)}
 .calev.tasacion{background:var(--indigo-soft);color:var(--indigo)}
 .calev.llamado{background:var(--bg2);color:var(--ink2)}
 .calev.tarea{background:var(--bg2);color:var(--ink2)}
+.calev.otro{background:var(--bg2);color:var(--ink2)}
 .calev.auto{background:var(--red-soft);color:var(--red)}
 .calev.incidencia{background:var(--orange-soft);color:var(--orange)}
 .calev.ejecucion{background:var(--indigo-soft);color:var(--indigo)}
@@ -493,6 +498,7 @@ textarea.avmsg:focus{outline:2px solid var(--indigo);border-color:transparent;ba
 .itemrow input:focus{outline:2px solid var(--indigo);border-color:transparent}
 .itemrow .itemdesc{flex:1;min-width:0}
 .itemrow .itemmonto{width:120px;font-family:var(--mono)}
+.itemrow .itemliq{width:74px;font-family:var(--mono);text-align:center}
 
 /* ===== Inquilinos ===== */
 .tenants{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:18px}
@@ -638,15 +644,55 @@ textarea.avmsg:focus{outline:2px solid var(--indigo);border-color:transparent;ba
   .calev{font-size:8px;padding:1px 3px;border-radius:4px}
 }
 
+/* Elementos que solo existen para el papel (membrete/marca de agua/matrícula
+   del comprobante impreso) — ocultos en pantalla; @media print más abajo los
+   reabre. Tiene que ir ANTES del bloque @media print: a igual especificidad
+   gana la regla que aparece después en el archivo, y solo se quiere que la
+   de `display:none` gane en pantalla (donde @media print no aplica). */
+.printonly{display:none}
+
 /* Impresión: el boceto imprimía un documento aparte (#printInvoice); acá no
    hay generación de PDF todavía (pendiente de una fase posterior), así que
    "Imprimir" imprime el modal abierto y oculta el resto de la app. */
 @media print{
   body *{visibility:hidden}
   .modalcard,.modalcard *{visibility:visible}
-  .modalcard{position:fixed;inset:0;box-shadow:none;border:0;width:100%!important;max-width:100%!important;max-height:none!important}
+  .modalcard{position:fixed;inset:0;box-shadow:none;border:0;width:100%!important;max-width:100%!important;max-height:none!important;padding:26px 34px 34px}
   .overlay{display:none}
   /* Los botones de acción (Imprimir/Cerrar/Cancelar) no son parte del
      comprobante: en el papel solo debe quedar el detalle facturado. */
   .noprint{display:none!important}
+
+  /* Membrete de la inmobiliaria (§2.10): solo se arma para el papel — en
+     pantalla el modal muestra nada más el detalle, sin membrete. Logo y
+     datos de contacto en `printonly`, ocultos por default (ver regla
+     general más abajo). */
+  .comprobante{position:relative}
+  /* `.printonly` está oculto siempre (regla general más abajo); acá adentro
+     de @media print se reabre, y cada clase de membrete pisa el `display`
+     genérico con el que le corresponde (bloque, o flex para las filas). */
+  .printonly{display:block}
+  .comp-membrete{display:flex;align-items:flex-end;gap:18px;border-bottom:2px solid var(--ink);padding-bottom:10px;margin-bottom:18px}
+  .comp-logo{height:52px;width:auto}
+  .comp-datos{font-size:10.5px;line-height:1.7}
+  .comp-direccion{color:var(--ink);font-weight:700}
+  .comp-contacto{color:var(--orange)}
+
+  /* Marca de agua (§2.10): el isotipo solo, bien grande y casi invisible,
+     detrás del contenido — nunca a suficiente opacidad como para competir
+     con el texto facturado. */
+  .comp-marcaagua{position:fixed;left:-140px;top:50%;transform:translateY(-50%);width:600px;opacity:.05;z-index:0}
+  .comp-membrete,.liqcard{position:relative;z-index:1}
+
+  /* Matrícula: franja vertical fija sobre el margen derecho de la hoja. */
+  .comp-matricula{position:fixed;right:10px;top:50%;transform:translateY(-50%) rotate(180deg);writing-mode:vertical-rl;font-size:9px;letter-spacing:.5px;color:var(--muted)}
+
+  /* `position:fixed` (no `margin-top` fluyendo con el contenido): en la
+     hoja de referencia el pie queda pegado al borde inferior de la página
+     con el resto en blanco, no inmediatamente debajo del último ítem
+     facturado — mismo criterio ya usado para `.comp-matricula`. */
+  .comp-pie{position:fixed;left:34px;right:34px;bottom:24px;display:flex;align-items:center;gap:14px;border-top:2px solid var(--ink);padding-top:10px;font-size:9.5px}
+  .comp-pielogo{height:26px;width:auto}
+  .comp-piedireccion{flex:1;text-align:center;font-weight:700;color:var(--ink)}
+  .comp-piecontacto{color:var(--orange);text-align:right}
 }

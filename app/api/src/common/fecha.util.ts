@@ -14,6 +14,17 @@ export function mesStringAFecha(mes: string): Date {
   return new Date(Date.UTC(anio, mesNum - 1, 1));
 }
 
+// Último instante del mes de `fecha` (día 0 del mes siguiente = último día
+// del mes actual). Usado para consultar `rentaVigente(propiedadId, fecha)`
+// cuando `fecha` representa un mes completo (no un instante puntual como
+// "ahora"): el alquiler inicial o un aumento cargado un día cualquiera de
+// ese mes (no necesariamente el 1) igual tiene que contar como vigente
+// para todo ese mes, no solo a partir del 1.
+export function finDeMes(fecha: Date | string): Date {
+  const inicio = primerDiaMes(fecha);
+  return new Date(Date.UTC(inicio.getUTCFullYear(), inicio.getUTCMonth() + 1, 0, 23, 59, 59, 999));
+}
+
 export function fechaAMesString(fecha: Date): string {
   return `${fecha.getUTCFullYear()}-${String(fecha.getUTCMonth() + 1).padStart(2, '0')}`;
 }

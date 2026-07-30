@@ -8,6 +8,24 @@ type Modalidad = 'ALQUILER' | 'VENTA';
 type TipoHonorarios = '' | 'LIBRE' | 'TRES_POR_CIENTO' | 'SEIS_POR_CIENTO' | 'OTRO';
 type IndiceAjuste = '' | 'IPC' | 'ICL';
 type Moneda = 'ARS' | 'USD';
+type ServicioFacturable = 'EXPENSAS' | 'USINA' | 'CAMUZZI' | 'OBRAS_SANITARIAS' | 'RETRIBUTIVAS';
+type OrigenCliente = 'INSTAGRAM' | 'PAGINA_WEB' | 'EN_PERSONA' | 'FACEBOOK' | 'CONTACTOS';
+
+const SERVICIOS_OPCIONES: { key: ServicioFacturable; label: string }[] = [
+  { key: 'EXPENSAS', label: 'Expensas' },
+  { key: 'USINA', label: 'Luz (Usina)' },
+  { key: 'CAMUZZI', label: 'Gas (Camuzzi)' },
+  { key: 'OBRAS_SANITARIAS', label: 'Agua (Obras Sanitarias)' },
+  { key: 'RETRIBUTIVAS', label: 'Retributivas de Servicios' },
+];
+
+const ORIGEN_LABEL: Record<OrigenCliente, string> = {
+  INSTAGRAM: 'Instagram',
+  PAGINA_WEB: 'Página web',
+  EN_PERSONA: 'En persona',
+  FACEBOOK: 'Facebook',
+  CONTACTOS: 'Contactos',
+};
 
 interface Propietario {
   id: string;
@@ -50,24 +68,29 @@ export function AgregarPropiedadPage() {
   const [modalidad, setModalidad] = useState<Modalidad>('ALQUILER');
   const [propietarioId, setPropietarioId] = useState('');
   const [propietarioNuevoNombre, setPropietarioNuevoNombre] = useState('');
+  const [origenPropietarioNuevo, setOrigenPropietarioNuevo] = useState<OrigenCliente | ''>('');
   const [designadoId, setDesignadoId] = useState('');
   const [honorariosTipo, setHonorariosTipo] = useState<TipoHonorarios>('');
   const [honorariosPorcentaje, setHonorariosPorcentaje] = useState('');
   const [ambientes, setAmbientes] = useState('');
+  const [dormitorios, setDormitorios] = useState('');
   const [banos, setBanos] = useState('');
+  const [cochera, setCochera] = useState(false);
   const [superficieM2, setSuperficieM2] = useState('');
+  const [superficieCubierta, setSuperficieCubierta] = useState('');
+  const [descripcion, setDescripcion] = useState('');
+  const [servicios, setServicios] = useState<ServicioFacturable[]>([
+    'EXPENSAS',
+    'USINA',
+    'CAMUZZI',
+    'OBRAS_SANITARIAS',
+    'RETRIBUTIVAS',
+  ]);
 
   // Alquiler
   const [indice, setIndice] = useState<IndiceAjuste>('');
   const [frecuenciaAumentoMeses, setFrecuenciaAumentoMeses] = useState('');
   const [montoAlquilerInicial, setMontoAlquilerInicial] = useState('');
-  const [fechaAlquilerInicial, setFechaAlquilerInicial] = useState('');
-  const [contratoInicio, setContratoInicio] = useState('');
-  const [contratoFin, setContratoFin] = useState('');
-  const [tieneInquilino, setTieneInquilino] = useState(false);
-  const [inqNombre, setInqNombre] = useState('');
-  const [inqTelefono, setInqTelefono] = useState('');
-  const [inqEmail, setInqEmail] = useState('');
   const [alquilerPublicado, setAlquilerPublicado] = useState(true);
 
   // Venta
@@ -93,6 +116,10 @@ export function AgregarPropiedadPage() {
     });
   }
 
+  function toggleServicio(key: ServicioFacturable) {
+    setServicios((prev) => (prev.includes(key) ? prev.filter((s) => s !== key) : [...prev, key]));
+  }
+
   function limpiarFormulario() {
     setNombre('');
     setDireccion('');
@@ -100,22 +127,21 @@ export function AgregarPropiedadPage() {
     setModalidad('ALQUILER');
     setPropietarioId('');
     setPropietarioNuevoNombre('');
+    setOrigenPropietarioNuevo('');
     setDesignadoId('');
     setHonorariosTipo('');
     setHonorariosPorcentaje('');
     setAmbientes('');
+    setDormitorios('');
     setBanos('');
+    setCochera(false);
     setSuperficieM2('');
+    setSuperficieCubierta('');
+    setDescripcion('');
+    setServicios(['EXPENSAS', 'USINA', 'CAMUZZI', 'OBRAS_SANITARIAS', 'RETRIBUTIVAS']);
     setIndice('');
     setFrecuenciaAumentoMeses('');
     setMontoAlquilerInicial('');
-    setFechaAlquilerInicial('');
-    setContratoInicio('');
-    setContratoFin('');
-    setTieneInquilino(false);
-    setInqNombre('');
-    setInqTelefono('');
-    setInqEmail('');
     setAlquilerPublicado(true);
     setPrecio('');
     setMoneda('USD');
@@ -131,6 +157,17 @@ export function AgregarPropiedadPage() {
       if (!propId && propietarioNuevoNombre.trim()) {
         const nuevo = await api.post<Propietario>('/propietarios', { nombre: propietarioNuevoNombre.trim() });
         propId = nuevo.id;
+
+        // Todo propietario nuevo entra también como Cliente (§2.6) — ya
+        // tiene una relación activa con la inmobiliaria (nos dio una
+        // propiedad), así que arranca "En seguimiento" y no "Sin
+        // contactar" como un lead frío recién llegado.
+        await api.post('/clientes', {
+          nombre: propietarioNuevoNombre.trim(),
+          tipoOperacion: 'VENDER',
+          estado: 'EN_SEGUIMIENTO',
+          origen: origenPropietarioNuevo || undefined,
+        });
       }
 
       const propiedad = await api.post<{ id: string }>('/propiedades', {
@@ -143,24 +180,18 @@ export function AgregarPropiedadPage() {
         honorariosTipo: honorariosTipo || undefined,
         honorariosPorcentaje: honorariosTipo === 'OTRO' && honorariosPorcentaje ? Number(honorariosPorcentaje) : undefined,
         ambientes: ambientes ? Number(ambientes) : undefined,
+        dormitorios: dormitorios ? Number(dormitorios) : undefined,
         banos: banos ? Number(banos) : undefined,
+        cochera,
         superficieM2: superficieM2 ? Number(superficieM2) : undefined,
+        superficieCubierta: superficieCubierta ? Number(superficieCubierta) : undefined,
+        descripcion: descripcion.trim() || undefined,
+        serviciosHabilitados: modalidad === 'ALQUILER' ? servicios : undefined,
         indice: modalidad === 'ALQUILER' && indice ? indice : undefined,
         frecuenciaAumentoMeses: modalidad === 'ALQUILER' && frecuenciaAumentoMeses ? Number(frecuenciaAumentoMeses) : undefined,
         montoAlquilerInicial: modalidad === 'ALQUILER' && montoAlquilerInicial ? Number(montoAlquilerInicial) : undefined,
-        fechaAlquilerInicial: modalidad === 'ALQUILER' && fechaAlquilerInicial ? fechaAlquilerInicial : undefined,
-        contratoInicio: modalidad === 'ALQUILER' && contratoInicio ? contratoInicio : undefined,
-        contratoFin: modalidad === 'ALQUILER' && contratoFin ? contratoFin : undefined,
         alquilerPublicado: modalidad === 'ALQUILER' ? alquilerPublicado : undefined,
       });
-
-      if (modalidad === 'ALQUILER' && tieneInquilino && inqNombre.trim()) {
-        await api.patch(`/propiedades/${propiedad.id}/inquilino`, {
-          nombre: inqNombre.trim(),
-          telefono: inqTelefono || undefined,
-          email: inqEmail || undefined,
-        });
-      }
 
       if (modalidad === 'VENTA' && precio) {
         await api.post(`/propiedades/${propiedad.id}/venta`, {
@@ -198,6 +229,7 @@ export function AgregarPropiedadPage() {
       qc.invalidateQueries({ queryKey: ['carteles'] });
       qc.invalidateQueries({ queryKey: ['cobros'] });
       qc.invalidateQueries({ queryKey: ['avisos'] });
+      qc.invalidateQueries({ queryKey: ['clientes'] });
       limpiarFormulario();
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo cargar la propiedad.'),
@@ -206,7 +238,7 @@ export function AgregarPropiedadPage() {
   const puedeGuardar =
     nombre.trim() &&
     direccion.trim() &&
-    (propietarioId || propietarioNuevoNombre.trim()) &&
+    (propietarioId || (propietarioNuevoNombre.trim() && origenPropietarioNuevo)) &&
     (modalidad === 'ALQUILER' || (modalidad === 'VENTA' && precio));
 
   return (
@@ -286,7 +318,10 @@ export function AgregarPropiedadPage() {
                   value={propietarioId}
                   onChange={(e) => {
                     setPropietarioId(e.target.value);
-                    if (e.target.value) setPropietarioNuevoNombre('');
+                    if (e.target.value) {
+                      setPropietarioNuevoNombre('');
+                      setOrigenPropietarioNuevo('');
+                    }
                   }}
                 >
                   <option value="">— Elegir de la lista —</option>
@@ -309,6 +344,19 @@ export function AgregarPropiedadPage() {
                   disabled={!!propietarioId}
                 />
               </div>
+              {propietarioNuevoNombre.trim() && (
+                <div className="fg">
+                  <label>Origen del propietario nuevo</label>
+                  <select value={origenPropietarioNuevo} onChange={(e) => setOrigenPropietarioNuevo(e.target.value as OrigenCliente | '')}>
+                    <option value="">— Elegir —</option>
+                    {Object.entries(ORIGEN_LABEL).map(([v, l]) => (
+                      <option key={v} value={v}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div className="fg">
                 <label>Designado para mostrar</label>
                 <select value={designadoId} onChange={(e) => setDesignadoId(e.target.value)}>
@@ -348,15 +396,47 @@ export function AgregarPropiedadPage() {
                 <input type="number" min={0} value={ambientes} onChange={(e) => setAmbientes(e.target.value)} />
               </div>
               <div className="fg">
+                <label>Dormitorios</label>
+                <input type="number" min={0} value={dormitorios} onChange={(e) => setDormitorios(e.target.value)} />
+              </div>
+              <div className="fg">
                 <label>Baños</label>
                 <input type="number" min={0} value={banos} onChange={(e) => setBanos(e.target.value)} />
               </div>
               <div className="fg">
-                <label>Superficie</label>
+                <label>Superficie total</label>
                 <div className="suffix">
                   <input type="number" min={0} step="0.01" value={superficieM2} onChange={(e) => setSuperficieM2(e.target.value)} />
                   <span>m²</span>
                 </div>
+              </div>
+              <div className="fg">
+                <label>Superficie cubierta</label>
+                <div className="suffix">
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={superficieCubierta}
+                    onChange={(e) => setSuperficieCubierta(e.target.value)}
+                  />
+                  <span>m²</span>
+                </div>
+              </div>
+              <div className="fg">
+                <label className="chk" style={{ marginTop: 28 }}>
+                  <input type="checkbox" checked={cochera} onChange={(e) => setCochera(e.target.checked)} />
+                  <span>Tiene cochera</span>
+                </label>
+              </div>
+              <div className="fg full">
+                <label>Descripción</label>
+                <textarea
+                  rows={3}
+                  value={descripcion}
+                  onChange={(e) => setDescripcion(e.target.value)}
+                  placeholder="Breve descripción del lugar (opcional)"
+                />
               </div>
             </div>
           </div>
@@ -364,7 +444,11 @@ export function AgregarPropiedadPage() {
           {modalidad === 'ALQUILER' ? (
             <div className="cfgcard">
               <h3>DATOS DE ALQUILER</h3>
-              <div className="hint">Índice de ajuste, alquiler inicial y, si ya tiene inquilino, sus datos de contacto.</div>
+              <div className="hint">
+                Índice de ajuste, alquiler inicial y qué servicios se ofrecen al emitir la factura del mes. La
+                propiedad se carga vacante — asignarle un inquilino se hace después, desde Ventas y Carteles o
+                Inquilinos y Cobros.
+              </div>
               <div className="cfgfields">
                 <div className="fg">
                   <label>Índice de ajuste</label>
@@ -398,55 +482,30 @@ export function AgregarPropiedadPage() {
                     <span>$</span>
                   </div>
                 </div>
-                <div className="fg">
-                  <label>Vigente desde</label>
-                  <input type="date" value={fechaAlquilerInicial} onChange={(e) => setFechaAlquilerInicial(e.target.value)} />
-                </div>
-                <div className="fg">
-                  <label>Contrato — inicio</label>
-                  <input type="date" value={contratoInicio} onChange={(e) => setContratoInicio(e.target.value)} />
-                </div>
-                <div className="fg">
-                  <label>Contrato — fin</label>
-                  <input type="date" value={contratoFin} onChange={(e) => setContratoFin(e.target.value)} />
-                </div>
                 <div className="fg full">
                   <label className="chk">
-                    <input type="checkbox" checked={tieneInquilino} onChange={(e) => setTieneInquilino(e.target.checked)} />
-                    <span>Ya tiene inquilino asignado</span>
+                    <input type="checkbox" checked={alquilerPublicado} onChange={(e) => setAlquilerPublicado(e.target.checked)} />
+                    <span>Mostrar en la página web (landing page)</span>
                   </label>
                 </div>
-                {!tieneInquilino && (
-                  <div className="fg full">
-                    <label className="chk">
-                      <input type="checkbox" checked={alquilerPublicado} onChange={(e) => setAlquilerPublicado(e.target.checked)} />
-                      <span>Mostrar en la página web (landing page)</span>
-                    </label>
+                <div className="fg full">
+                  <label>Servicios que se facturan</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 18px', marginTop: 4 }}>
+                    {SERVICIOS_OPCIONES.map((s) => (
+                      <label className="chk" key={s.key}>
+                        <input type="checkbox" checked={servicios.includes(s.key)} onChange={() => toggleServicio(s.key)} />
+                        <span>{s.label}</span>
+                      </label>
+                    ))}
                   </div>
-                )}
-                {tieneInquilino && (
-                  <>
-                    <div className="fg full">
-                      <label>Nombre del inquilino</label>
-                      <input value={inqNombre} onChange={(e) => setInqNombre(e.target.value)} />
-                    </div>
-                    <div className="fg">
-                      <label>Teléfono</label>
-                      <input value={inqTelefono} onChange={(e) => setInqTelefono(e.target.value)} placeholder="Opcional" />
-                    </div>
-                    <div className="fg">
-                      <label>Email</label>
-                      <input type="email" value={inqEmail} onChange={(e) => setInqEmail(e.target.value)} placeholder="Opcional" />
-                    </div>
-                  </>
-                )}
+                </div>
               </div>
               <div className="cfgnote">
                 <i>△</i>
                 <span>
-                  Si no tiene inquilino, la propiedad queda "Disponible" — se muestra como publicable en Ventas y
-                  Carteles y, si además está tildado "Mostrar en la página web", en la landing pública. Una vez
-                  alquilada, deja de aparecer en la web automáticamente.
+                  La propiedad queda "Disponible" — se muestra como publicable en Ventas y Carteles y, si además está
+                  tildado "Mostrar en la página web", en la landing pública. Una vez alquilada, deja de aparecer en la
+                  web automáticamente.
                 </span>
               </div>
             </div>

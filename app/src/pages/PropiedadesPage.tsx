@@ -59,7 +59,7 @@ export function PropiedadesPage() {
               Alquiler
             </button>
           </div>
-          <PropertyFilterChips activo={tipo} onChange={setTipo} />
+          <PropertyFilterChips activo={tipo} onChange={setTipo} onLight />
         </div>
 
         {propiedades.isLoading && <div className="loadstate">Cargando propiedades…</div>}

@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsDateString,
   IsEnum,
@@ -16,6 +17,7 @@ import {
   IndiceAjuste,
   PunitorioFrecuencia,
   PunitorioTipo,
+  ServicioFacturable,
 } from '@prisma/client';
 
 export class CreatePropiedadDto {
@@ -96,11 +98,35 @@ export class CreatePropiedadDto {
   @IsOptional()
   @IsInt()
   @Min(0)
+  dormitorios?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
   banos?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  cochera?: boolean;
 
   @IsOptional()
   @IsNumber()
   superficieM2?: number;
+
+  @IsOptional()
+  @IsNumber()
+  superficieCubierta?: number;
+
+  @IsOptional()
+  @IsString()
+  descripcion?: string;
+
+  // Qué ítems de servicios se ofrecen al emitir la factura del mes (ver
+  // enum ServicioFacturable en el schema).
+  @IsOptional()
+  @IsArray()
+  @IsEnum(ServicioFacturable, { each: true })
+  serviciosHabilitados?: ServicioFacturable[];
 
   // Publicación en la landing (solo aplica a ALQUILER vacante — ver
   // PublicPropiedadesService). Default true en el schema.

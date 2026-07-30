@@ -5,7 +5,7 @@ import { PageHeader } from '../components/PageHeader';
 import { Modal } from '../components/Modal';
 import { formatDate, mesActualStr, sumarMesesStr, mesLabel } from '../lib/format';
 
-type TipoEventoManual = 'VISITA' | 'REUNION' | 'FIRMA_BOLETO' | 'FIRMA_ESCRITURA' | 'TASACION' | 'LLAMADO' | 'TAREA';
+type TipoEventoManual = 'VISITA' | 'REUNION' | 'FIRMA_BOLETO' | 'FIRMA_ESCRITURA' | 'TASACION' | 'LLAMADO' | 'TAREA' | 'OTRO';
 type TipoEventoAuto = 'VENCIMIENTO_CONTRATO' | 'AUMENTO_PROXIMO' | 'INCIDENCIA_ABIERTA' | 'INCIDENCIA_EJECUCION';
 
 interface Propiedad {
@@ -65,6 +65,7 @@ const TIPO_MANUAL_LABEL: Record<TipoEventoManual, string> = {
   TASACION: 'Tasación',
   LLAMADO: 'Llamado',
   TAREA: 'Tarea',
+  OTRO: 'Otro',
 };
 const TIPO_MANUAL_CLASE: Record<TipoEventoManual, string> = {
   VISITA: 'visita',
@@ -74,6 +75,7 @@ const TIPO_MANUAL_CLASE: Record<TipoEventoManual, string> = {
   TASACION: 'tasacion',
   LLAMADO: 'llamado',
   TAREA: 'tarea',
+  OTRO: 'otro',
 };
 const TIPO_MANUAL_ICO: Record<TipoEventoManual, string> = {
   VISITA: '◎',
@@ -83,6 +85,7 @@ const TIPO_MANUAL_ICO: Record<TipoEventoManual, string> = {
   TASACION: '▤',
   LLAMADO: '✆',
   TAREA: '✓',
+  OTRO: '✱',
 };
 const TIPO_AUTO_CLASE: Record<TipoEventoAuto, string> = {
   VENCIMIENTO_CONTRATO: 'auto',

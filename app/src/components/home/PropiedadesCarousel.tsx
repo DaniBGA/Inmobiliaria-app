@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { listarPropiedades, type TipoPropiedad } from '../../api/propiedades';
 import { PropertyCard } from '../propiedades/PropertyCard';
 import { PropertyFilterChips } from '../propiedades/PropertyFilterChips';
+import { useRevealOnScroll } from '../../hooks/useRevealOnScroll';
 
 const AUTOPLAY_MS = 4000;
 
@@ -30,6 +31,7 @@ export function PropiedadesCarousel() {
   const [filtro, setFiltro] = useState<TipoPropiedad | null>(null);
   const [slide, setSlide] = useState(0);
   const perPage = usePerPage();
+  const { ref, visible } = useRevealOnScroll<HTMLDivElement>();
 
   const propiedades = useQuery({
     queryKey: ['public-propiedades', filtro],
@@ -52,20 +54,18 @@ export function PropiedadesCarousel() {
   }, [maxSlide]);
 
   return (
-    <section id="propiedades" className="section">
+    <section id="propiedades" className="section dark propiedades-section">
       <div className="container">
-        <div className="propiedades-head">
+        <div className={`propiedades-head reveal${visible ? ' visible' : ''}`} ref={ref}>
           <div>
-            <span className="eyebrow">Nuestras propiedades</span>
-            <h2 className="section-title">Propiedades destacadas</h2>
+            <span className="eyebrow">Oportunidades</span>
+            <h2 className="section-title" style={{ color: '#fff' }}>
+              Propiedades disponibles
+            </h2>
           </div>
-          <Link to="/propiedades" className="btn btn-outline">
-            Ver todas
-          </Link>
-        </div>
-
-        <div className="propiedades-filtros">
-          <PropertyFilterChips activo={filtro} onChange={setFiltro} />
+          <div className="propiedades-filtros" style={{ marginTop: 0 }}>
+            <PropertyFilterChips activo={filtro} onChange={setFiltro} />
+          </div>
         </div>
 
         {propiedades.isLoading && <div className="loadstate">Cargando propiedades…</div>}
@@ -126,6 +126,12 @@ export function PropiedadesCarousel() {
             )}
           </div>
         )}
+
+        <div className="propiedades-footer">
+          <Link to="/propiedades" className="btn btn-outline">
+            Ver todo el catálogo →
+          </Link>
+        </div>
       </div>
     </section>
   );

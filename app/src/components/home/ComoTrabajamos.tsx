@@ -1,3 +1,6 @@
+import { useQuery } from '@tanstack/react-query';
+import { fetchContactoInfo } from '../../api/configuracionPublica';
+import { waLink } from '../../lib/format';
 import { useRevealOnScroll } from '../../hooks/useRevealOnScroll';
 
 const PASOS = [
@@ -20,6 +23,12 @@ const PASOS = [
 
 export function ComoTrabajamos() {
   const { ref, visible } = useRevealOnScroll<HTMLDivElement>();
+  const { ref: ctaRef, visible: ctaVisible } = useRevealOnScroll<HTMLDivElement>();
+  const contactoInfo = useQuery({
+    queryKey: ['contacto-info'],
+    queryFn: fetchContactoInfo,
+    staleTime: 5 * 60_000,
+  });
 
   return (
     <section id="servicios" className="section">
@@ -27,7 +36,7 @@ export function ComoTrabajamos() {
         <span className="eyebrow">Cómo trabajamos</span>
         <h2 className="section-title">Un proceso simple y transparente</h2>
 
-        <div className={`pasos-grid${visible ? ' visible' : ''}`} ref={ref}>
+        <div className={`pasos-grid reveal${visible ? ' visible' : ''}`} ref={ref}>
           {PASOS.map((p) => (
             <div className="paso-card" key={p.n}>
               <span className="paso-n">{p.n}</span>
@@ -36,6 +45,27 @@ export function ComoTrabajamos() {
             </div>
           ))}
         </div>
+
+        {contactoInfo.data?.whatsapp && (
+          <div className={`servicios-cta reveal${ctaVisible ? ' visible' : ''}`} ref={ctaRef}>
+            <div className="servicios-cta-copy">
+              <div className="servicios-cta-eyebrow">Desarrolladores e inversores</div>
+              <h3 className="servicios-cta-title">¿Tenés algo en mente? Contactanos.</h3>
+              <p className="servicios-cta-text">
+                Proyectos de pozo, loteos, edificios o comercialización de emprendimientos: pensamos la estrategia de
+                venta con vos, desde la primera unidad hasta la última.
+              </p>
+            </div>
+            <a
+              className="servicios-cta-btn"
+              href={waLink(contactoInfo.data.whatsapp, 'Hola! Quiero contarte sobre un proyecto/inversión.')}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Hablemos de tu proyecto →
+            </a>
+          </div>
+        )}
       </div>
     </section>
   );

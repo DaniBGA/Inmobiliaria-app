@@ -1,9 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
 import { PageHeader } from '../components/PageHeader';
 import { Modal } from '../components/Modal';
+import { ComprobanteImpreso } from '../components/ComprobanteImpreso';
+import { LiquidacionComprobanteBody, type Liquidacion, type GastoDetalle, type LiquidacionItem } from '../components/LiquidacionComprobante';
+import { descargarPdfComprobante } from '../lib/pdfComprobante';
 import { formatMoney, mesActualStr, mesLabel } from '../lib/format';
+
+interface Configuracion {
+  empresaDireccion: string;
+  empresaContacto: string;
+  publicoMatricula: string;
+}
 
 interface Propietario {
   id: string;
@@ -30,25 +39,26 @@ interface ResumenMes {
   filas: FilaCobro[];
 }
 
-interface LiquidacionItem {
-  descripcion: string;
-  monto: number | string;
-}
-
-interface LiquidacionDetalle {
+// Vista previa (sin persistir) que devuelve GET .../preview — misma forma
+// que el detalle ya emitido, salvo que trae `propiedadNombre` en vez de
+// `propiedad.nombre` (no viene de una relación Prisma) y el % de honorarios
+// resuelto, para poder recalcular el monto en vivo si se edita el Alquiler.
+interface DetallePreview {
   propiedadId: string;
-  cobradoTotal: number | string;
-  gastosAbsorbidos: number | string;
-  honorarios: number | string;
-  neto: number | string;
+  propiedadNombre: string;
+  cobradoTotal: number;
+  gastosAbsorbidos: number;
+  gastosDetalle: GastoDetalle[];
+  honorarios: number;
+  porcentajeHonorarios: number;
+  neto: number;
   items: LiquidacionItem[];
-  propiedad: { nombre: string };
 }
 
-interface Liquidacion {
-  numero: number;
-  netoAGirar: number | string;
-  detalle: LiquidacionDetalle[];
+interface ItemEditable {
+  descripcion: string;
+  monto: string;
+  numeroLiquidacion: string;
 }
 
 // Estado binario del mes en curso (mismo criterio que Panel General e
@@ -189,8 +199,56 @@ function LiquidacionModal({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
+
+  const configuracion = useQuery({
+    queryKey: ['configuracion'],
+    queryFn: () => api.get<Configuracion>('/configuracion'),
+  });
+  const cfg = configuracion.data;
+
+  // Vista previa editable (§3.4) — igual criterio que Facturas: se calcula
+  // todo (cobrado, gastos absorbidos, honorarios) pero no se persiste nada
+  // hasta "Emitir liquidación". El usuario puede tocar los montos y agregar
+  // ítems del lado "Cobrado" antes de confirmar; los gastos absorbidos no
+  // son editables acá — siempre salen de Incidencias/Gastos reales.
+  const preview = useQuery({
+    queryKey: ['liquidacion-preview', propietario.id, mes],
+    queryFn: () => api.get<DetallePreview[]>(`/liquidaciones/propietarios/${propietario.id}/${mes}/preview`),
+  });
+
+  const [itemsPorPropiedad, setItemsPorPropiedad] = useState<Record<string, ItemEditable[]> | null>(null);
+
+  useEffect(() => {
+    if (preview.data && itemsPorPropiedad === null) {
+      const inicial: Record<string, ItemEditable[]> = {};
+      for (const d of preview.data) {
+        inicial[d.propiedadId] = d.items.map((it) => ({
+          descripcion: it.descripcion,
+          monto: String(it.monto),
+          numeroLiquidacion: it.numeroLiquidacion ?? '',
+        }));
+      }
+      setItemsPorPropiedad(inicial);
+    }
+    // Solo precarga la primera vez que llega la vista previa; después el
+    // usuario es dueño del estado.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview.data]);
+
   const generar = useMutation({
-    mutationFn: () => api.post<Liquidacion>(`/liquidaciones/propietarios/${propietario.id}/${mes}`),
+    mutationFn: () =>
+      api.post<Liquidacion>(`/liquidaciones/propietarios/${propietario.id}/${mes}`, {
+        detalle: (preview.data ?? []).map((d) => ({
+          propiedadId: d.propiedadId,
+          items: (itemsPorPropiedad?.[d.propiedadId] ?? [])
+            .filter((it) => it.descripcion.trim())
+            .map((it) => ({
+              descripcion: it.descripcion.trim(),
+              monto: Number(it.monto) || 0,
+              numeroLiquidacion: it.numeroLiquidacion.trim() || undefined,
+            })),
+        })),
+      }),
     // Generar la liquidación crea un movimiento automático en Caja
     // (LIQUIDACION_PROPIETARIO) y puede aparecer en Avisos ("liquidación
     // lista para compartir") — sin esto, Caja y Avisos quedaban con datos
@@ -202,89 +260,172 @@ function LiquidacionModal({
     },
   });
 
-  useEffect(() => {
-    generar.mutate();
-    // Se genera una sola vez al abrir el modal, no en cada render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const L = generar.data;
-  const cobradoTotal = (L?.detalle ?? []).reduce((s, d) => s + Number(d.cobradoTotal), 0);
-  const honorariosTotal = (L?.detalle ?? []).reduce((s, d) => s + Number(d.honorarios), 0);
-  const neto = L ? Number(L.netoAGirar) : 0;
+  const comprobanteRef = useRef<HTMLDivElement>(null);
+  const [enviandoWhatsapp, setEnviandoWhatsapp] = useState(false);
+
+  async function enviarPorWhatsapp() {
+    if (!comprobanteRef.current || !propietario.telefono || !L) return;
+    setEnviandoWhatsapp(true);
+    try {
+      await descargarPdfComprobante(comprobanteRef.current, `Liquidacion ${L.numero} - ${propietario.nombre}.pdf`);
+      const texto = `Hola ${propietario.nombre}, te comparto la Liquidación N° ${L.numero} de ${mesLabel(mes)}. Te dejo el PDF descargado — adjuntalo acá mismo en el chat.`;
+      window.open(`https://wa.me/${propietario.telefono.replace(/\D/g, '')}?text=${encodeURIComponent(texto)}`, '_blank');
+    } finally {
+      setEnviandoWhatsapp(false);
+    }
+  }
+
+  function actualizarItem(propiedadId: string, idx: number, campo: keyof ItemEditable, valor: string) {
+    setItemsPorPropiedad((prev) => {
+      if (!prev) return prev;
+      return { ...prev, [propiedadId]: prev[propiedadId].map((it, i) => (i === idx ? { ...it, [campo]: valor } : it)) };
+    });
+  }
+  function agregarItem(propiedadId: string) {
+    setItemsPorPropiedad((prev) => {
+      if (!prev) return prev;
+      return { ...prev, [propiedadId]: [...prev[propiedadId], { descripcion: '', monto: '0', numeroLiquidacion: '' }] };
+    });
+  }
+  function quitarItem(propiedadId: string, idx: number) {
+    setItemsPorPropiedad((prev) => {
+      if (!prev) return prev;
+      return { ...prev, [propiedadId]: prev[propiedadId].filter((_, i) => i !== idx) };
+    });
+  }
+
+  // Mismo cálculo que `LiquidacionesService.calcularDetalle()` en el
+  // backend, para que el total que se ve acá mientras se edita coincida con
+  // el que va a quedar guardado al emitir.
+  function honorariosDe(pct: number, items: ItemEditable[]) {
+    const alquiler = Number(items.find((it) => it.descripcion === 'Alquiler')?.monto ?? 0);
+    return Math.round(alquiler * (pct / 100) * 100) / 100;
+  }
+
+  const netoEditable = (preview.data ?? []).reduce((acc, d) => {
+    const items = itemsPorPropiedad?.[d.propiedadId] ?? [];
+    const cobrado = items.reduce((s, it) => s + (Number(it.monto) || 0), 0);
+    return acc + (cobrado - d.gastosAbsorbidos - honorariosDe(d.porcentajeHonorarios, items));
+  }, 0);
+
+  const neto = L ? Number(L.netoAGirar) : netoEditable;
 
   return (
-    <Modal open onClose={onClose} title={`Liquidación — ${propietario.nombre}`} width={560}>
-      {generar.isPending && <div className="loadstate">Generando liquidación…</div>}
+    <Modal open onClose={onClose} title={`Liquidación — ${propietario.nombre}`} width={620}>
+      {preview.isPending && <div className="loadstate">Calculando liquidación…</div>}
+      {preview.isError && <div className="errstate">No se pudo calcular la liquidación.</div>}
       {generar.isError && (
         <div className="errstate">
-          {generar.error instanceof ApiError ? generar.error.message : 'No se pudo generar la liquidación.'}
+          {generar.error instanceof ApiError ? generar.error.message : 'No se pudo emitir la liquidación.'}
         </div>
       )}
+
+      {!L && preview.data && itemsPorPropiedad && (
+        <>
+          {preview.data.length === 0 && (
+            <div className="okstate">
+              <div className="big">▤</div>
+              <h4>Sin movimientos en {mesLabel(mes)}</h4>
+              <p>No hay cobros registrados para este propietario este mes.</p>
+            </div>
+          )}
+          {preview.data.map((d) => {
+            const items = itemsPorPropiedad[d.propiedadId] ?? [];
+            const honorarios = honorariosDe(d.porcentajeHonorarios, items);
+            return (
+              <div key={d.propiedadId} style={{ marginBottom: 18 }}>
+                <div className="fg full" style={{ marginBottom: 4 }}>
+                  <label>{d.propiedadNombre} — Cobrado</label>
+                </div>
+                <div className="itemlist">
+                  {items.map((it, idx) => (
+                    <div className="itemrow" key={idx}>
+                      <input
+                        className="itemdesc"
+                        value={it.descripcion}
+                        onChange={(e) => actualizarItem(d.propiedadId, idx, 'descripcion', e.target.value)}
+                        placeholder="Descripción"
+                      />
+                      <input
+                        className="itemmonto"
+                        type="number"
+                        step="0.01"
+                        value={it.monto}
+                        onChange={(e) => actualizarItem(d.propiedadId, idx, 'monto', e.target.value)}
+                      />
+                      <input
+                        className="itemliq"
+                        inputMode="numeric"
+                        placeholder="Liq"
+                        title="Número de liquidación"
+                        value={it.numeroLiquidacion}
+                        onChange={(e) =>
+                          actualizarItem(d.propiedadId, idx, 'numeroLiquidacion', e.target.value.replace(/\D/g, ''))
+                        }
+                      />
+                      <button className="btn-sm ghostred" onClick={() => quitarItem(d.propiedadId, idx)} title="Quitar ítem">
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button className="btn-sm" style={{ marginTop: 8 }} onClick={() => agregarItem(d.propiedadId)}>
+                  + Agregar item
+                </button>
+
+                {d.gastosDetalle.map((g, i) => (
+                  <div className="liqline neg" key={i} style={{ marginTop: i === 0 ? 10 : 0 }}>
+                    <span className="ld" style={{ paddingLeft: 16 }}>
+                      ↳ {g.descripcion}
+                    </span>
+                    <span className="lv">− {formatMoney(g.monto)}</span>
+                  </div>
+                ))}
+                <div className="liqline neg">
+                  <span className="ld">Honorarios ({d.porcentajeHonorarios}% del alquiler)</span>
+                  <span className="lv">− {formatMoney(honorarios)}</span>
+                </div>
+              </div>
+            );
+          })}
+          {preview.data.length > 0 && (
+            <div className="liqline tot">
+              <span className="ld">Total a liquidar</span>
+              <span className="lv" style={{ color: netoEditable >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                {formatMoney(netoEditable)}
+              </span>
+            </div>
+          )}
+          <div className="btnrow noprint">
+            <button className="btn-ghost" onClick={onClose}>
+              Cancelar
+            </button>
+            <button
+              className="btn-dark"
+              disabled={generar.isPending || preview.data.length === 0}
+              onClick={() => generar.mutate()}
+            >
+              Emitir liquidación
+            </button>
+          </div>
+        </>
+      )}
+
       {L && (
         <>
-          <div className="liqcard" style={{ boxShadow: 'none' }}>
-            <div className="liqhead">
-              <div className="avatar">{iniciales(propietario.nombre)}</div>
-              <div>
-                <h4>{propietario.nombre}</h4>
-                <div className="lsub">
-                  {L.detalle.length} {L.detalle.length === 1 ? 'propiedad' : 'propiedades'} · {mesLabel(mes)}
-                </div>
-              </div>
-              <span className="spacer"></span>
-              <div className="lnet">
-                <b>NETO A GIRAR</b>
-                <span style={{ color: neto >= 0 ? 'var(--green)' : 'var(--red)' }}>{formatMoney(neto)}</span>
-              </div>
-            </div>
-            <div className="liqbody">
-              {L.detalle.length === 0 && (
-                <div className="okstate">
-                  <div className="big">▤</div>
-                  <h4>Sin movimientos en {mesLabel(mes)}</h4>
-                  <p>No hay cobros registrados para este propietario este mes.</p>
-                </div>
-              )}
-              {L.detalle.map((d) => (
-                <div key={d.propiedadId}>
-                  <div className="liqline pos">
-                    <span className="ld">Cobrado — {d.propiedad.nombre}</span>
-                    <span className="lv">{formatMoney(d.cobradoTotal)}</span>
-                  </div>
-                  {Number(d.gastosAbsorbidos) > 0 && (
-                    <div className="liqline neg">
-                      <span className="ld" style={{ paddingLeft: 16 }}>
-                        ↳ Gastos absorbidos<small>{d.propiedad.nombre}</small>
-                      </span>
-                      <span className="lv">− {formatMoney(d.gastosAbsorbidos)}</span>
-                    </div>
-                  )}
-                </div>
-              ))}
-              {L.detalle.length > 0 && (
-                <>
-                  <div className="liqline neg">
-                    <span className="ld">
-                      Honorarios profesionales
-                      <small>según el % de cada propiedad · sobre {formatMoney(cobradoTotal)} cobrado</small>
-                    </span>
-                    <span className="lv">− {formatMoney(honorariosTotal)}</span>
-                  </div>
-                  <div className="liqline tot">
-                    <span className="ld">Total a liquidar</span>
-                    <span className="lv" style={{ color: neto >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                      {formatMoney(neto)}
-                    </span>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+          <ComprobanteImpreso cfg={cfg} ref={comprobanteRef}>
+            <LiquidacionComprobanteBody propietarioNombre={propietario.nombre} mesTexto={mesLabel(mes)} L={L} />
+          </ComprobanteImpreso>
           <div className="btnrow noprint">
             <button className="btn-ghost" onClick={onClose}>
               Cerrar
             </button>
+            {propietario.telefono && (
+              <button className="btn-whatsapp" disabled={enviandoWhatsapp} onClick={enviarPorWhatsapp}>
+                {enviandoWhatsapp ? 'Generando PDF…' : '📄 WhatsApp'}
+              </button>
+            )}
             <button className="btn-dark" onClick={() => window.print()}>
               ▤ Imprimir
             </button>

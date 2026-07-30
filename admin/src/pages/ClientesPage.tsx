@@ -3,11 +3,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
 import { PageHeader } from '../components/PageHeader';
 import { Modal } from '../components/Modal';
+import { MultiDonut } from '../components/charts/MultiDonut';
 import { formatMoney } from '../lib/format';
 
 type TipoOperacionCliente = 'ALQUILAR' | 'COMPRAR' | 'VENDER';
 type EstadoCliente = 'SIN_CONTACTAR' | 'EN_SEGUIMIENTO' | 'CERRADO';
 type ZonaCliente = 'CENTRO' | 'SEMICENTRICO' | 'INDIFERENTE';
+type OrigenCliente = 'INSTAGRAM' | 'PAGINA_WEB' | 'EN_PERSONA' | 'FACEBOOK' | 'CONTACTOS';
 
 interface Delegado {
   id: string;
@@ -26,19 +28,32 @@ interface Cliente {
   zona: ZonaCliente | null;
   detalle: string | null;
   estado: EstadoCliente;
-  origen: string | null;
+  origen: OrigenCliente | null;
   visitaOtraInmobiliariaConQuien: string | null;
   delegadoId: string | null;
   delegado: Delegado | null;
   notas: string | null;
 }
 
-interface ClientesKpis {
-  total: number;
-  buscanAlquilar: number;
-  buscanComprar: number;
-  sinContactar: number;
+interface OrigenStat {
+  origen: OrigenCliente;
+  cantidad: number;
 }
+
+const ORIGEN_LABEL: Record<OrigenCliente, string> = {
+  INSTAGRAM: 'Instagram',
+  PAGINA_WEB: 'Página web',
+  EN_PERSONA: 'En persona',
+  FACEBOOK: 'Facebook',
+  CONTACTOS: 'Contactos',
+};
+const ORIGEN_COLOR: Record<OrigenCliente, string> = {
+  INSTAGRAM: 'var(--orange)',
+  FACEBOOK: 'var(--indigo)',
+  PAGINA_WEB: 'var(--ink)',
+  EN_PERSONA: 'var(--green)',
+  CONTACTOS: 'var(--red)',
+};
 
 const TIPO_LABEL: Record<TipoOperacionCliente, string> = {
   ALQUILAR: 'BUSCA ALQUILAR',
@@ -92,9 +107,9 @@ export function ClientesPage() {
     queryKey: ['clientes'],
     queryFn: () => api.get<Cliente[]>('/clientes'),
   });
-  const kpis = useQuery({
-    queryKey: ['clientes', 'kpis'],
-    queryFn: () => api.get<ClientesKpis>('/clientes/kpis'),
+  const origenStats = useQuery({
+    queryKey: ['clientes', 'stats-por-origen'],
+    queryFn: () => api.get<OrigenStat[]>('/clientes/stats-por-origen'),
   });
   const delegados = useQuery({
     queryKey: ['integrantes-equipo'],
@@ -124,7 +139,7 @@ export function ClientesPage() {
   const q = busqueda.toLowerCase();
   if (q) {
     lista = lista.filter((c) =>
-      [c.nombre, c.detalle, c.zona, c.visitaOtraInmobiliariaConQuien, c.delegado?.nombre, c.email, c.telefono, c.notas, c.origen]
+      [c.nombre, c.detalle, c.zona, c.visitaOtraInmobiliariaConQuien, c.delegado?.nombre, c.email, c.telefono, c.notas, c.origen && ORIGEN_LABEL[c.origen]]
         .filter(Boolean)
         .join(' ')
         .toLowerCase()
@@ -141,23 +156,25 @@ export function ClientesPage() {
     <>
       <PageHeader title="Clientes" />
       <main>
-        <div className="kpis">
-          <div className="kpi">
-            <div className="lbl">Total de clientes</div>
-            <div className="val">{String(kpis.data?.total ?? 0).padStart(2, '0')}</div>
-          </div>
-          <div className="kpi">
-            <div className="lbl">Buscan alquilar</div>
-            <div className="val">{String(kpis.data?.buscanAlquilar ?? 0).padStart(2, '0')}</div>
-          </div>
-          <div className="kpi">
-            <div className="lbl">Buscan comprar</div>
-            <div className="val">{String(kpis.data?.buscanComprar ?? 0).padStart(2, '0')}</div>
-          </div>
-          <div className={`kpi${(kpis.data?.sinContactar ?? 0) > 0 ? ' alert' : ''}`}>
-            <div className="lbl">Sin contactar</div>
-            <div className="val">{String(kpis.data?.sinContactar ?? 0).padStart(2, '0')}</div>
-            <div className="hint">clientes nuevos</div>
+        <div className="panel" style={{ marginBottom: 22 }}>
+          <h3>ORIGEN DE LOS CLIENTES</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 28, flexWrap: 'wrap' }}>
+            <MultiDonut
+              slices={(origenStats.data ?? []).map((s) => ({
+                label: ORIGEN_LABEL[s.origen],
+                valor: s.cantidad,
+                color: ORIGEN_COLOR[s.origen],
+              }))}
+            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1, minWidth: 180 }}>
+              {(origenStats.data ?? []).map((s) => (
+                <div key={s.origen} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
+                  <i style={{ width: 8, height: 8, borderRadius: 99, background: ORIGEN_COLOR[s.origen], flexShrink: 0, display: 'inline-block' }}></i>
+                  <span style={{ flex: 1, color: 'var(--ink2)' }}>{ORIGEN_LABEL[s.origen]}</span>
+                  <span style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{s.cantidad}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -242,7 +259,7 @@ export function ClientesPage() {
                   </div>
                   <div className="oprop" style={{ cursor: 'default' }}>
                     <span className="nm">Origen</span>
-                    <span className="pdate">{c.origen ?? '—'}</span>
+                    <span className="pdate">{c.origen ? ORIGEN_LABEL[c.origen] : '—'}</span>
                   </div>
                   {c.delegado && (
                     <div className="oprop" style={{ cursor: 'default' }}>
@@ -305,7 +322,7 @@ function ClienteModal({
   const [email, setEmail] = useState(cliente?.email ?? '');
   const [tipoOperacion, setTipoOperacion] = useState<TipoOperacionCliente>(cliente?.tipoOperacion ?? 'ALQUILAR');
   const [estado, setEstado] = useState<EstadoCliente>(cliente?.estado ?? 'SIN_CONTACTAR');
-  const [origen, setOrigen] = useState(cliente?.origen ?? 'Portal web');
+  const [origen, setOrigen] = useState<OrigenCliente | ''>(cliente?.origen ?? 'PAGINA_WEB');
   const [busquedaTipoPropiedad, setBusquedaTipoPropiedad] = useState(cliente?.busquedaTipoPropiedad ?? '');
   const [montoDesde, setMontoDesde] = useState(String(cliente?.montoDesde ?? ''));
   const [montoHasta, setMontoHasta] = useState(String(cliente?.montoHasta ?? ''));
@@ -382,7 +399,14 @@ function ClienteModal({
         </div>
         <div className="fg">
           <label>Origen</label>
-          <input value={origen} onChange={(e) => setOrigen(e.target.value)} placeholder="Ej: Portal web" />
+          <select value={origen} onChange={(e) => setOrigen(e.target.value as OrigenCliente | '')}>
+            <option value="">— Sin especificar —</option>
+            {Object.entries(ORIGEN_LABEL).map(([v, l]) => (
+              <option key={v} value={v}>
+                {l}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="fg">
           <label>Tipo de propiedad que busca</label>

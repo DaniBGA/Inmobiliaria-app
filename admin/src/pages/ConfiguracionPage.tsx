@@ -543,8 +543,7 @@ interface Cliente {
 }
 interface Cartel {
   propiedad: { nombre: string };
-  tipoCartel: string;
-  estado: string;
+  tipoCartel: 'COLOCADO' | 'A_PEDIDO' | 'RETIRADO';
   fechaColocacion: string | null;
   diasEnLaCalle: number | null;
 }
@@ -765,9 +764,14 @@ function ReportesSection() {
           onClick: () =>
             exportar('carteles', async () => {
               const r = await api.get<Cartel[]>('/carteles');
+              const tipoLabel: Record<Cartel['tipoCartel'], string> = {
+                COLOCADO: 'Colocado',
+                A_PEDIDO: 'Por colocar',
+                RETIRADO: 'Retirado',
+              };
               descargarCsv('carteles.csv', [
-                ['Propiedad', 'Tipo de cartel', 'Estado', 'Colocado', 'Días en la calle'],
-                ...r.map((c) => [c.propiedad.nombre, c.tipoCartel, c.estado, c.fechaColocacion ? formatDate(c.fechaColocacion) : '', c.diasEnLaCalle ?? '']),
+                ['Propiedad', 'Tipo de cartel', 'Colocado', 'Días en la calle'],
+                ...r.map((c) => [c.propiedad.nombre, tipoLabel[c.tipoCartel], c.fechaColocacion ? formatDate(c.fechaColocacion) : '', c.diasEnLaCalle ?? '']),
               ]);
             }),
         },

@@ -1,6 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { statsPorTipo } from '../../api/propiedades';
+import { useRevealOnScroll } from '../../hooks/useRevealOnScroll';
+import { useParallax } from '../../hooks/useParallax';
+import fondoBuscas from '../../images/FondoEncontraLoQueBuscas.jpeg';
 
 const BUCKETS: { key: keyof Awaited<ReturnType<typeof statsPorTipo>>; label: string; tipo: string }[] = [
   { key: 'casas', label: 'Casas', tipo: 'CASA' },
@@ -16,16 +19,25 @@ function pad(n: number) {
 export function TipoStatsBand() {
   const navigate = useNavigate();
   const stats = useQuery({ queryKey: ['public-stats-tipo'], queryFn: statsPorTipo });
+  const { ref, visible } = useRevealOnScroll<HTMLDivElement>();
+  const bgParallax = useParallax<HTMLImageElement>(0.12);
+  const textParallax = useParallax<HTMLDivElement>(-0.06);
 
   return (
-    <section className="section dark">
-      <div className="container">
-        <span className="eyebrow">Explorá por tipo</span>
-        <h2 className="section-title" style={{ color: '#fff' }}>
-          Encontrá lo que buscás
-        </h2>
+    <section className="section dark tipo-band">
+      <div className="tipo-band-bg">
+        <img src={fondoBuscas} alt="" ref={bgParallax} className="parallax-el" />
+      </div>
+      <div className="tipo-band-overlay" />
+      <div className="container tipo-band-inner">
+        <div className="parallax-el" ref={textParallax}>
+          <span className="eyebrow">Explorá por tipo</span>
+          <h2 className="section-title" style={{ color: '#fff' }}>
+            Encontrá lo que buscás
+          </h2>
+        </div>
 
-        <div className="tipo-stats-grid">
+        <div className={`tipo-stats-grid reveal${visible ? ' visible' : ''}`} ref={ref}>
           {BUCKETS.map((b) => (
             <button
               key={b.key}

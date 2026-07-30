@@ -3,8 +3,8 @@ import { EstadoCartel } from '@prisma/client';
 
 export class UpdateCartelDto {
   @IsOptional()
-  @IsString()
-  tipoCartel?: string;
+  @IsEnum(EstadoCartel)
+  tipoCartel?: EstadoCartel;
 
   @IsOptional()
   @IsString()
@@ -17,8 +17,4 @@ export class UpdateCartelDto {
   @IsOptional()
   @IsDateString()
   fechaRetiro?: string;
-
-  @IsOptional()
-  @IsEnum(EstadoCartel)
-  estado?: EstadoCartel;
 }

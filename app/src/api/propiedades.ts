@@ -29,8 +29,12 @@ export interface PropiedadPublica {
   precio: number | null;
   moneda: 'ARS' | 'USD' | null;
   ambientes: number | null;
+  dormitorios: number | null;
   banos: number | null;
+  cochera: boolean;
   superficieM2: number | null;
+  superficieCubierta: number | null;
+  descripcion: string | null;
   fotos: FotoPublica[];
 }
 

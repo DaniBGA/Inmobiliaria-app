@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { DestinoGasto } from '@prisma/client';
+import { DestinoGasto, ServicioFacturable } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PropiedadesService } from '../propiedades/propiedades.service';
 import { GastosService } from '../gastos/gastos.service';
 import { CobrosService } from '../cobros/cobros.service';
 import { ConfiguracionService } from '../configuracion/configuracion.service';
-import { mesStringAFecha } from '../common/fecha.util';
+import { finDeMes, mesStringAFecha } from '../common/fecha.util';
 import { FacturaItemInputDto } from './dto/factura-item-input.dto';
 
 export interface ItemPredeterminado {
@@ -25,22 +25,67 @@ export class FacturasService {
     private readonly configuracionService: ConfiguracionService,
   ) {}
 
+  // Servicios trasladables (§3.5) — a qué descripción de ítem corresponde
+  // cada uno. Un servicio que la propiedad no tiene habilitado
+  // (Propiedad.serviciosHabilitados) no se ofrece al abrir la factura.
+  private static readonly SERVICIO_DESCRIPCION: Record<ServicioFacturable, string> = {
+    EXPENSAS: 'Expensas del mes',
+    USINA: 'Usina',
+    CAMUZZI: 'Camuzzi',
+    OBRAS_SANITARIAS: 'Obras Sanitarias',
+    RETRIBUTIVAS: 'Retributivas de Servicios',
+  };
+
+  // Orden canónico en la factura, sin importar el orden en que se
+  // tildaron los checkboxes al cargar/editar la propiedad.
+  private static readonly SERVICIO_ORDEN: ServicioFacturable[] = [
+    ServicioFacturable.EXPENSAS,
+    ServicioFacturable.USINA,
+    ServicioFacturable.CAMUZZI,
+    ServicioFacturable.OBRAS_SANITARIAS,
+    ServicioFacturable.RETRIBUTIVAS,
+  ];
+
   // §3.5: ítems predeterminados con los que se abre la factura (o la
   // liquidación, ver §3.4) — reusado también por Recibo cuando no hay
   // factura previa del período. Única implementación: nadie más arma este
   // detalle por su cuenta.
   async itemsPredeterminados(propiedadId: string, mesStr: string): Promise<ItemPredeterminado[]> {
     const mes = mesStringAFecha(mesStr);
-    const rentaVigenteRaw = await this.propiedadesService.rentaVigente(propiedadId, mes);
+    const propiedad = await this.prisma.propiedad.findUniqueOrThrow({
+      where: { id: propiedadId },
+      select: { serviciosHabilitados: true },
+    });
+    const rentaVigenteRaw = await this.propiedadesService.rentaVigente(propiedadId, finDeMes(mes));
+
+    // Última factura anterior a este mes: los montos de los servicios (que
+    // no se pueden calcular solos, a diferencia del alquiler) se ofrecen
+    // precargados con lo último emitido, en vez de reiniciar en 0 cada mes
+    // — la mayoría no cambia de un mes a otro y hoy había que re-tipearlos
+    // siempre a mano.
+    const facturaAnterior = await this.prisma.factura.findFirst({
+      where: { propiedadId, mes: { lt: mes } },
+      orderBy: { mes: 'desc' },
+      include: { items: true },
+    });
+    const montoAnteriorPorDescripcion = new Map(
+      (facturaAnterior?.items ?? []).map((it) => [it.descripcion, Number(it.monto)]),
+    );
 
     const items: ItemPredeterminado[] = [
       { descripcion: 'Alquiler', monto: rentaVigenteRaw != null ? Number(rentaVigenteRaw) : 0, orden: 0 },
-      { descripcion: 'Expensas del mes', monto: 0, orden: 1 },
-      { descripcion: 'Usina', monto: 0, orden: 2 },
-      { descripcion: 'Camuzzi', monto: 0, orden: 3 },
-      { descripcion: 'Obras Sanitarias', monto: 0, orden: 4 },
-      { descripcion: 'Retributivas de Servicios', monto: 0, orden: 5 },
     ];
+    const serviciosOrdenados = FacturasService.SERVICIO_ORDEN.filter((s) =>
+      propiedad.serviciosHabilitados.includes(s),
+    );
+    serviciosOrdenados.forEach((servicio, i) => {
+      const descripcion = FacturasService.SERVICIO_DESCRIPCION[servicio];
+      items.push({
+        descripcion,
+        monto: montoAnteriorPorDescripcion.get(descripcion) ?? 0,
+        orden: 1 + i,
+      });
+    });
 
     // Gastos trasladados al inquilino ese mes (§3.2)
     const gastosTrasladados = await this.gastosService.findParaMes(
@@ -48,8 +93,9 @@ export class FacturasService {
       mes,
       DestinoGasto.INQUILINO,
     );
+    const ordenGastos = items.length;
     gastosTrasladados.forEach((g, i) => {
-      items.push({ descripcion: g.descripcion, monto: Number(g.monto), orden: 6 + i });
+      items.push({ descripcion: g.descripcion, monto: Number(g.monto), orden: ordenGastos + i });
     });
 
     // Deuda arrastrada de meses anteriores a este (§3.1, §5.4) — se calcula

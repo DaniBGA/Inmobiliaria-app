@@ -266,7 +266,13 @@ export function InquilinosPage() {
         </div>
         <div className="tenants">
           {fichasVisibles.map((f) => (
-            <div key={f.propiedadId} className={`tcard${f.deudaAcumulada > 0 ? ' debe' : ''}`}>
+            <div
+              key={f.propiedadId}
+              className={`tcard${f.deudaAcumulada > 0 ? ' debe' : ''}`}
+              style={{ cursor: 'pointer' }}
+              title="Clic para ver la ficha de la propiedad"
+              onClick={() => setFichaId(f.propiedadId)}
+            >
               <div className="thead">
                 <div className="avatar">
                   {(f.inquilino?.nombre ?? '')

@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api, ApiError, BASE_URL } from '../api/client';
 import { Modal } from './Modal';
 import { formatMoney, formatUsd, formatDate, mesActualStr, mesLabel } from '../lib/format';
-import { honorariosLabel, type TipoHonorarios } from '../lib/honorarios';
+import { honorariosLabel, resolverPorcentajeHonorarios, type TipoHonorarios } from '../lib/honorarios';
 import { FotosPropiedad, type FotoPropiedadItem } from './FotosPropiedad';
+import { ComprobanteImpreso } from './ComprobanteImpreso';
+import { descargarPdfComprobante } from '../lib/pdfComprobante';
 
 type Modalidad = 'ALQUILER' | 'VENTA';
 type IndiceAjuste = 'IPC' | 'ICL' | null;
@@ -54,8 +56,12 @@ interface PropiedadFicha {
   modalidad: Modalidad;
   tipo: string;
   ambientes: number | null;
+  dormitorios: number | null;
   banos: number | null;
+  cochera: boolean;
   superficieM2: string | number | null;
+  superficieCubierta: string | number | null;
+  descripcion: string | null;
   fotos: FotoPropiedadItem[];
   montoAlquilerVigente: string | number | null;
   alquilerPublicado: boolean;
@@ -111,11 +117,16 @@ interface Configuracion {
   honorariosDefaultPorcentaje: string;
   dolarReferencia: string;
   diasAnticipacionAumento: number;
+  empresaNombre: string;
+  empresaDireccion: string;
+  empresaContacto: string;
+  publicoMatricula: string;
 }
 interface FacturaItem {
   id: string;
   descripcion: string;
   monto: string | number;
+  numeroLiquidacion: string | null;
 }
 interface Factura {
   numero: number;
@@ -798,7 +809,15 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
         />
       )}
       {facturaModal && p && (
-        <FacturaModal propiedadId={p.id} propiedadNombre={p.nombre} onClose={() => setFacturaModal(false)} />
+        <FacturaModal
+          propiedadId={p.id}
+          propiedadNombre={p.nombre}
+          inquilino={p.inquilino}
+          honorariosTipoActual={p.honorariosTipo}
+          honorariosPorcentajeActual={p.honorariosPorcentaje}
+          honorDefaultPct={honorPct}
+          onClose={() => setFacturaModal(false)}
+        />
       )}
       {reciboModal && p && (
         <ReciboModal
@@ -849,8 +868,12 @@ function EditarDatosGeneralesModal({
   const [direccion, setDireccion] = useState(propiedad.direccion);
   const [tipo, setTipo] = useState(propiedad.tipo);
   const [ambientes, setAmbientes] = useState(String(propiedad.ambientes ?? ''));
+  const [dormitorios, setDormitorios] = useState(String(propiedad.dormitorios ?? ''));
   const [banos, setBanos] = useState(String(propiedad.banos ?? ''));
+  const [cochera, setCochera] = useState(propiedad.cochera);
   const [superficieM2, setSuperficieM2] = useState(String(propiedad.superficieM2 ?? ''));
+  const [superficieCubierta, setSuperficieCubierta] = useState(String(propiedad.superficieCubierta ?? ''));
+  const [descripcion, setDescripcion] = useState(propiedad.descripcion ?? '');
   const [error, setError] = useState<string | null>(null);
 
   const guardar = useMutation({
@@ -860,8 +883,12 @@ function EditarDatosGeneralesModal({
         direccion,
         tipo,
         ambientes: ambientes ? Number(ambientes) : undefined,
+        dormitorios: dormitorios ? Number(dormitorios) : undefined,
         banos: banos ? Number(banos) : undefined,
+        cochera,
         superficieM2: superficieM2 ? Number(superficieM2) : undefined,
+        superficieCubierta: superficieCubierta ? Number(superficieCubierta) : undefined,
+        descripcion: descripcion.trim() || undefined,
       }),
     onSuccess: onSaved,
     onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo guardar la propiedad.'),
@@ -894,17 +921,42 @@ function EditarDatosGeneralesModal({
           <input type="number" min={0} value={ambientes} onChange={(e) => setAmbientes(e.target.value)} placeholder="Opcional" />
         </div>
         <div className="fg">
+          <label>Dormitorios</label>
+          <input type="number" min={0} value={dormitorios} onChange={(e) => setDormitorios(e.target.value)} placeholder="Opcional" />
+        </div>
+        <div className="fg">
           <label>Baños</label>
           <input type="number" min={0} value={banos} onChange={(e) => setBanos(e.target.value)} placeholder="Opcional" />
         </div>
         <div className="fg">
-          <label>Superficie (m²)</label>
+          <label>Superficie total (m²)</label>
           <input type="number" min={0} step="0.01" value={superficieM2} onChange={(e) => setSuperficieM2(e.target.value)} placeholder="Opcional" />
+        </div>
+        <div className="fg">
+          <label>Superficie cubierta (m²)</label>
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={superficieCubierta}
+            onChange={(e) => setSuperficieCubierta(e.target.value)}
+            placeholder="Opcional"
+          />
+        </div>
+        <div className="fg" style={{ display: 'flex', alignItems: 'flex-end' }}>
+          <label className="chk">
+            <input type="checkbox" checked={cochera} onChange={(e) => setCochera(e.target.checked)} />
+            <span>Tiene cochera</span>
+          </label>
+        </div>
+        <div className="fg full">
+          <label>Descripción</label>
+          <textarea rows={3} value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Breve descripción del lugar (opcional)" />
         </div>
       </div>
       <div className="cfgnote">
         <i>△</i>
-        <span>Ambientes, baños y superficie son los datos que se muestran en la ficha pública de la landing.</span>
+        <span>Ambientes, dormitorios, baños, superficie, cochera y descripción son los datos que se muestran en la ficha pública de la landing.</span>
       </div>
       <div className="btnrow">
         <button className="btn-ghost" onClick={onClose}>
@@ -1029,53 +1081,123 @@ function NuevoGastoModal({
 interface ItemEditable {
   descripcion: string;
   monto: string;
+  numeroLiquidacion: string;
 }
 
 function FacturaModal({
   propiedadId,
   propiedadNombre,
+  inquilino,
+  honorariosTipoActual,
+  honorariosPorcentajeActual,
+  honorDefaultPct,
   onClose,
 }: {
   propiedadId: string;
   propiedadNombre: string;
+  inquilino: Inquilino | null;
+  honorariosTipoActual: TipoHonorarios;
+  honorariosPorcentajeActual: number | string | null;
+  honorDefaultPct: number;
   onClose: () => void;
 }) {
+  const qc = useQueryClient();
   const mes = mesActualStr();
 
-  // Ítems predeterminados (§3.5: alquiler vigente + gastos trasladados +
-  // deuda arrastrada) — se traen como punto de partida editable, no se
-  // emiten directo: el usuario puede agregar/quitar líneas y cambiar
-  // montos antes de confirmar.
+  // Mismo queryKey que ya usa el drawer padre (línea ~218): React Query
+  // dedupea y sirve del caché, no dispara un segundo pedido de red.
+  const configuracion = useQuery({
+    queryKey: ['configuracion'],
+    queryFn: () => api.get<Configuracion>('/configuracion'),
+  });
+  const cfg = configuracion.data;
+
+  // Ítems predeterminados (§3.5: alquiler vigente + servicios habilitados,
+  // precargados con lo último facturado + gastos trasladados + deuda
+  // arrastrada) — se traen como punto de partida editable, no se emiten
+  // directo: el usuario puede agregar/quitar líneas y cambiar montos antes
+  // de confirmar.
   const predeterminados = useQuery({
     queryKey: ['items-predeterminados', propiedadId, mes],
     queryFn: () =>
-      api.get<{ descripcion: string; monto: number }[]>(
+      api.get<{ descripcion: string; monto: number; numeroLiquidacion?: string | null }[]>(
         `/facturacion/propiedades/${propiedadId}/items-predeterminados?mes=${mes}`,
       ),
   });
 
   const [items, setItems] = useState<ItemEditable[] | null>(null);
+  const [honorariosTipo, setHonorariosTipo] = useState<TipoHonorarios>(honorariosTipoActual ?? null);
+  const [honorariosPorcentaje, setHonorariosPorcentaje] = useState(
+    honorariosPorcentajeActual != null ? String(honorariosPorcentajeActual) : '',
+  );
 
   useEffect(() => {
     if (predeterminados.data && items === null) {
-      setItems(predeterminados.data.map((it) => ({ descripcion: it.descripcion, monto: String(it.monto) })));
+      setItems(
+        predeterminados.data.map((it) => ({
+          descripcion: it.descripcion,
+          monto: String(it.monto),
+          numeroLiquidacion: it.numeroLiquidacion ?? '',
+        })),
+      );
     }
     // Solo precarga la primera vez que llegan los predeterminados; después
     // el usuario es dueño del estado.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [predeterminados.data]);
 
+  // Honorarios (§2.3, §5.5): se calculan sobre el alquiler puro, no sobre
+  // el total facturado (que también incluye expensas/servicios/deuda que
+  // la inmobiliaria solo intermedia) — mismo criterio que
+  // liquidaciones.service.ts::generar(). Elegir el % acá lo deja guardado
+  // en la propiedad para esta y las próximas liquidaciones.
+  const montoAlquiler = Number(items?.find((it) => it.descripcion === 'Alquiler')?.monto ?? 0);
+  const pctResuelto = resolverPorcentajeHonorarios(
+    { honorariosTipo, honorariosPorcentaje: honorariosPorcentaje || null },
+    honorDefaultPct,
+  );
+  const honorariosPreview = Math.round(montoAlquiler * (pctResuelto / 100) * 100) / 100;
+  const honorariosCambiaron =
+    (honorariosTipo ?? '') !== (honorariosTipoActual ?? '') ||
+    (honorariosTipo === 'OTRO' && honorariosPorcentaje !== String(honorariosPorcentajeActual ?? ''));
+
   const emitir = useMutation({
-    mutationFn: () =>
-      api.post<Factura>(`/facturacion/propiedades/${propiedadId}/facturas`, {
+    mutationFn: async () => {
+      if (honorariosCambiaron) {
+        await api.patch(`/propiedades/${propiedadId}`, {
+          honorariosTipo: honorariosTipo || undefined,
+          honorariosPorcentaje: honorariosTipo === 'OTRO' && honorariosPorcentaje ? Number(honorariosPorcentaje) : undefined,
+        });
+        qc.invalidateQueries({ queryKey: ['propiedades'] });
+      }
+      return api.post<Factura>(`/facturacion/propiedades/${propiedadId}/facturas`, {
         mes,
         items: (items ?? [])
           .filter((it) => it.descripcion.trim())
-          .map((it) => ({ descripcion: it.descripcion.trim(), monto: Number(it.monto) || 0 })),
-      }),
+          .map((it) => ({
+            descripcion: it.descripcion.trim(),
+            monto: Number(it.monto) || 0,
+            numeroLiquidacion: it.numeroLiquidacion.trim() || undefined,
+          })),
+      });
+    },
   });
 
   const F = emitir.data;
+  const comprobanteRef = useRef<HTMLDivElement>(null);
+  const [enviandoWhatsapp, setEnviandoWhatsapp] = useState(false);
+
+  async function enviarPorWhatsapp() {
+    if (!comprobanteRef.current || !inquilino?.telefono || !F) return;
+    setEnviandoWhatsapp(true);
+    try {
+      await descargarPdfComprobante(comprobanteRef.current, `Factura ${F.numero} - ${propiedadNombre}.pdf`);
+      const texto = `Hola ${inquilino.nombre}, te comparto la Factura N° ${F.numero} de ${propiedadNombre} correspondiente a ${mesLabel(mes)}. Te dejo el PDF descargado — adjuntalo acá mismo en el chat.`;
+      window.open(`https://wa.me/${inquilino.telefono.replace(/\D/g, '')}?text=${encodeURIComponent(texto)}`, '_blank');
+    } finally {
+      setEnviandoWhatsapp(false);
+    }
+  }
 
   const actualizarItem = (idx: number, campo: keyof ItemEditable, valor: string) => {
     setItems((prev) => prev && prev.map((it, i) => (i === idx ? { ...it, [campo]: valor } : it)));
@@ -1084,7 +1206,7 @@ function FacturaModal({
     setItems((prev) => prev && prev.filter((_, i) => i !== idx));
   };
   const agregarItem = () => {
-    setItems((prev) => [...(prev ?? []), { descripcion: '', monto: '0' }]);
+    setItems((prev) => [...(prev ?? []), { descripcion: '', monto: '0', numeroLiquidacion: '' }]);
   };
 
   const totalEditable = (items ?? []).reduce((acc, it) => acc + (Number(it.monto) || 0), 0);
@@ -1099,6 +1221,38 @@ function FacturaModal({
 
       {!F && items && (
         <>
+          <div className="fg full" style={{ marginBottom: 4 }}>
+            <label>Honorarios profesionales (sobre el alquiler)</label>
+          </div>
+          <div className="formgrid" style={{ marginBottom: 6 }}>
+            <div className="fg">
+              <select value={honorariosTipo ?? ''} onChange={(e) => setHonorariosTipo((e.target.value || null) as TipoHonorarios)}>
+                <option value="">Usar el % por defecto ({honorDefaultPct}%)</option>
+                <option value="LIBRE">Libre de gastos (0%)</option>
+                <option value="TRES_POR_CIENTO">3%</option>
+                <option value="SEIS_POR_CIENTO">6%</option>
+                <option value="OTRO">Otro %</option>
+              </select>
+            </div>
+            {honorariosTipo === 'OTRO' && (
+              <div className="fg">
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step="0.1"
+                  placeholder="%"
+                  value={honorariosPorcentaje}
+                  onChange={(e) => setHonorariosPorcentaje(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+          <div className="liqline" style={{ marginBottom: 14 }}>
+            <span className="ld">Honorarios ({pctResuelto}% de {formatMoney(montoAlquiler)})</span>
+            <span className="lv">{formatMoney(honorariosPreview)}</span>
+          </div>
+
           <div className="itemlist">
             {items.map((it, idx) => (
               <div className="itemrow" key={idx}>
@@ -1114,6 +1268,14 @@ function FacturaModal({
                   step="0.01"
                   value={it.monto}
                   onChange={(e) => actualizarItem(idx, 'monto', e.target.value)}
+                />
+                <input
+                  className="itemliq"
+                  inputMode="numeric"
+                  placeholder="Liq"
+                  title="Número de liquidación"
+                  value={it.numeroLiquidacion}
+                  onChange={(e) => actualizarItem(idx, 'numeroLiquidacion', e.target.value.replace(/\D/g, ''))}
                 />
                 <button className="btn-sm ghostred" onClick={() => quitarItem(idx)} title="Quitar ítem">
                   ✕
@@ -1141,31 +1303,41 @@ function FacturaModal({
 
       {F && (
         <>
-          <div className="liqcard" style={{ boxShadow: 'none' }}>
-            <div className="liqhead">
-              <div>
-                <h4>Factura N° {F.numero}</h4>
-                <div className="lsub">{mesLabel(mes)}</div>
-              </div>
-              <span className="spacer"></span>
-              <div className="lnet">
-                <b>TOTAL</b>
-                <span>{formatMoney(F.total)}</span>
-              </div>
-            </div>
-            <div className="liqbody">
-              {F.items.map((it) => (
-                <div className="liqline" key={it.id}>
-                  <span className="ld">{it.descripcion}</span>
-                  <span className="lv">{formatMoney(it.monto)}</span>
+          <ComprobanteImpreso cfg={cfg} ref={comprobanteRef}>
+            <div className="liqcard" style={{ boxShadow: 'none' }}>
+              <div className="liqhead">
+                <div>
+                  <h4>Factura N° {F.numero}</h4>
+                  <div className="lsub">{mesLabel(mes)}</div>
                 </div>
-              ))}
+                <span className="spacer"></span>
+                <div className="lnet">
+                  <b>TOTAL</b>
+                  <span>{formatMoney(F.total)}</span>
+                </div>
+              </div>
+              <div className="liqbody">
+                {F.items.map((it) => (
+                  <div className="liqline" key={it.id}>
+                    <span className="ld">
+                      {it.descripcion}
+                      {it.numeroLiquidacion && <small style={{ color: 'var(--muted)' }}> · Liq N° {it.numeroLiquidacion}</small>}
+                    </span>
+                    <span className="lv">{formatMoney(it.monto)}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          </ComprobanteImpreso>
           <div className="btnrow noprint">
             <button className="btn-ghost" onClick={onClose}>
               Cerrar
             </button>
+            {inquilino?.telefono && (
+              <button className="btn-whatsapp" disabled={enviandoWhatsapp} onClick={enviarPorWhatsapp}>
+                {enviandoWhatsapp ? 'Generando PDF…' : '📄 WhatsApp'}
+              </button>
+            )}
             <button className="btn-dark" onClick={() => window.print()}>
               ▤ Imprimir
             </button>
@@ -1175,6 +1347,7 @@ function FacturaModal({
     </Modal>
   );
 }
+
 
 function ReciboModal({
   propiedadId,

@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { ModalidadPropiedad, TipoPropiedad } from '@prisma/client';
+import { ModalidadPropiedad, OrigenCliente, TipoPropiedad } from '@prisma/client';
 import { PublicPropiedadesService } from './public-propiedades.service';
 import { CreateContactoDto } from './dto/create-contacto.dto';
 import { ClientesService } from '../clientes/clientes.service';
@@ -54,7 +54,9 @@ export class PublicController {
       email: dto.email,
       tipoOperacion: dto.tipoOperacion,
       detalle: dto.mensaje,
-      origen: 'Landing web',
+      // La landing es "la página web" de la inmobiliaria — mismo bucket
+      // que cualquier otro contacto que entre por ahí (§2.6).
+      origen: OrigenCliente.PAGINA_WEB,
     });
     return { ok: true };
   }

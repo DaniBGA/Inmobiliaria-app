@@ -1,8 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { PageHeader } from '../components/PageHeader';
-import { formatMoney, formatDate } from '../lib/format';
+import { ComprobanteImpreso } from '../components/ComprobanteImpreso';
+import { LiquidacionComprobanteBody, type Liquidacion } from '../components/LiquidacionComprobante';
+import { descargarPdfComprobante } from '../lib/pdfComprobante';
+import { formatMoney, formatDate, mesActualStr, mesLabel } from '../lib/format';
+
+interface Configuracion {
+  empresaDireccion: string;
+  empresaContacto: string;
+  publicoMatricula: string;
+}
 
 interface PersonaContacto {
   nombre: string;
@@ -57,7 +66,7 @@ interface Recordatorio {
 interface LiquidacionLista {
   clave: string;
   liquidacionId: string;
-  propietario: PersonaContacto | null;
+  propietario: (PersonaContacto & { id: string }) | null;
   netoAGirar: number;
   texto: string;
 }
@@ -84,6 +93,9 @@ interface AvisoItem {
   email: string | null;
   asunto: string;
   texto: string;
+  // Solo se completa para "Liquidación lista" — habilita el botón
+  // "Descargar PDF" de la tarjeta (ver `AvisoCard`).
+  liquidacionPdf?: { propietarioId: string; propietarioNombre: string };
 }
 
 interface Grupo {
@@ -227,6 +239,7 @@ function construirGrupos(data: AvisosResponse): Grupo[] {
         email: a.propietario?.email ?? null,
         asunto: 'Liquidación lista',
         texto: a.texto,
+        liquidacionPdf: a.propietario ? { propietarioId: a.propietario.id, propietarioNombre: a.propietario.nombre } : undefined,
       })),
     },
   ];
@@ -244,6 +257,37 @@ export function AvisosPage() {
     mutationFn: (item: { grupo: string; clave: string }) => api.post('/avisos/descartar', item),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['avisos'] }),
   });
+
+  // Generación del PDF de la liquidación desde acá (botón "Descargar PDF"
+  // de la tarjeta "Liquidación lista") — mismo mecanismo que ya usa
+  // `PropietariosPage.tsx`, pero acá no hay ningún modal abierto con el
+  // detalle ya cargado: primero hay que traerlo (`GET
+  // /liquidaciones/propietarios/:id/:mes`, la liquidación YA emitida, no
+  // una vista previa) y recién ahí se puede armar el comprobante oculto
+  // que captura `descargarPdfComprobante`.
+  const configuracion = useQuery({
+    queryKey: ['configuracion'],
+    queryFn: () => api.get<Configuracion>('/configuracion'),
+  });
+  const comprobanteRef = useRef<HTMLDivElement>(null);
+  const [pdfData, setPdfData] = useState<{ propietarioNombre: string; L: Liquidacion } | null>(null);
+  const mes = mesActualStr();
+
+  const prepararPdf = useMutation({
+    mutationFn: async ({ propietarioId, propietarioNombre }: { propietarioId: string; propietarioNombre: string }) => {
+      const L = await api.get<Liquidacion>(`/liquidaciones/propietarios/${propietarioId}/${mes}`);
+      return { propietarioNombre, L };
+    },
+    onSuccess: (data) => setPdfData(data),
+  });
+
+  useEffect(() => {
+    if (pdfData && comprobanteRef.current) {
+      descargarPdfComprobante(comprobanteRef.current, `Liquidacion ${pdfData.L.numero} - ${pdfData.propietarioNombre}.pdf`).finally(
+        () => setPdfData(null),
+      );
+    }
+  }, [pdfData]);
 
   if (avisos.isLoading) {
     return (
@@ -336,6 +380,8 @@ export function AvisosPage() {
                     key={item.key}
                     item={item}
                     onEliminar={() => descartar.mutate({ grupo: item.grupo, clave: item.clave })}
+                    onDescargarPdf={item.liquidacionPdf ? () => prepararPdf.mutate(item.liquidacionPdf!) : undefined}
+                    descargandoPdf={prepararPdf.isPending && prepararPdf.variables?.propietarioId === item.liquidacionPdf?.propietarioId}
                   />
                 ))}
               </div>
@@ -343,11 +389,32 @@ export function AvisosPage() {
           ))
         )}
       </main>
+
+      {/* Comprobante oculto, fuera de la pantalla — nunca se ve, solo existe
+          para que `descargarPdfComprobante` lo capture con html2canvas
+          cuando se pide el PDF de una liquidación desde acá. */}
+      {pdfData && (
+        <div style={{ position: 'fixed', left: -10000, top: 0 }}>
+          <ComprobanteImpreso cfg={configuracion.data} ref={comprobanteRef}>
+            <LiquidacionComprobanteBody propietarioNombre={pdfData.propietarioNombre} mesTexto={mesLabel(mes)} L={pdfData.L} />
+          </ComprobanteImpreso>
+        </div>
+      )}
     </>
   );
 }
 
-function AvisoCard({ item, onEliminar }: { item: AvisoItem; onEliminar: () => void }) {
+function AvisoCard({
+  item,
+  onEliminar,
+  onDescargarPdf,
+  descargandoPdf,
+}: {
+  item: AvisoItem;
+  onEliminar: () => void;
+  onDescargarPdf?: () => void;
+  descargandoPdf?: boolean;
+}) {
   const [msg, setMsg] = useState(item.texto);
 
   return (
@@ -365,6 +432,17 @@ function AvisoCard({ item, onEliminar }: { item: AvisoItem; onEliminar: () => vo
         />
       </div>
       <div className="avacts">
+        {onDescargarPdf && (
+          <button
+            type="button"
+            className="btn-sm"
+            title="Descargar el PDF de la liquidación para adjuntarlo a mano en WhatsApp o el email"
+            disabled={descargandoPdf}
+            onClick={onDescargarPdf}
+          >
+            {descargandoPdf ? 'Generando…' : '📄 Descargar PDF'}
+          </button>
+        )}
         <a
           className={`btn-wa${item.tel ? '' : ' off'}`}
           href={item.tel ? waLink(item.tel, msg) : undefined}

@@ -1,11 +1,13 @@
-import { IsDateString, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
+import { EstadoCartel } from '@prisma/client';
 
 export class CreateCartelDto {
   @IsString()
   propiedadId: string;
 
-  @IsString()
-  tipoCartel: string;
+  @IsOptional()
+  @IsEnum(EstadoCartel)
+  tipoCartel?: EstadoCartel;
 
   @IsOptional()
   @IsString()

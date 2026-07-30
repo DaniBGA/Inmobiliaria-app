@@ -19,8 +19,7 @@ export function WhatsAppButton() {
       rel="noopener noreferrer"
       aria-label="Escribinos por WhatsApp"
     >
-      <span className="whatsapp-float-icon">●</span>
-      WhatsApp
+      WA
     </a>
   );
 }

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { EstadoCliente, TipoOperacionCliente } from '@prisma/client';
+import { EstadoCliente, OrigenCliente, TipoOperacionCliente } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AgendaService } from '../agenda/agenda.service';
 import { CreateClienteDto } from './dto/create-cliente.dto';
@@ -48,13 +48,18 @@ export class ClientesService {
     return this.prisma.cliente.delete({ where: { id } });
   }
 
-  async kpis() {
-    const [total, buscanAlquilar, buscanComprar, sinContactar] = await Promise.all([
-      this.prisma.cliente.count(),
-      this.prisma.cliente.count({ where: { tipoOperacion: TipoOperacionCliente.ALQUILAR } }),
-      this.prisma.cliente.count({ where: { tipoOperacion: TipoOperacionCliente.COMPRAR } }),
-      this.prisma.cliente.count({ where: { estado: EstadoCliente.SIN_CONTACTAR } }),
-    ]);
-    return { total, buscanAlquilar, buscanComprar, sinContactar };
+  // §2.6: reemplaza a los KPIs sueltos — de dónde vienen los clientes, para
+  // el gráfico de torta. Siempre devuelve las 5 categorías (incluso en 0)
+  // para que el gráfico y su leyenda no cambien de forma según los datos.
+  async statsPorOrigen() {
+    const conteos = await this.prisma.cliente.groupBy({
+      by: ['origen'],
+      _count: { _all: true },
+    });
+    const porOrigen = new Map(conteos.map((c) => [c.origen, c._count._all]));
+    return Object.values(OrigenCliente).map((origen) => ({
+      origen,
+      cantidad: porOrigen.get(origen) ?? 0,
+    }));
   }
 }

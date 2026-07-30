@@ -13,8 +13,12 @@ const SELECT_PUBLICO = {
   modalidad: true,
   montoAlquilerVigente: true,
   ambientes: true,
+  dormitorios: true,
   banos: true,
+  cochera: true,
   superficieM2: true,
+  superficieCubierta: true,
+  descripcion: true,
   fotos: { select: { id: true, url: true, orden: true }, orderBy: { orden: 'asc' as const } },
   venta: { select: { precio: true, moneda: true } },
 } satisfies Prisma.PropiedadSelect;
@@ -46,8 +50,12 @@ function mapear(p: PropiedadPublicaRaw) {
     precio: p.venta ? Number(p.venta.precio) : null,
     moneda: p.venta?.moneda ?? null,
     ambientes: p.ambientes,
+    dormitorios: p.dormitorios,
     banos: p.banos,
+    cochera: p.cochera,
     superficieM2: p.superficieM2 != null ? Number(p.superficieM2) : null,
+    superficieCubierta: p.superficieCubierta != null ? Number(p.superficieCubierta) : null,
+    descripcion: p.descripcion,
     fotos: p.fotos,
   };
 }

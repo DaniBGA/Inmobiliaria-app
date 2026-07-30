@@ -6,7 +6,6 @@ import { Modal } from '../components/Modal';
 import { formatMoney, formatUsd, formatDate } from '../lib/format';
 import { honorariosLabel, resolverPorcentajeHonorarios, type TipoHonorarios } from '../lib/honorarios';
 import { FotosPropiedad, type FotoPropiedadItem } from '../components/FotosPropiedad';
-import { PropiedadFichaDrawer } from '../components/PropiedadFichaDrawer';
 
 type EstadoVenta = 'PUBLICADA' | 'RESERVADA' | 'VENDIDA' | 'VENDIDA_POR_TERCEROS' | 'PAUSADA';
 type EtapaInteresado = 'CONSULTA' | 'VISITA' | 'NEGOCIACION' | 'RESERVA' | 'DESCARTADO';
@@ -91,11 +90,10 @@ interface Configuracion {
 interface Cartel {
   id: string;
   propiedadId: string;
-  tipoCartel: string;
+  tipoCartel: EstadoCartel;
   medida: string | null;
   fechaColocacion: string | null;
   fechaRetiro: string | null;
-  estado: EstadoCartel;
   diasEnLaCalle: number | null;
   propiedad: { nombre: string; direccion: string };
 }
@@ -154,7 +152,7 @@ const ETAPA_CLASE: Record<EtapaInteresado, string> = {
 
 const CARTEL_LABEL: Record<EstadoCartel, string> = {
   COLOCADO: 'Colocado',
-  A_PEDIDO: 'A pedido',
+  A_PEDIDO: 'Por colocar',
   RETIRADO: 'Retirado',
 };
 
@@ -189,7 +187,6 @@ export function VentasPage() {
   } | null>(null);
   const [cartelModal, setCartelModal] = useState<'new' | Cartel | null>(null);
   const [publicarModal, setPublicarModal] = useState(false);
-  const [fichaAlquilerId, setFichaAlquilerId] = useState<string | null>(null);
 
   const propiedades = useQuery({
     queryKey: ['propiedades'],
@@ -253,7 +250,7 @@ export function VentasPage() {
   const marcarColocado = useMutation({
     mutationFn: (id: string) =>
       api.patch(`/carteles/${id}`, {
-        estado: 'COLOCADO',
+        tipoCartel: 'COLOCADO',
         fechaColocacion: new Date().toISOString().slice(0, 10),
       }),
     onSuccess: invalidarCarteles,
@@ -308,7 +305,7 @@ export function VentasPage() {
   const cartelesVisibles = (carteles.data ?? [])
     .filter((c) => {
       if (!q) return true;
-      return [c.tipoCartel, c.medida, c.propiedad.nombre, c.propiedad.direccion]
+      return [CARTEL_LABEL[c.tipoCartel], c.medida, c.propiedad.nombre, c.propiedad.direccion]
         .filter(Boolean)
         .join(' ')
         .toLowerCase()
@@ -317,7 +314,7 @@ export function VentasPage() {
     .slice()
     .sort((a, b) => {
       const orden: Record<EstadoCartel, number> = { COLOCADO: 0, A_PEDIDO: 1, RETIRADO: 2 };
-      if (orden[a.estado] !== orden[b.estado]) return orden[a.estado] - orden[b.estado];
+      if (orden[a.tipoCartel] !== orden[b.tipoCartel]) return orden[a.tipoCartel] - orden[b.tipoCartel];
       return (b.fechaColocacion ?? '').localeCompare(a.fechaColocacion ?? '');
     });
 
@@ -437,11 +434,6 @@ export function VentasPage() {
                         )}
                       </b>
                     </div>
-                  </div>
-                  <div className="sfoot">
-                    <button className="btn-sm" style={{ flex: 1 }} onClick={() => setFichaAlquilerId(p.id)}>
-                      ✎ Editar ficha
-                    </button>
                   </div>
                 </div>
               );
@@ -568,9 +560,11 @@ export function VentasPage() {
                   )}
                 </div>
                 <div className="sfoot" style={{ flexWrap: 'wrap' }}>
-                  <button className="btn-sm" style={{ flex: 1 }} onClick={() => setFichaDe(p)}>
-                    ✎ Editar ficha
-                  </button>
+                  {!alquilada && (
+                    <button className="btn-sm" style={{ flex: 1 }} onClick={() => setFichaDe(p)}>
+                      ✎ Editar ficha
+                    </button>
+                  )}
                   {v && (estado === 'PUBLICADA' || estado === 'PAUSADA') && (
                     <button className="btn-sm" onClick={() => setSenaDe({ propiedad: p, venta: v })}>
                       ¤ Registrar seña
@@ -634,7 +628,7 @@ export function VentasPage() {
             <div className="hint">en la calle ahora</div>
           </div>
           <div className={`kpi${(cartelesKpis.data?.aPedido ?? 0) > 0 ? ' alert' : ''}`}>
-            <div className="lbl">A pedido</div>
+            <div className="lbl">Por colocar</div>
             <div className="val">{pad(cartelesKpis.data?.aPedido)}</div>
             <div className="hint">esperando la imprenta</div>
           </div>
@@ -670,14 +664,13 @@ export function VentasPage() {
                 <th>MEDIDA</th>
                 <th>COLOCADO</th>
                 <th>DÍAS EN LA CALLE</th>
-                <th>ESTADO</th>
                 <th style={{ textAlign: 'right' }}>ACCIÓN</th>
               </tr>
             </thead>
             <tbody>
               {cartelesVisibles.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="empty">
+                  <td colSpan={6} className="empty">
                     No hay carteles cargados. Registrá qué cartel está puesto en cada propiedad.
                   </td>
                 </tr>
@@ -688,7 +681,9 @@ export function VentasPage() {
                     <div className="pname">{c.propiedad.nombre}</div>
                     <div className="psub">{c.propiedad.direccion}</div>
                   </td>
-                  <td>{c.tipoCartel}</td>
+                  <td>
+                    <span className={`badge ${CARTEL_CLASE[c.tipoCartel]}`}>{CARTEL_LABEL[c.tipoCartel]}</span>
+                  </td>
                   <td style={{ fontSize: 12.5, color: 'var(--ink2)' }}>{c.medida ?? '—'}</td>
                   <td>{c.fechaColocacion ? <span className="pdate">{formatDate(c.fechaColocacion)}</span> : '—'}</td>
                   <td>
@@ -703,12 +698,9 @@ export function VentasPage() {
                       <span style={{ color: 'var(--muted)' }}>—</span>
                     )}
                   </td>
-                  <td>
-                    <span className={`badge ${CARTEL_CLASE[c.estado]}`}>{CARTEL_LABEL[c.estado]}</span>
-                  </td>
                   <td style={{ textAlign: 'right' }}>
                     <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                      {c.estado === 'A_PEDIDO' && (
+                      {c.tipoCartel === 'A_PEDIDO' && (
                         <button
                           className="btn-sm solid"
                           onClick={(e) => {
@@ -719,7 +711,7 @@ export function VentasPage() {
                           Marcar colocado
                         </button>
                       )}
-                      {c.estado === 'COLOCADO' && (
+                      {c.tipoCartel === 'COLOCADO' && (
                         <button
                           className="btn-sm"
                           onClick={(e) => {
@@ -837,7 +829,6 @@ export function VentasPage() {
           }}
         />
       )}
-      {fichaAlquilerId && <PropiedadFichaDrawer propiedadId={fichaAlquilerId} onClose={() => setFichaAlquilerId(null)} />}
     </>
   );
 }
@@ -1663,9 +1654,8 @@ function CartelModal({
 }) {
   const esNuevo = !cartel;
   const [propiedadId, setPropiedadId] = useState(cartel?.propiedadId ?? propiedades[0]?.id ?? '');
-  const [tipoCartel, setTipoCartel] = useState(cartel?.tipoCartel ?? 'Cartel de obra');
+  const [tipoCartel, setTipoCartel] = useState<EstadoCartel>(cartel?.tipoCartel ?? 'COLOCADO');
   const [medida, setMedida] = useState(cartel?.medida ?? '');
-  const [estado, setEstado] = useState<EstadoCartel>(cartel?.estado ?? 'COLOCADO');
   const [fechaColocacion, setFechaColocacion] = useState(
     cartel?.fechaColocacion?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
   );
@@ -1679,9 +1669,8 @@ function CartelModal({
         : api.patch(`/carteles/${cartel!.id}`, {
             tipoCartel,
             medida: medida || undefined,
-            estado,
             fechaColocacion: fechaColocacion || undefined,
-            fechaRetiro: estado === 'RETIRADO' ? fechaRetiro || new Date().toISOString().slice(0, 10) : undefined,
+            fechaRetiro: tipoCartel === 'RETIRADO' ? fechaRetiro || new Date().toISOString().slice(0, 10) : undefined,
           }),
     onSuccess: onSaved,
     onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo guardar el cartel.'),
@@ -1713,38 +1702,29 @@ function CartelModal({
         </div>
         <div className="fg">
           <label>Tipo de cartel</label>
-          <input value={tipoCartel} onChange={(e) => setTipoCartel(e.target.value)} />
+          <select value={tipoCartel} onChange={(e) => setTipoCartel(e.target.value as EstadoCartel)}>
+            <option value="COLOCADO">Colocado</option>
+            <option value="RETIRADO">Retirado</option>
+            <option value="A_PEDIDO">Por colocar</option>
+          </select>
         </div>
         <div className="fg">
           <label>Medida</label>
-          <input value={medida} onChange={(e) => setMedida(e.target.value)} placeholder="Opcional" />
+          <select value={medida} onChange={(e) => setMedida(e.target.value)}>
+            <option value="">Sin especificar</option>
+            <option value="Chico">Chico</option>
+            <option value="Grande">Grande</option>
+          </select>
         </div>
-        {esNuevo ? (
+        <div className="fg">
+          <label>Fecha de colocación</label>
+          <input type="date" value={fechaColocacion} onChange={(e) => setFechaColocacion(e.target.value)} />
+        </div>
+        {!esNuevo && tipoCartel === 'RETIRADO' && (
           <div className="fg">
-            <label>Fecha de colocación</label>
-            <input type="date" value={fechaColocacion} onChange={(e) => setFechaColocacion(e.target.value)} />
+            <label>Fecha de retiro</label>
+            <input type="date" value={fechaRetiro} onChange={(e) => setFechaRetiro(e.target.value)} />
           </div>
-        ) : (
-          <>
-            <div className="fg">
-              <label>Estado</label>
-              <select value={estado} onChange={(e) => setEstado(e.target.value as EstadoCartel)}>
-                <option value="COLOCADO">Colocado</option>
-                <option value="A_PEDIDO">A pedido</option>
-                <option value="RETIRADO">Retirado</option>
-              </select>
-            </div>
-            <div className="fg">
-              <label>Fecha de colocación</label>
-              <input type="date" value={fechaColocacion} onChange={(e) => setFechaColocacion(e.target.value)} />
-            </div>
-            {estado === 'RETIRADO' && (
-              <div className="fg">
-                <label>Fecha de retiro</label>
-                <input type="date" value={fechaRetiro} onChange={(e) => setFechaRetiro(e.target.value)} />
-              </div>
-            )}
-          </>
         )}
       </div>
       <div className="btnrow">

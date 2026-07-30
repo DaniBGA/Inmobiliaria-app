@@ -91,7 +91,11 @@ export class IncidenciasService {
           fechaApertura: dto.fechaApertura ? new Date(dto.fechaApertura) : undefined,
           proveedorId,
           estado: proveedorId ? EstadoIncidencia.EN_CURSO : EstadoIncidencia.ABIERTA,
-          fechaEjecucion: proveedorId ? new Date() : undefined,
+          fechaEjecucion: proveedorId
+            ? dto.fechaEjecucion
+              ? new Date(dto.fechaEjecucion)
+              : new Date()
+            : undefined,
         },
         include: { propiedad: true, proveedor: true },
       });

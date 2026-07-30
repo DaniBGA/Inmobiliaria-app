@@ -4,13 +4,23 @@ import { enviarContacto, type TipoOperacionContacto } from '../../api/contacto';
 import { fetchContactoInfo } from '../../api/configuracionPublica';
 import { ApiError } from '../../api/client';
 import { waLink } from '../../lib/format';
+import { useRevealOnScroll } from '../../hooks/useRevealOnScroll';
 
 export function ContactoForm() {
+  const { ref, visible } = useRevealOnScroll<HTMLDivElement>();
   const contactoInfo = useQuery({
     queryKey: ['contacto-info'],
     queryFn: fetchContactoInfo,
     staleTime: 5 * 60_000,
   });
+  const c = contactoInfo.data;
+  const infoRows = c
+    ? ([
+        c.telefono ? { ic: 'T', k: 'Teléfono', v: c.telefono } : null,
+        c.email ? { ic: '@', k: 'Email', v: c.email } : null,
+        c.direccion ? { ic: 'M', k: 'Oficina', v: c.direccion } : null,
+      ].filter(Boolean) as { ic: string; k: string; v: string }[])
+    : [];
 
   const [nombre, setNombre] = useState('');
   const [telefono, setTelefono] = useState('');
@@ -28,31 +38,45 @@ export function ContactoForm() {
 
   return (
     <section id="contacto" className="section">
-      <div className="container contacto-inner">
+      <div className={`container contacto-inner reveal${visible ? ' visible' : ''}`} ref={ref}>
         <div>
           <span className="eyebrow">Contacto</span>
-          <h2 className="section-title">Conversemos sobre tu propiedad</h2>
-          <p className="section-intro">
-            Escribinos por WhatsApp o dejanos tu consulta y te contactamos a la brevedad.
-          </p>
-          {contactoInfo.data?.whatsapp && (
-            <a
-              className="btn btn-whatsapp"
-              style={{ marginTop: 24 }}
-              href={waLink(contactoInfo.data.whatsapp, 'Hola! Quiero hacer una consulta.')}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Escribir por WhatsApp
-            </a>
-          )}
+          <h2 className="section-title">Hablemos de tu próximo paso</h2>
+          <p className="section-intro">Contanos qué buscás y te respondemos a la brevedad. Sin compromiso.</p>
+
+          <div className="contacto-info-rows">
+            {c?.whatsapp && (
+              <a
+                className="contacto-wa-card"
+                href={waLink(c.whatsapp, 'Hola! Quiero hacer una consulta.')}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <span className="contacto-wa-icon">WA</span>
+                <span>
+                  <span className="contacto-wa-title">WhatsApp</span>
+                  <span className="contacto-wa-sub">Respuesta directa y rápida</span>
+                </span>
+              </a>
+            )}
+            {infoRows.map((r) => (
+              <div className="contacto-info-row" key={r.k}>
+                <span className="contacto-info-icon">{r.ic}</span>
+                <span>
+                  <span className="contacto-info-k">{r.k}</span>
+                  <span className="contacto-info-v">{r.v}</span>
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="contacto-form-card">
           {enviar.isSuccess ? (
             <div className="okstate">
-              <h3>¡Gracias! Recibimos tu consulta</h3>
-              <p>Te vamos a contactar a la brevedad.</p>
+              <div className="okstate-check">✓</div>
+              <h3>¡Consulta enviada!</h3>
+              <p>Te vamos a responder a la brevedad.</p>
             </div>
           ) : (
             <form

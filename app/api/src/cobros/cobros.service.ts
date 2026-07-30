@@ -6,7 +6,7 @@ import { CajaService } from '../caja/caja.service';
 import { ConfiguracionService } from '../configuracion/configuracion.service';
 import { CreatePagoDto } from './dto/create-pago.dto';
 import { UpdatePagoDto } from './dto/update-pago.dto';
-import { fechaAMesString, mesCerrado, mesStringAFecha, primerDiaMes, ultimosMesesCerrados } from '../common/fecha.util';
+import { fechaAMesString, finDeMes, mesCerrado, mesStringAFecha, primerDiaMes, ultimosMesesCerrados } from '../common/fecha.util';
 
 export type EstadoCobro = 'PAGADO' | 'PENDIENTE' | 'IMPAGO' | 'NO_CORRESPONDE';
 
@@ -67,7 +67,7 @@ export class CobrosService {
 
     const filas = await Promise.all(
       propiedades.map(async (p) => {
-        const esperadoRaw = await this.propiedadesService.rentaVigente(p.id, mes);
+        const esperadoRaw = await this.propiedadesService.rentaVigente(p.id, finDeMes(mes));
         const esperado = esperadoRaw != null ? Number(esperadoRaw) : null;
         const cobrado = await this.cobradoDelMes(p.id, mes);
         const pagos = await this.prisma.pago.findMany({
@@ -193,7 +193,7 @@ export class CobrosService {
     let mesesImpagos = 0;
 
     for (const mes of meses) {
-      const esperadoRaw = await this.propiedadesService.rentaVigente(propiedadId, mes);
+      const esperadoRaw = await this.propiedadesService.rentaVigente(propiedadId, finDeMes(mes));
       if (esperadoRaw == null) continue;
       const cobrado = await this.cobradoDelMes(propiedadId, mes);
       const faltante = Number(esperadoRaw) - cobrado;
@@ -214,7 +214,7 @@ export class CobrosService {
     const pendientes: { mes: string; esperado: number; cobrado: number; pendiente: number }[] = [];
 
     for (const mes of meses) {
-      const esperadoRaw = await this.propiedadesService.rentaVigente(propiedadId, mes);
+      const esperadoRaw = await this.propiedadesService.rentaVigente(propiedadId, finDeMes(mes));
       if (esperadoRaw == null) continue;
       const esperado = Number(esperadoRaw);
       const cobrado = await this.cobradoDelMes(propiedadId, mes);

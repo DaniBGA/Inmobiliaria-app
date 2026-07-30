@@ -7,6 +7,7 @@ import { ConfiguracionService } from '../configuracion/configuracion.service';
 import { CajaService } from '../caja/caja.service';
 import { mesStringAFecha } from '../common/fecha.util';
 import { resolverPorcentajeHonorarios } from '../common/honorarios.util';
+import { LiquidacionDetalleInputDto } from './dto/liquidacion-detalle-input.dto';
 
 @Injectable()
 export class LiquidacionesService {
@@ -19,15 +20,15 @@ export class LiquidacionesService {
   ) {}
 
   // §3.4: liquidación del mes por propietario = + cobros de sus propiedades
-  // (mismos ítems que la factura de cada inquilino) − gastos que absorbe −
-  // honorarios propios de cada propiedad = neto a girar. Se genera al
-  // "imprimir" (§2.9), no hay una vista previa persistida aparte.
-  async generar(propietarioId: string, mesStr: string) {
-    const propietario = await this.prisma.propietario.findUnique({
-      where: { id: propietarioId },
-    });
-    if (!propietario) throw new NotFoundException('Propietario no encontrado.');
-
+  // (mismos ítems que la factura de cada inquilino, editables a mano antes
+  // de confirmar — ver `generar()`) − gastos que absorbe (siempre calculado
+  // desde Incidencias/Gastos reales, no editable acá) − honorarios propios
+  // de cada propiedad = neto a girar.
+  private async calcularDetalle(
+    propietarioId: string,
+    mesStr: string,
+    overridePorPropiedad?: Map<string, LiquidacionDetalleInputDto['items']>,
+  ) {
     const mes = mesStringAFecha(mesStr);
     const configuracion = await this.configuracionService.get();
 
@@ -36,16 +37,22 @@ export class LiquidacionesService {
       orderBy: { nombre: 'asc' },
     });
 
-    const detalle = await Promise.all(
+    return Promise.all(
       propiedades.map(async (propiedad) => {
-        const factura = await this.facturasService.obtenerDelMes(propiedad.id, mesStr);
-        const items = factura
-          ? factura.items.map((it) => ({
-              descripcion: it.descripcion,
-              monto: Number(it.monto),
-              numeroLiquidacion: it.numeroLiquidacion ?? undefined,
-            }))
-          : await this.facturasService.itemsPredeterminados(propiedad.id, mesStr);
+        const itemsOverride = overridePorPropiedad?.get(propiedad.id);
+        let items: { descripcion: string; monto: number; numeroLiquidacion?: string }[];
+        if (itemsOverride) {
+          items = itemsOverride;
+        } else {
+          const factura = await this.facturasService.obtenerDelMes(propiedad.id, mesStr);
+          items = factura
+            ? factura.items.map((it) => ({
+                descripcion: it.descripcion,
+                monto: Number(it.monto),
+                numeroLiquidacion: it.numeroLiquidacion ?? undefined,
+              }))
+            : await this.facturasService.itemsPredeterminados(propiedad.id, mesStr);
+        }
 
         const cobradoTotal = items.reduce((acc, it) => acc + Number(it.monto), 0);
 
@@ -54,13 +61,27 @@ export class LiquidacionesService {
           mes,
           DestinoGasto.PROPIETARIO,
         );
-        const gastosAbsorbidos = gastosPropietario.reduce((acc, g) => acc + Number(g.monto), 0);
+        // §3.3: cada gasto con destino PROPIETARIO nace casi siempre de una
+        // Incidencia resuelta con costo a su cargo (`Gasto.descripcion` =
+        // `Incidencia.titulo`, ver incidencias.service.ts::resolver()) —
+        // se guarda el detalle línea por línea para poder mostrar cuál
+        // incidencia puntual se absorbió, no solo la suma.
+        const gastosDetalle = gastosPropietario.map((g) => ({
+          descripcion: g.descripcion,
+          monto: Number(g.monto),
+        }));
+        const gastosAbsorbidos = gastosDetalle.reduce((acc, g) => acc + g.monto, 0);
 
         const porcentajeHonorarios = resolverPorcentajeHonorarios(
           propiedad,
           Number(configuracion.honorariosDefaultPorcentaje),
         );
-        const honorarios = Math.round(cobradoTotal * (porcentajeHonorarios / 100) * 100) / 100;
+        // Los honorarios se calculan sobre el alquiler puro, no sobre
+        // `cobradoTotal` (que además incluye expensas, servicios trasladados
+        // y deuda arrastrada — montos que la inmobiliaria solo intermedia,
+        // no factura como propios).
+        const baseAlquiler = Number(items.find((it) => it.descripcion === 'Alquiler')?.monto ?? 0);
+        const honorarios = Math.round(baseAlquiler * (porcentajeHonorarios / 100) * 100) / 100;
 
         const neto = cobradoTotal - gastosAbsorbidos - honorarios;
 
@@ -69,12 +90,37 @@ export class LiquidacionesService {
           propiedadNombre: propiedad.nombre,
           cobradoTotal,
           gastosAbsorbidos,
+          gastosDetalle,
           honorarios,
+          // No se persiste — es para que el frontend pueda recalcular en
+          // vivo los honorarios si el usuario edita el monto de Alquiler
+          // antes de emitir, con la misma fórmula que usa el backend.
+          porcentajeHonorarios,
           neto,
           items,
         };
       }),
     );
+  }
+
+  // Vista previa editable (sin persistir) — punto de partida del modal de
+  // "Imprimir liquidación del mes", igual que `itemsPredeterminados()` lo es
+  // para Facturas.
+  previsualizar(propietarioId: string, mesStr: string) {
+    return this.calcularDetalle(propietarioId, mesStr);
+  }
+
+  async generar(propietarioId: string, mesStr: string, detalleInput?: LiquidacionDetalleInputDto[]) {
+    const propietario = await this.prisma.propietario.findUnique({
+      where: { id: propietarioId },
+    });
+    if (!propietario) throw new NotFoundException('Propietario no encontrado.');
+
+    const mes = mesStringAFecha(mesStr);
+    const overridePorPropiedad = detalleInput
+      ? new Map(detalleInput.map((d) => [d.propiedadId, d.items]))
+      : undefined;
+    const detalle = await this.calcularDetalle(propietarioId, mesStr, overridePorPropiedad);
 
     const netoAGirar = detalle.reduce((acc, d) => acc + d.neto, 0);
 
@@ -134,12 +180,23 @@ export class LiquidacionesService {
                   orden: idx,
                 })),
               },
+              gastos: {
+                create: d.gastosDetalle.map((g, idx) => ({
+                  descripcion: g.descripcion,
+                  monto: g.monto,
+                  orden: idx,
+                })),
+              },
             })),
           },
         },
         include: {
           detalle: {
-            include: { items: { orderBy: { orden: 'asc' } }, propiedad: true },
+            include: {
+              items: { orderBy: { orden: 'asc' } },
+              gastos: { orderBy: { orden: 'asc' } },
+              propiedad: true,
+            },
           },
         },
       });
@@ -152,7 +209,13 @@ export class LiquidacionesService {
     return this.prisma.liquidacion.findUnique({
       where: { propietarioId_mes: { propietarioId, mes: mesStringAFecha(mesStr) } },
       include: {
-        detalle: { include: { items: { orderBy: { orden: 'asc' } }, propiedad: true } },
+        detalle: {
+          include: {
+            items: { orderBy: { orden: 'asc' } },
+            gastos: { orderBy: { orden: 'asc' } },
+            propiedad: true,
+          },
+        },
       },
     });
   }

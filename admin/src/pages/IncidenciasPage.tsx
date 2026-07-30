@@ -573,7 +573,10 @@ function IncidenciaModal({
   const [notas, setNotas] = useState(incidencia?.notas ?? '');
   const [proveedorId, setProveedorId] = useState('');
   const [pvNuevoNombre, setPvNuevoNombre] = useState('');
+  const [fechaEjecucion, setFechaEjecucion] = useState(new Date().toISOString().slice(0, 10));
   const [error, setError] = useState<string | null>(null);
+
+  const tieneProveedor = proveedorId !== '';
 
   const guardar = useMutation({
     mutationFn: () => {
@@ -588,6 +591,7 @@ function IncidenciaModal({
           notas: notas || undefined,
           proveedorId: proveedorId && proveedorId !== '__new' ? proveedorId : undefined,
           proveedorNuevo: proveedorId === '__new' ? { nombre: pvNuevoNombre, rubro } : undefined,
+          fechaEjecucion: tieneProveedor ? fechaEjecucion : undefined,
         });
       }
       return api.patch(`/incidencias/${incidencia!.id}`, {
@@ -677,6 +681,12 @@ function IncidenciaModal({
           <div className="fg full">
             <label>Nombre del nuevo proveedor</label>
             <input value={pvNuevoNombre} onChange={(e) => setPvNuevoNombre(e.target.value)} />
+          </div>
+        )}
+        {esNuevo && tieneProveedor && (
+          <div className="fg full">
+            <label>Fecha de visita / ejecución</label>
+            <input type="date" value={fechaEjecucion} onChange={(e) => setFechaEjecucion(e.target.value)} />
           </div>
         )}
         <div className="fg full">
