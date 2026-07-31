@@ -19,6 +19,7 @@ const SELECT_PUBLICO = {
   superficieM2: true,
   superficieCubierta: true,
   descripcion: true,
+  caracterEspecial: true,
   fotos: { select: { id: true, url: true, orden: true }, orderBy: { orden: 'asc' as const } },
   venta: { select: { precio: true, moneda: true } },
 } satisfies Prisma.PropiedadSelect;
@@ -56,6 +57,7 @@ function mapear(p: PropiedadPublicaRaw) {
     superficieM2: p.superficieM2 != null ? Number(p.superficieM2) : null,
     superficieCubierta: p.superficieCubierta != null ? Number(p.superficieCubierta) : null,
     descripcion: p.descripcion,
+    caracterEspecial: p.caracterEspecial,
     fotos: p.fotos,
   };
 }
@@ -87,12 +89,21 @@ export class PublicPropiedadesService {
     return { OR: [condicionAlquiler, condicionVenta] };
   }
 
-  async listar(params: { modalidad?: ModalidadPropiedad; tipo?: TipoPropiedad; page?: number; limit?: number }) {
+  async listar(params: {
+    modalidad?: ModalidadPropiedad;
+    tipo?: TipoPropiedad;
+    especial?: boolean;
+    page?: number;
+    limit?: number;
+  }) {
     const page = params.page && params.page > 0 ? params.page : 1;
     const limit = params.limit && params.limit > 0 ? Math.min(params.limit, 48) : 12;
 
     const condicion = this.condicionListable(params.modalidad);
-    const where: Prisma.PropiedadWhereInput = params.tipo ? { AND: [condicion, { tipo: params.tipo }] } : condicion;
+    const extra: Prisma.PropiedadWhereInput[] = [];
+    if (params.tipo) extra.push({ tipo: params.tipo });
+    if (params.especial) extra.push({ caracterEspecial: true });
+    const where: Prisma.PropiedadWhereInput = extra.length > 0 ? { AND: [condicion, ...extra] } : condicion;
 
     const [items, total] = await Promise.all([
       this.prisma.propiedad.findMany({

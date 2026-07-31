@@ -35,6 +35,7 @@ export interface PropiedadPublica {
   superficieM2: number | null;
   superficieCubierta: number | null;
   descripcion: string | null;
+  caracterEspecial: boolean;
   fotos: FotoPublica[];
 }
 
@@ -51,11 +52,18 @@ export interface StatsPorTipo {
 }
 
 export function listarPropiedades(
-  params: { modalidad?: ModalidadPropiedad; tipo?: TipoPropiedad; page?: number; limit?: number } = {},
+  params: {
+    modalidad?: ModalidadPropiedad;
+    tipo?: TipoPropiedad;
+    especial?: boolean;
+    page?: number;
+    limit?: number;
+  } = {},
 ) {
   const q = new URLSearchParams();
   if (params.modalidad) q.set('modalidad', params.modalidad);
   if (params.tipo) q.set('tipo', params.tipo);
+  if (params.especial) q.set('especial', 'true');
   if (params.page) q.set('page', String(params.page));
   if (params.limit) q.set('limit', String(params.limit));
   const qs = q.toString();

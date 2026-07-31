@@ -62,6 +62,7 @@ interface Propiedad {
   ambientes: number | null;
   banos: number | null;
   superficieM2: string | number | null;
+  caracterEspecial: boolean;
   fotos: FotoPropiedadItem[];
 }
 
@@ -867,6 +868,7 @@ function SaleModal({
   const [ambientes, setAmbientes] = useState(String(propiedad.ambientes ?? ''));
   const [banos, setBanos] = useState(String(propiedad.banos ?? ''));
   const [superficieM2, setSuperficieM2] = useState(String(propiedad.superficieM2 ?? ''));
+  const [caracterEspecial, setCaracterEspecial] = useState(propiedad.caracterEspecial);
 
   const [precio, setPrecio] = useState(String(venta?.precio ?? ''));
   const [moneda, setMoneda] = useState<'ARS' | 'USD'>(venta?.moneda ?? 'ARS');
@@ -889,6 +891,7 @@ function SaleModal({
         ambientes: ambientes ? Number(ambientes) : undefined,
         banos: banos ? Number(banos) : undefined,
         superficieM2: superficieM2 ? Number(superficieM2) : undefined,
+        caracterEspecial,
       });
       return api.post(`/propiedades/${propiedad.id}/venta`, {
         precio: Number(precio),
@@ -996,6 +999,16 @@ function SaleModal({
         <div className="fg">
           <label>Superficie (m²)</label>
           <input type="number" min={0} step="0.01" value={superficieM2} onChange={(e) => setSuperficieM2(e.target.value)} placeholder="Opcional" />
+        </div>
+        <div className="fg" style={{ display: 'flex', alignItems: 'flex-end' }}>
+          <label className="chk">
+            <input
+              type="checkbox"
+              checked={caracterEspecial}
+              onChange={(e) => setCaracterEspecial(e.target.checked)}
+            />
+            <span>Carácter especial (carrusel destacado de la landing)</span>
+          </label>
         </div>
       </div>
 

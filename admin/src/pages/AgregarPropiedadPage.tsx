@@ -76,6 +76,7 @@ export function AgregarPropiedadPage() {
   const [dormitorios, setDormitorios] = useState('');
   const [banos, setBanos] = useState('');
   const [cochera, setCochera] = useState(false);
+  const [caracterEspecial, setCaracterEspecial] = useState(false);
   const [superficieM2, setSuperficieM2] = useState('');
   const [superficieCubierta, setSuperficieCubierta] = useState('');
   const [descripcion, setDescripcion] = useState('');
@@ -186,6 +187,7 @@ export function AgregarPropiedadPage() {
         superficieM2: superficieM2 ? Number(superficieM2) : undefined,
         superficieCubierta: superficieCubierta ? Number(superficieCubierta) : undefined,
         descripcion: descripcion.trim() || undefined,
+        caracterEspecial,
         serviciosHabilitados: modalidad === 'ALQUILER' ? servicios : undefined,
         indice: modalidad === 'ALQUILER' && indice ? indice : undefined,
         frecuenciaAumentoMeses: modalidad === 'ALQUILER' && frecuenciaAumentoMeses ? Number(frecuenciaAumentoMeses) : undefined,
@@ -427,6 +429,16 @@ export function AgregarPropiedadPage() {
                 <label className="chk" style={{ marginTop: 28 }}>
                   <input type="checkbox" checked={cochera} onChange={(e) => setCochera(e.target.checked)} />
                   <span>Tiene cochera</span>
+                </label>
+              </div>
+              <div className="fg">
+                <label className="chk" style={{ marginTop: 28 }}>
+                  <input
+                    type="checkbox"
+                    checked={caracterEspecial}
+                    onChange={(e) => setCaracterEspecial(e.target.checked)}
+                  />
+                  <span>Carácter especial (aparece en el carrusel destacado de la landing)</span>
                 </label>
               </div>
               <div className="fg full">

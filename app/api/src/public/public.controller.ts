@@ -5,6 +5,13 @@ import { PublicPropiedadesService } from './public-propiedades.service';
 import { CreateContactoDto } from './dto/create-contacto.dto';
 import { ClientesService } from '../clientes/clientes.service';
 import { ConfiguracionService } from '../configuracion/configuracion.service';
+import { EmailService } from '../email/email.service';
+
+const TIPO_OPERACION_LABEL: Record<string, string> = {
+  ALQUILAR: 'Alquilar',
+  COMPRAR: 'Comprar',
+  VENDER: 'Vender',
+};
 
 // Única superficie sin autenticación de todo el sistema (nada de
 // @UseGuards acá, ni a nivel de clase ni de método) — solo lectura de datos
@@ -16,18 +23,21 @@ export class PublicController {
     private readonly propiedadesService: PublicPropiedadesService,
     private readonly clientesService: ClientesService,
     private readonly configuracionService: ConfiguracionService,
+    private readonly emailService: EmailService,
   ) {}
 
   @Get('propiedades')
   listarPropiedades(
     @Query('modalidad') modalidad?: ModalidadPropiedad,
     @Query('tipo') tipo?: TipoPropiedad,
+    @Query('especial') especial?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
     return this.propiedadesService.listar({
       modalidad,
       tipo,
+      especial: especial === 'true',
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
     });
@@ -58,6 +68,32 @@ export class PublicController {
       // que cualquier otro contacto que entre por ahí (§2.6).
       origen: OrigenCliente.PAGINA_WEB,
     });
+
+    // El destino sale de Configuración → Datos públicos (lo carga el
+    // usuario desde el admin), no de una variable de entorno — es un dato
+    // de negocio que puede cambiar sin tocar despliegue.
+    const { email: destino } = await this.configuracionService.getContactoPublico();
+
+    // No se espera (await) sin capturar errores propios acá: EmailService
+    // ya absorbe sus propios fallos y jamás relanza — un email que no sale
+    // no debe impedir la respuesta 200 al formulario (el Cliente ya quedó
+    // guardado, que es lo que no se puede perder).
+    void this.emailService.enviar({
+      destino,
+      asunto: `Nueva consulta desde la web — ${dto.nombre}`,
+      replyTo: dto.email,
+      texto: [
+        `Nombre: ${dto.nombre}`,
+        dto.telefono ? `Teléfono: ${dto.telefono}` : null,
+        dto.email ? `Email: ${dto.email}` : null,
+        `Quiere: ${TIPO_OPERACION_LABEL[dto.tipoOperacion] ?? dto.tipoOperacion}`,
+        dto.mensaje ? `\nMensaje:\n${dto.mensaje}` : null,
+        '\n— Enviado automáticamente desde el formulario de contacto de la landing.',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    });
+
     return { ok: true };
   }
 }

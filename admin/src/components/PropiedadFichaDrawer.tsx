@@ -62,6 +62,7 @@ interface PropiedadFicha {
   superficieM2: string | number | null;
   superficieCubierta: string | number | null;
   descripcion: string | null;
+  caracterEspecial: boolean;
   fotos: FotoPropiedadItem[];
   montoAlquilerVigente: string | number | null;
   alquilerPublicado: boolean;
@@ -871,6 +872,7 @@ function EditarDatosGeneralesModal({
   const [dormitorios, setDormitorios] = useState(String(propiedad.dormitorios ?? ''));
   const [banos, setBanos] = useState(String(propiedad.banos ?? ''));
   const [cochera, setCochera] = useState(propiedad.cochera);
+  const [caracterEspecial, setCaracterEspecial] = useState(propiedad.caracterEspecial);
   const [superficieM2, setSuperficieM2] = useState(String(propiedad.superficieM2 ?? ''));
   const [superficieCubierta, setSuperficieCubierta] = useState(String(propiedad.superficieCubierta ?? ''));
   const [descripcion, setDescripcion] = useState(propiedad.descripcion ?? '');
@@ -889,6 +891,7 @@ function EditarDatosGeneralesModal({
         superficieM2: superficieM2 ? Number(superficieM2) : undefined,
         superficieCubierta: superficieCubierta ? Number(superficieCubierta) : undefined,
         descripcion: descripcion.trim() || undefined,
+        caracterEspecial,
       }),
     onSuccess: onSaved,
     onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo guardar la propiedad.'),
@@ -949,6 +952,16 @@ function EditarDatosGeneralesModal({
             <span>Tiene cochera</span>
           </label>
         </div>
+        <div className="fg" style={{ display: 'flex', alignItems: 'flex-end' }}>
+          <label className="chk">
+            <input
+              type="checkbox"
+              checked={caracterEspecial}
+              onChange={(e) => setCaracterEspecial(e.target.checked)}
+            />
+            <span>Carácter especial</span>
+          </label>
+        </div>
         <div className="fg full">
           <label>Descripción</label>
           <textarea rows={3} value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Breve descripción del lugar (opcional)" />
@@ -956,7 +969,10 @@ function EditarDatosGeneralesModal({
       </div>
       <div className="cfgnote">
         <i>△</i>
-        <span>Ambientes, dormitorios, baños, superficie, cochera y descripción son los datos que se muestran en la ficha pública de la landing.</span>
+        <span>
+          Ambientes, dormitorios, baños, superficie, cochera y descripción son los datos que se muestran en la ficha
+          pública de la landing. "Carácter especial" además la incluye en el carrusel destacado del inicio.
+        </span>
       </div>
       <div className="btnrow">
         <button className="btn-ghost" onClick={onClose}>

@@ -23,6 +23,7 @@ import { AgendaModule } from './agenda/agenda.module';
 import { AvisosModule } from './avisos/avisos.module';
 import { ReportesModule } from './reportes/reportes.module';
 import { PublicModule } from './public/public.module';
+import { EmailModule } from './email/email.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { PublicModule } from './public/public.module';
     // el único endpoint con un límite más estricto es POST /public/contacto
     // (@Throttle a nivel de método, la única escritura sin autenticación).
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    EmailModule,
     PrismaModule,
     AuthModule,
     UsuariosModule,

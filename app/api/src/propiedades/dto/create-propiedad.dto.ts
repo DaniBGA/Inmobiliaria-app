@@ -133,4 +133,9 @@ export class CreatePropiedadDto {
   @IsOptional()
   @IsBoolean()
   alquilerPublicado?: boolean;
+
+  // Marca curada a mano para el carrusel destacado del Hero de la landing.
+  @IsOptional()
+  @IsBoolean()
+  caracterEspecial?: boolean;
 }

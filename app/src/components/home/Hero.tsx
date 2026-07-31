@@ -20,7 +20,7 @@ function HeroCarousel() {
   const [slide, setSlide] = useState(0);
   const propiedades = useQuery({
     queryKey: ['public-propiedades', 'hero'],
-    queryFn: () => listarPropiedades({ limit: 5 }),
+    queryFn: () => listarPropiedades({ especial: true, limit: 5 }),
   });
   const items = propiedades.data?.items ?? [];
 

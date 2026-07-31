@@ -185,6 +185,11 @@ model Propiedad {
   superficieCubierta Decimal? @db.Decimal(8, 2)
   descripcion        String?
 
+  // Marca manual (tildada desde el admin) para elegir qué propiedades
+  // aparecen en el carrusel destacado del Hero de la landing — no se
+  // deriva de nada más (precio, fotos, antigüedad), es 100% curada.
+  caracterEspecial Boolean @default(false)
+
   // Qué ítems de servicios se ofrecen al emitir la factura del mes (ver
   // enum ServicioFacturable) — no incluye "Alquiler" (siempre presente en
   // ALQUILER) ni "Deuda arrastrada" (siempre calculada, no es un servicio).
