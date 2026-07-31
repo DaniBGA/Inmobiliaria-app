@@ -376,6 +376,10 @@ p {
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
+  /* En mobile .site-nav se oculta y ya no empuja este bloque con su
+     flex:1 — sin esto el botón hamburguesa queda pegado al logo en vez
+     del borde derecho. */
+  margin-left: auto;
 }
 
 .header-social {

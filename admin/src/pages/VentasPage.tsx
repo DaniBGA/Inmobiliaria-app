@@ -1098,7 +1098,6 @@ function PublicarExistenteModal({
   const [indice, setIndice] = useState<'' | 'IPC' | 'ICL'>('');
   const [frecuenciaAumentoMeses, setFrecuenciaAumentoMeses] = useState('');
   const [montoAlquilerInicial, setMontoAlquilerInicial] = useState('');
-  const [fechaAlquilerInicial, setFechaAlquilerInicial] = useState(new Date().toISOString().slice(0, 10));
   const [contratoInicio, setContratoInicio] = useState('');
   const [contratoFin, setContratoFin] = useState('');
   const [tieneInquilino, setTieneInquilino] = useState(false);
@@ -1148,7 +1147,7 @@ function PublicarExistenteModal({
         alquilerPublicado,
       });
       await api.post(`/propiedades/${propiedadId}/aumentos`, {
-        fecha: fechaAlquilerInicial,
+        fecha: contratoInicio || new Date().toISOString().slice(0, 10),
         monto: Number(montoAlquilerInicial),
       });
       if (!tieneInquilino) return;
@@ -1273,10 +1272,6 @@ function PublicarExistenteModal({
                 />
                 <span>$</span>
               </div>
-            </div>
-            <div className="fg">
-              <label>Vigente desde</label>
-              <input type="date" value={fechaAlquilerInicial} onChange={(e) => setFechaAlquilerInicial(e.target.value)} />
             </div>
             <div className="fg">
               <label>Contrato — inicio</label>

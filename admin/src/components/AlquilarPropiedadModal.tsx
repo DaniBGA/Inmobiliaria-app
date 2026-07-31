@@ -32,7 +32,6 @@ export function AlquilarPropiedadModal({
   const [indice, setIndice] = useState<IndiceAjuste>('');
   const [frecuenciaAumentoMeses, setFrecuenciaAumentoMeses] = useState('');
   const [montoAlquilerInicial, setMontoAlquilerInicial] = useState('');
-  const [fechaAlquilerInicial, setFechaAlquilerInicial] = useState(new Date().toISOString().slice(0, 10));
   const [contratoInicio, setContratoInicio] = useState('');
   const [contratoFin, setContratoFin] = useState('');
   const [inqNombre, setInqNombre] = useState('');
@@ -52,7 +51,7 @@ export function AlquilarPropiedadModal({
         contratoFin: contratoFin || undefined,
       });
       await api.post(`/propiedades/${propiedadId}/aumentos`, {
-        fecha: fechaAlquilerInicial,
+        fecha: contratoInicio || new Date().toISOString().slice(0, 10),
         monto: Number(montoAlquilerInicial),
       });
       return api.patch(`/propiedades/${propiedadId}/inquilino`, {
@@ -125,10 +124,6 @@ export function AlquilarPropiedadModal({
             />
             <span>$</span>
           </div>
-        </div>
-        <div className="fg">
-          <label>Vigente desde</label>
-          <input type="date" value={fechaAlquilerInicial} onChange={(e) => setFechaAlquilerInicial(e.target.value)} />
         </div>
         <div className="fg">
           <label>Contrato — inicio</label>
