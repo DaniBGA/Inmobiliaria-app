@@ -18,10 +18,19 @@ source deploy/.env.deploy
 export VITE_API_URL
 
 echo "==> git pull"
+# Por si un `npm install` de un deploy anterior tocó el lockfile (pasa
+# seguido al instalar en Linux algo desarrollado en Windows/Mac — npm
+# reescribe detalles de paquetes específicos de plataforma) — sin esto,
+# ese cambio local bloquea el pull. No hay nada propio que perder acá, lo
+# vuelve a generar `npm ci` a continuación.
+git checkout -- package-lock.json 2>/dev/null || true
 git pull origin main
 
-echo "==> npm install (workspaces)"
-npm install
+echo "==> npm ci (workspaces)"
+# `npm ci` en vez de `npm install`: instala exactamente lo que dice el
+# lockfile sin reescribirlo — evita que vuelva a quedar con cambios locales
+# como el de arriba en el próximo deploy.
+npm ci
 
 echo "==> build backend (NestJS)"
 npm run build --workspace=app/api
