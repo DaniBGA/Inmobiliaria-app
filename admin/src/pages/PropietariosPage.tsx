@@ -86,6 +86,7 @@ function iniciales(nombre: string) {
 export function PropietariosPage() {
   const mesActual = mesActualStr();
   const [liqDe, setLiqDe] = useState<Propietario | null>(null);
+  const qc = useQueryClient();
 
   const propietarios = useQuery({
     queryKey: ['propietarios'],
@@ -99,6 +100,26 @@ export function PropietariosPage() {
     queryKey: ['cobros', 'mes', mesActual],
     queryFn: () => api.get<ResumenMes>(`/cobros/mes/${mesActual}`),
   });
+
+  const eliminarPropietario = useMutation({
+    mutationFn: (id: string) => api.delete(`/propietarios/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['propietarios'] });
+      qc.invalidateQueries({ queryKey: ['propiedades'] });
+    },
+    onError: (err) => alert(err instanceof ApiError ? err.message : 'No se pudo eliminar el propietario.'),
+  });
+
+  function pedirEliminar(o: Propietario, cantidadPropiedades: number) {
+    const avisoPropiedades =
+      cantidadPropiedades > 0
+        ? `\n\n${cantidadPropiedades} propiedad${cantidadPropiedades === 1 ? '' : 'es'} suya${cantidadPropiedades === 1 ? '' : 's'} quedará${cantidadPropiedades === 1 ? '' : 'n'} sin propietario asignado.`
+        : '';
+    const ok = window.confirm(
+      `¿Eliminar a "${o.nombre}" de Propietarios y Liquidaciones? Esto borra también todo su historial de liquidaciones emitidas.${avisoPropiedades}`,
+    );
+    if (ok) eliminarPropietario.mutate(o.id);
+  }
 
   if (propietarios.isLoading || propiedades.isLoading) {
     return (
@@ -149,6 +170,14 @@ export function PropietariosPage() {
                     </div>
                   </div>
                   {o.grandesActivos && <span className="tag-big">GRANDES ACTIVOS</span>}
+                  <button
+                    className="btn-sm ghostred"
+                    style={{ marginLeft: 'auto', flexShrink: 0 }}
+                    disabled={eliminarPropietario.isPending}
+                    onClick={() => pedirEliminar(o, mias.length)}
+                  >
+                    Eliminar
+                  </button>
                 </div>
                 <div className="props">
                   {mias.length === 0 && (
