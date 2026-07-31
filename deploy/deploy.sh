@@ -32,11 +32,14 @@ echo "==> npm ci (workspaces)"
 # como el de arriba en el próximo deploy.
 npm ci
 
+echo "==> prisma generate + migrate deploy"
+# Tiene que ir ANTES del build: `nest build` necesita los tipos que genera
+# `prisma generate` (enums, Prisma.*Select, etc.) — con `npm ci` ya no queda
+# ningún cliente generado de una corrida anterior que lo disimule.
+(cd app/api && npx prisma generate && npx prisma migrate deploy)
+
 echo "==> build backend (NestJS)"
 npm run build --workspace=app/api
-
-echo "==> prisma generate + migrate deploy"
-(cd app/api && npx prisma generate && npx prisma migrate deploy)
 
 echo "==> build admin (VITE_API_URL=$VITE_API_URL)"
 npm run build --workspace=admin
