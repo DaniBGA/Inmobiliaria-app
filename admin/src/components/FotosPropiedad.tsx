@@ -6,6 +6,7 @@ export interface FotoPropiedadItem {
   id: string;
   url: string;
   orden: number;
+  esPortada?: boolean;
 }
 
 // Compartido entre la ficha de alquiler (PropiedadFichaDrawer) y la ficha de
@@ -14,10 +15,15 @@ export interface FotoPropiedadItem {
 export function FotosPropiedad({
   propiedadId,
   fotos,
+  mostrarPortada = false,
   onChange,
 }: {
   propiedadId: string;
   fotos: FotoPropiedadItem[];
+  // Solo tiene sentido elegir portada si la propiedad es "carácter
+  // especial" (la usa el carrusel destacado del Hero) y hay más de una
+  // foto entre las que elegir — con una sola foto no hay nada que decidir.
+  mostrarPortada?: boolean;
   onChange: () => void;
 }) {
   const [subiendo, setSubiendo] = useState(false);
@@ -27,6 +33,12 @@ export function FotosPropiedad({
     mutationFn: (fotoId: string) => api.delete(`/propiedades/${propiedadId}/fotos/${fotoId}`),
     onSuccess: onChange,
     onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo eliminar la foto.'),
+  });
+
+  const marcarPortada = useMutation({
+    mutationFn: (fotoId: string) => api.patch(`/propiedades/${propiedadId}/fotos/${fotoId}/portada`),
+    onSuccess: onChange,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo marcar la portada.'),
   });
 
   async function subirArchivos(files: FileList | null) {
@@ -39,13 +51,14 @@ export function FotosPropiedad({
         const form = new FormData();
         form.append('archivo', file);
         await api.upload(`/propiedades/${propiedadId}/fotos`, form);
-      } catch {
-        fallidas.push(file.name);
+      } catch (err) {
+        const motivo = err instanceof ApiError ? err.message : 'error desconocido';
+        fallidas.push(`${file.name} (${motivo})`);
       }
     }
     setSubiendo(false);
     if (fallidas.length > 0) {
-      setError(`No se ${fallidas.length === 1 ? 'pudo subir' : 'pudieron subir'}: ${fallidas.join(', ')}.`);
+      setError(`No se ${fallidas.length === 1 ? 'pudo subir' : 'pudieron subir'}: ${fallidas.join('; ')}.`);
     }
     onChange();
   }
@@ -74,11 +87,27 @@ export function FotosPropiedad({
           }}
         />
       </label>
+      {mostrarPortada && fotos.length > 1 && (
+        <div className="hint" style={{ marginTop: 10 }}>
+          ★ Marcá con la estrella qué foto se usa en el carrusel destacado de la landing (por defecto se usa la primera).
+        </div>
+      )}
       {fotos.length > 0 ? (
         <div className="fotogrid">
           {fotos.map((f) => (
             <div className="fotothumb" key={f.id}>
               <img src={`${BASE_URL}${f.url}`} alt="" />
+              {mostrarPortada && fotos.length > 1 && (
+                <button
+                  type="button"
+                  className={`portada${f.esPortada ? ' activa' : ''}`}
+                  title={f.esPortada ? 'Portada del carrusel destacado' : 'Usar como portada del carrusel destacado'}
+                  disabled={marcarPortada.isPending}
+                  onClick={() => marcarPortada.mutate(f.id)}
+                >
+                  ★
+                </button>
+              )}
               <button
                 type="button"
                 className="quitar"

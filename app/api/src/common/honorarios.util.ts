@@ -22,3 +22,17 @@ export function resolverPorcentajeHonorarios(
       return defaultPorcentaje;
   }
 }
+
+// Honorarios de administración (§ gestión mensual del alquiler): a
+// diferencia de los profesionales de arriba, es 100% opt-in por propiedad
+// — sin `honorariosAdministracion` tildado no hay ningún % (no existe un
+// default de Configuración para este cargo).
+export function resolverPorcentajeHonorariosAdministracion(propiedad: {
+  honorariosAdministracion: boolean;
+  honorariosAdministracionPorcentaje: unknown;
+}): number {
+  if (!propiedad.honorariosAdministracion) return 0;
+  return propiedad.honorariosAdministracionPorcentaje != null
+    ? Number(propiedad.honorariosAdministracionPorcentaje)
+    : 0;
+}

@@ -17,6 +17,7 @@ export interface LiquidacionDetalle {
   gastosAbsorbidos: number | string;
   gastos: GastoDetalle[];
   honorarios: number | string;
+  honorariosAdministracion: number | string;
   neto: number | string;
   items: LiquidacionItem[];
   propiedad: { nombre: string };
@@ -100,6 +101,17 @@ export function LiquidacionComprobanteBody({
               </span>
               <span className="lv">− {formatMoney(L.detalle.reduce((s, d) => s + Number(d.honorarios), 0))}</span>
             </div>
+            {L.detalle.some((d) => Number(d.honorariosAdministracion) > 0) && (
+              <div className="liqline neg">
+                <span className="ld">
+                  Honorarios de administración
+                  <small>según el % de cada propiedad</small>
+                </span>
+                <span className="lv">
+                  − {formatMoney(L.detalle.reduce((s, d) => s + Number(d.honorariosAdministracion), 0))}
+                </span>
+              </div>
+            )}
             <div className="liqline tot">
               <span className="ld">Total a liquidar</span>
               <span className="lv" style={{ color: neto >= 0 ? 'var(--green)' : 'var(--red)' }}>

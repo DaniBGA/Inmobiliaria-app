@@ -8,7 +8,15 @@ type Modalidad = 'ALQUILER' | 'VENTA';
 type TipoHonorarios = '' | 'LIBRE' | 'TRES_POR_CIENTO' | 'SEIS_POR_CIENTO' | 'OTRO';
 type IndiceAjuste = '' | 'IPC' | 'ICL';
 type Moneda = 'ARS' | 'USD';
-type ServicioFacturable = 'EXPENSAS' | 'USINA' | 'CAMUZZI' | 'OBRAS_SANITARIAS' | 'RETRIBUTIVAS';
+type ServicioFacturable =
+  | 'EXPENSAS'
+  | 'USINA'
+  | 'CAMUZZI'
+  | 'OBRAS_SANITARIAS'
+  | 'RETRIBUTIVAS'
+  | 'CLOACAS'
+  | 'GAS_ENVASADO'
+  | 'SISTEMA_BIODIGESTOR';
 type OrigenCliente = 'INSTAGRAM' | 'PAGINA_WEB' | 'EN_PERSONA' | 'FACEBOOK' | 'CONTACTOS';
 
 const SERVICIOS_OPCIONES: { key: ServicioFacturable; label: string }[] = [
@@ -17,6 +25,9 @@ const SERVICIOS_OPCIONES: { key: ServicioFacturable; label: string }[] = [
   { key: 'CAMUZZI', label: 'Gas (Camuzzi)' },
   { key: 'OBRAS_SANITARIAS', label: 'Agua (Obras Sanitarias)' },
   { key: 'RETRIBUTIVAS', label: 'Retributivas de Servicios' },
+  { key: 'CLOACAS', label: 'Cloacas' },
+  { key: 'GAS_ENVASADO', label: 'Gas envasado' },
+  { key: 'SISTEMA_BIODIGESTOR', label: 'Sistema biodigestor' },
 ];
 
 const ORIGEN_LABEL: Record<OrigenCliente, string> = {
@@ -38,7 +49,8 @@ interface Delegado {
 
 const TIPO_LABEL: Record<string, string> = {
   CASA: 'Casa',
-  DEPARTAMENTO_DUPLEX: 'Departamento/Dúplex',
+  DEPARTAMENTO: 'Departamento',
+  DUPLEX: 'Dúplex',
   QUINTA: 'Quinta',
   LOTE: 'Lote',
   CAMPO: 'Campo',
@@ -72,6 +84,8 @@ export function AgregarPropiedadPage() {
   const [designadoId, setDesignadoId] = useState('');
   const [honorariosTipo, setHonorariosTipo] = useState<TipoHonorarios>('');
   const [honorariosPorcentaje, setHonorariosPorcentaje] = useState('');
+  const [honorariosAdministracion, setHonorariosAdministracion] = useState(false);
+  const [honorariosAdministracionPorcentaje, setHonorariosAdministracionPorcentaje] = useState('');
   const [ambientes, setAmbientes] = useState('');
   const [dormitorios, setDormitorios] = useState('');
   const [banos, setBanos] = useState('');
@@ -100,6 +114,10 @@ export function AgregarPropiedadPage() {
   const [publicada, setPublicada] = useState(true);
   const [cierreEstimado, setCierreEstimado] = useState('');
   const [imagenes, setImagenes] = useState<{ file: File; preview: string }[]>([]);
+  // Índice (dentro de `imagenes`) elegido como portada del carrusel
+  // destacado — recién se traduce a un fotoId real después de subir las
+  // fotos, porque hasta ese momento la propiedad ni siquiera existe.
+  const [portadaIdx, setPortadaIdx] = useState<number | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [exito, setExito] = useState<{ nombre: string; modalidad: Modalidad; fotosFallidas: string[] } | null>(null);
@@ -114,6 +132,11 @@ export function AgregarPropiedadPage() {
     setImagenes((prev) => {
       URL.revokeObjectURL(prev[idx].preview);
       return prev.filter((_, i) => i !== idx);
+    });
+    setPortadaIdx((prev) => {
+      if (prev == null) return prev;
+      if (prev === idx) return null;
+      return prev > idx ? prev - 1 : prev;
     });
   }
 
@@ -132,6 +155,8 @@ export function AgregarPropiedadPage() {
     setDesignadoId('');
     setHonorariosTipo('');
     setHonorariosPorcentaje('');
+    setHonorariosAdministracion(false);
+    setHonorariosAdministracionPorcentaje('');
     setAmbientes('');
     setDormitorios('');
     setBanos('');
@@ -150,6 +175,7 @@ export function AgregarPropiedadPage() {
     setCierreEstimado('');
     imagenes.forEach((img) => URL.revokeObjectURL(img.preview));
     setImagenes([]);
+    setPortadaIdx(null);
   }
 
   const crear = useMutation({
@@ -180,6 +206,11 @@ export function AgregarPropiedadPage() {
         designadoId: designadoId || undefined,
         honorariosTipo: honorariosTipo || undefined,
         honorariosPorcentaje: honorariosTipo === 'OTRO' && honorariosPorcentaje ? Number(honorariosPorcentaje) : undefined,
+        honorariosAdministracion,
+        honorariosAdministracionPorcentaje:
+          honorariosAdministracion && honorariosAdministracionPorcentaje
+            ? Number(honorariosAdministracionPorcentaje)
+            : undefined,
         ambientes: ambientes ? Number(ambientes) : undefined,
         dormitorios: dormitorios ? Number(dormitorios) : undefined,
         banos: banos ? Number(banos) : undefined,
@@ -210,14 +241,23 @@ export function AgregarPropiedadPage() {
       // venta ya están guardadas en este punto, así que una foto que no
       // sube no debería aparentar que se perdió todo lo demás.
       const fotosFallidas: string[] = [];
-      for (const { file } of imagenes) {
+      let fotoPortadaId: string | null = null;
+      for (let i = 0; i < imagenes.length; i++) {
+        const { file } = imagenes[i];
         try {
           const form = new FormData();
           form.append('archivo', file);
-          await api.upload(`/propiedades/${propiedad.id}/fotos`, form);
-        } catch {
-          fotosFallidas.push(file.name);
+          const foto = await api.upload<{ id: string }>(`/propiedades/${propiedad.id}/fotos`, form);
+          if (i === portadaIdx) fotoPortadaId = foto.id;
+        } catch (err) {
+          const motivo = err instanceof ApiError ? err.message : 'error desconocido';
+          fotosFallidas.push(`${file.name} (${motivo})`);
         }
+      }
+      // Se marca al final (no en el mismo paso que la subida) porque recién
+      // ahí se sabe el id real de la foto elegida.
+      if (fotoPortadaId) {
+        await api.patch(`/propiedades/${propiedad.id}/fotos/${fotoPortadaId}/portada`).catch(() => {});
       }
 
       return { propiedad, fotosFallidas };
@@ -390,6 +430,29 @@ export function AgregarPropiedadPage() {
                     step="0.1"
                     value={honorariosPorcentaje}
                     onChange={(e) => setHonorariosPorcentaje(e.target.value)}
+                  />
+                </div>
+              )}
+              <div className="fg">
+                <label className="chk" style={{ marginTop: 28 }}>
+                  <input
+                    type="checkbox"
+                    checked={honorariosAdministracion}
+                    onChange={(e) => setHonorariosAdministracion(e.target.checked)}
+                  />
+                  <span>Honorarios de administración</span>
+                </label>
+              </div>
+              {honorariosAdministracion && (
+                <div className="fg">
+                  <label>Honorarios de administración — %</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.1"
+                    value={honorariosAdministracionPorcentaje}
+                    onChange={(e) => setHonorariosAdministracionPorcentaje(e.target.value)}
                   />
                 </div>
               )}
@@ -575,11 +638,27 @@ export function AgregarPropiedadPage() {
                 }}
               />
             </label>
+            {caracterEspecial && imagenes.length > 1 && (
+              <div className="hint" style={{ marginTop: 10 }}>
+                ★ Marcá con la estrella qué foto se usa en el carrusel destacado de la landing (por defecto se usa la
+                primera).
+              </div>
+            )}
             {imagenes.length > 0 && (
               <div className="fotogrid">
                 {imagenes.map((img, i) => (
                   <div className="fotothumb" key={img.preview}>
                     <img src={img.preview} alt="" />
+                    {caracterEspecial && imagenes.length > 1 && (
+                      <button
+                        type="button"
+                        className={`portada${portadaIdx === i ? ' activa' : ''}`}
+                        title={portadaIdx === i ? 'Portada del carrusel destacado' : 'Usar como portada del carrusel destacado'}
+                        onClick={() => setPortadaIdx((prev) => (prev === i ? null : i))}
+                      >
+                        ★
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="quitar"

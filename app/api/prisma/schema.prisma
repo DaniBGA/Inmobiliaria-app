@@ -87,6 +87,10 @@ model Configuracion {
   publicoDireccion    String @default("")
   publicoMatricula    String @default("")
 
+  // Foto de Facundo/oficina para la sección "Nosotros" de la landing —
+  // vacío = se muestra el placeholder "Foto próximamente" (ver Nosotros.tsx).
+  publicoFotoNosotrosUrl String @default("")
+
   updatedAt DateTime @updatedAt
 
   @@map("configuracion")
@@ -103,7 +107,8 @@ enum ModalidadPropiedad {
 
 enum TipoPropiedad {
   CASA
-  DEPARTAMENTO_DUPLEX
+  DEPARTAMENTO
+  DUPLEX
   QUINTA
   LOTE
   CAMPO
@@ -150,6 +155,9 @@ enum ServicioFacturable {
   CAMUZZI
   OBRAS_SANITARIAS
   RETRIBUTIVAS
+  CLOACAS
+  GAS_ENVASADO
+  SISTEMA_BIODIGESTOR
 }
 
 model Propietario {
@@ -206,6 +214,15 @@ model Propiedad {
   // es solo el default sugerido cuando honorariosTipo es null.
   honorariosTipo       TipoHonorarios?
   honorariosPorcentaje Decimal?        @db.Decimal(5, 2)
+
+  // Honorarios de administración (gestión mensual del alquiler) — cargo
+  // aparte de los profesionales de arriba, opt-in por propiedad: sin
+  // checkbox tildado no se cobra nada (no hay % por defecto de
+  // Configuración para este, a diferencia de los profesionales). Se
+  // descuenta también del neto a girar al propietario en la Liquidación
+  // mensual (ver LiquidacionesService::calcularDetalle()).
+  honorariosAdministracion           Boolean  @default(false)
+  honorariosAdministracionPorcentaje Decimal? @db.Decimal(5, 2)
 
   // Designado para mostrar (§2.3, §2.10)
   designadoId String?
@@ -479,11 +496,14 @@ model Liquidacion {
 // Detalle por propiedad dentro de la liquidación — replica los mismos ítems
 // que la factura del inquilino de esa unidad ese mes (§3.4).
 model LiquidacionPropiedad {
-  id               String  @id @default(uuid())
-  cobradoTotal     Decimal @db.Decimal(14, 2)
-  gastosAbsorbidos Decimal @db.Decimal(14, 2)
-  honorarios       Decimal @db.Decimal(14, 2)
-  neto             Decimal @db.Decimal(14, 2)
+  id                       String  @id @default(uuid())
+  cobradoTotal             Decimal @db.Decimal(14, 2)
+  gastosAbsorbidos         Decimal @db.Decimal(14, 2)
+  honorarios               Decimal @db.Decimal(14, 2)
+  // Honorarios de administración del mes, desglosados aparte de los
+  // profesionales de arriba (ver Propiedad.honorariosAdministracion).
+  honorariosAdministracion Decimal @default(0) @db.Decimal(14, 2)
+  neto                     Decimal @db.Decimal(14, 2)
 
   liquidacionId String
   liquidacion   Liquidacion @relation(fields: [liquidacionId], references: [id], onDelete: Cascade)
@@ -807,9 +827,17 @@ model Cliente {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Borrado blando (§ historial de clientes eliminados): "Eliminar" desde
+  // la lista normal solo marca esto, no borra la fila — así se puede
+  // revisar/restaurar un cliente borrado por error. El borrado real
+  // (irreversible) es una acción aparte, solo disponible desde ese
+  // historial.
+  eliminadoEn DateTime?
+
   // `estado` cubre el filtro de "clientes sin contactar" que arma Avisos.
   @@index([estado])
   @@index([delegadoId])
+  @@index([eliminadoEn])
   @@map("clientes")
 }
 
@@ -933,6 +961,13 @@ model FotoPropiedad {
   id     String @id @default(uuid())
   url    String
   orden  Int    @default(0)
+
+  // Cuál foto usa el carrusel destacado del Hero para esta propiedad,
+  // cuando es "carácter especial" (ver Propiedad.caracterEspecial) — a lo
+  // sumo una en true por propiedad, lo garantiza el service (transacción),
+  // no una constraint de DB. Sin ninguna marcada, se usa la primera por
+  // `orden` (comportamiento de siempre).
+  esPortada Boolean @default(false)
 
   propiedadId String
   propiedad   Propiedad @relation(fields: [propiedadId], references: [id], onDelete: Cascade)

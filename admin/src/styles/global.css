@@ -277,6 +277,9 @@ tfoot .money{font-size:15px}
 .fotothumb img{width:100%;height:100%;object-fit:cover;display:block}
 .fotothumb .quitar{position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:99px;border:0;background:rgba(17,24,39,.65);color:#fff;font-size:12px;display:flex;align-items:center;justify-content:center;line-height:1}
 .fotothumb .quitar:hover{background:var(--red)}
+.fotothumb .portada{position:absolute;top:4px;left:4px;width:22px;height:22px;border-radius:99px;border:0;background:rgba(17,24,39,.65);color:rgba(255,255,255,.55);font-size:13px;display:flex;align-items:center;justify-content:center;line-height:1}
+.fotothumb .portada:hover{color:#fff}
+.fotothumb .portada.activa{background:#F59E0B;color:#fff}
 
 /* ===== Alertas ===== */
 .alertgroup{margin-bottom:22px}

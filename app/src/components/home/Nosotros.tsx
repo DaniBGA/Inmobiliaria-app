@@ -1,6 +1,9 @@
+import { useQuery } from '@tanstack/react-query';
 import { useCountUp } from '../../hooks/useCountUp';
 import { useRevealOnScroll } from '../../hooks/useRevealOnScroll';
 import { useParallax } from '../../hooks/useParallax';
+import { fetchContactoInfo } from '../../api/configuracionPublica';
+import { BASE_URL } from '../../api/client';
 
 const STATS = [
   { target: 12, sufijo: '+', label: 'Años de experiencia' },
@@ -27,6 +30,12 @@ export function Nosotros() {
   const { ref: copyRef, visible: copyVisible } = useRevealOnScroll<HTMLDivElement>();
   const { ref: photoRef, visible: photoVisible } = useRevealOnScroll<HTMLDivElement>();
   const photoParallax = useParallax<HTMLDivElement>(0.1);
+  const contactoInfo = useQuery({
+    queryKey: ['contacto-info'],
+    queryFn: fetchContactoInfo,
+    staleTime: 5 * 60_000,
+  });
+  const fotoUrl = contactoInfo.data?.fotoNosotrosUrl;
 
   return (
     <section id="nosotros" className="section">
@@ -58,7 +67,11 @@ export function Nosotros() {
 
         <div className={`nosotros-photo-wrap reveal${photoVisible ? ' visible' : ''}`} ref={photoRef}>
           <div className="nosotros-photo parallax-el" ref={photoParallax}>
-            <span className="nosotros-photo-placeholder">Foto próximamente</span>
+            {fotoUrl ? (
+              <img src={`${BASE_URL}${fotoUrl}`} alt="Facundo París" />
+            ) : (
+              <span className="nosotros-photo-placeholder">Foto próximamente</span>
+            )}
           </div>
           <div className="nosotros-matricula">
             <div className="nosotros-matricula-val">1826</div>

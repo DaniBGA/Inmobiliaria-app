@@ -13,7 +13,11 @@ export function PropiedadesPage() {
 
   const [params, setParams] = useSearchParams();
   const modalidad = (params.get('modalidad') as ModalidadPropiedad | null) ?? null;
-  const tipo = (params.get('tipo') as TipoPropiedad | null) ?? null;
+  // Uno o varios separados por coma — soporta tanto el filtro agrupado de
+  // los chips ("DEPARTAMENTO,DUPLEX") como un tipo puntual del select
+  // completo de Hero.tsx (ej: "GALPON").
+  const tipoParam = params.get('tipo');
+  const tipo = tipoParam ? (tipoParam.split(',') as TipoPropiedad[]) : null;
   const [page, setPage] = useState(1);
 
   function setModalidad(next: ModalidadPropiedad | null) {
@@ -24,16 +28,16 @@ export function PropiedadesPage() {
     setPage(1);
   }
 
-  function setTipo(next: TipoPropiedad | null) {
+  function setTipo(next: TipoPropiedad[] | null) {
     const q = new URLSearchParams(params);
-    if (next) q.set('tipo', next);
+    if (next && next.length > 0) q.set('tipo', next.join(','));
     else q.delete('tipo');
     setParams(q);
     setPage(1);
   }
 
   const propiedades = useQuery({
-    queryKey: ['public-propiedades-listado', modalidad, tipo, page],
+    queryKey: ['public-propiedades-listado', modalidad, tipoParam, page],
     queryFn: () => listarPropiedades({ modalidad: modalidad ?? undefined, tipo: tipo ?? undefined, page, limit: LIMIT }),
   });
 

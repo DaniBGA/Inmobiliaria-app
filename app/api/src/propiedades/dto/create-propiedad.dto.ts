@@ -50,6 +50,14 @@ export class CreatePropiedadDto {
   honorariosPorcentaje?: number;
 
   @IsOptional()
+  @IsBoolean()
+  honorariosAdministracion?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  honorariosAdministracionPorcentaje?: number;
+
+  @IsOptional()
   @IsEnum(IndiceAjuste)
   indice?: IndiceAjuste;
 

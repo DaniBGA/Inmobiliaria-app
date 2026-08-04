@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, ApiError } from '../api/client';
+import { api, ApiError, BASE_URL } from '../api/client';
 import { PageHeader } from '../components/PageHeader';
 import { formatMoney, formatDate, mesActualStr, sumarMesesStr, mesLabel } from '../lib/format';
 import { descargarCsv } from '../lib/csv';
@@ -21,6 +21,7 @@ interface Configuracion {
   publicoInstagramUrl: string;
   publicoDireccion: string;
   publicoMatricula: string;
+  publicoFotoNosotrosUrl: string;
   proximoNumeroFactura: number;
   proximoNumeroRecibo: number;
   proximoNumeroLiquidacion: number;
@@ -94,6 +95,16 @@ function ConfiguracionForm({ data, integrantes }: { data: Configuracion; integra
       setError(null);
     },
     onError: () => setError('No se pudo consultar la cotización en dolarapi.com. Intentá de nuevo o cargá el valor a mano.'),
+  });
+
+  const subirFotoNosotros = useMutation({
+    mutationFn: (archivo: File) => {
+      const form = new FormData();
+      form.append('archivo', archivo);
+      return api.upload('/configuracion/foto-nosotros', form);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['configuracion'] }),
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo subir la foto.'),
   });
 
   function descartar() {
@@ -280,10 +291,39 @@ function ConfiguracionForm({ data, integrantes }: { data: Configuracion; integra
               <label>Matrícula</label>
               <input value={publicoMatricula} onChange={(e) => setPublicoMatricula(e.target.value)} />
             </div>
+            <div className="fg full">
+              <label>Foto de "Nosotros"</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                {data.publicoFotoNosotrosUrl && (
+                  <img
+                    src={`${BASE_URL}${data.publicoFotoNosotrosUrl}`}
+                    alt=""
+                    style={{ width: 72, height: 72, borderRadius: 10, objectFit: 'cover', border: '1px solid var(--border)' }}
+                  />
+                )}
+                <label className="dropzone" style={{ flex: 1, margin: 0 }}>
+                  {subirFotoNosotros.isPending ? 'Subiendo…' : data.publicoFotoNosotrosUrl ? 'Cambiar foto' : 'Hacé clic para elegir una foto (JPG, PNG o WEBP)'}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    disabled={subirFotoNosotros.isPending}
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      const archivo = e.target.files?.[0];
+                      if (archivo) subirFotoNosotros.mutate(archivo);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
           </div>
           <div className="cfgnote">
             <i>◈</i>
-            <span>El WhatsApp va sin espacios ni signos, con código de país (ej: 5492494123456).</span>
+            <span>
+              El WhatsApp va sin espacios ni signos, con código de país (ej: 5492494123456). La foto de "Nosotros" se
+              sube y se guarda al toque, no hace falta tocar "Guardar cambios" para esta.
+            </span>
           </div>
         </div>
       </div>

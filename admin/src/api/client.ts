@@ -10,6 +10,12 @@ export function setToken(token: string | null) {
   else localStorage.removeItem(TOKEN_KEY);
 }
 
+// Nombre del evento global que AuthContext escucha para cerrar la sesión
+// cuando el token deja de ser válido (expiró, o el backend lo rechazó) —
+// sin esto, un 401 en cualquier pantalla se mostraba como un error crudo
+// ("Unauthorized") ahí mismo, en vez de mandar de nuevo al login.
+export const SESION_EXPIRADA_EVENT = 'auth:sesion-expirada';
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -32,6 +38,14 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   };
 
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+
+  // Solo si ESTA request mandó un token y el backend lo rechazó — un 401
+  // en /auth/login (contraseña incorrecta) no manda token, así que no cae
+  // acá, y lo sigue manejando el catch normal de LoginPage.
+  if (res.status === 401 && token) {
+    setToken(null);
+    window.dispatchEvent(new Event(SESION_EXPIRADA_EVENT));
+  }
 
   if (!res.ok) {
     let message = res.statusText;

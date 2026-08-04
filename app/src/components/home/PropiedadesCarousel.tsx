@@ -3,10 +3,21 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { listarPropiedades, type TipoPropiedad } from '../../api/propiedades';
 import { PropertyCard } from '../propiedades/PropertyCard';
-import { PropertyFilterChips } from '../propiedades/PropertyFilterChips';
+import { PropertyFilterChips, serializarTipo } from '../propiedades/PropertyFilterChips';
 import { useRevealOnScroll } from '../../hooks/useRevealOnScroll';
 
 const AUTOPLAY_MS = 4000;
+const GAP = 24;
+
+// Ancho de cada columna del track. En mobile (perPage 1) se deja un poco
+// más angosta que el viewport a propósito, para que asome un pedacito de
+// la siguiente tarjeta (pedido explícito: que se note que el carrusel
+// sigue). Con 2 o 3 por página no hace falta — ya se ven varias tarjetas
+// completas a la vez.
+function colWidth(perPage: number) {
+  if (perPage === 1) return 'calc(100% - 46px)';
+  return `calc((100% - ${(perPage - 1) * GAP}px) / ${perPage})`;
+}
 
 function usePerPage() {
   const [perPage, setPerPage] = useState(() => calcular());
@@ -28,13 +39,13 @@ function usePerPage() {
 }
 
 export function PropiedadesCarousel() {
-  const [filtro, setFiltro] = useState<TipoPropiedad | null>(null);
+  const [filtro, setFiltro] = useState<TipoPropiedad[] | null>(null);
   const [slide, setSlide] = useState(0);
   const perPage = usePerPage();
   const { ref, visible } = useRevealOnScroll<HTMLDivElement>();
 
   const propiedades = useQuery({
-    queryKey: ['public-propiedades', filtro],
+    queryKey: ['public-propiedades', serializarTipo(filtro)],
     queryFn: () => listarPropiedades({ tipo: filtro ?? undefined, limit: 12 }),
   });
 
@@ -79,8 +90,15 @@ export function PropiedadesCarousel() {
               <div
                 className="carousel-track"
                 style={{
-                  transform: `translateX(calc(-${slide} * (100% / ${perPage})))`,
-                  gridAutoColumns: `calc((100% - ${(perPage - 1) * 24}px) / ${perPage})`,
+                  // El paso tiene que ser "ancho de columna + gap", no solo
+                  // "100%/perPage" — si no, el gap entre tarjetas nunca se
+                  // recorre y a partir del segundo slide se ve un pedacito
+                  // de la tarjeta anterior colándose por el borde. En mobile
+                  // (perPage 1) además la columna es un poco más angosta que
+                  // el viewport a propósito, para que asome un poco de la
+                  // siguiente tarjeta y quede claro que el carrusel sigue.
+                  transform: `translateX(calc(-${slide} * (${colWidth(perPage)} + ${GAP}px)))`,
+                  gridAutoColumns: colWidth(perPage),
                 }}
               >
                 {items.map((p) => (

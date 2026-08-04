@@ -12,16 +12,29 @@ export class ClientesService {
     private readonly agendaService: AgendaService,
   ) {}
 
-  // §2.6: buscador simple + filtro por estado/tipo de operación
+  // §2.6: buscador simple + filtro por estado/tipo de operación. Nunca
+  // incluye los borrados de forma blanda (ver `eliminar`/`historialEliminados`).
   findAll(q?: string, estado?: EstadoCliente, tipoOperacion?: TipoOperacionCliente) {
     return this.prisma.cliente.findMany({
       where: {
+        eliminadoEn: null,
         estado,
         tipoOperacion,
         nombre: q ? { contains: q, mode: 'insensitive' } : undefined,
       },
       include: { delegado: true },
       orderBy: { fechaAlta: 'desc' },
+    });
+  }
+
+  // Historial de clientes eliminados — pensado para poder revisar (y, si
+  // fue un error, restaurar) un cliente borrado por accidente, en vez de
+  // perderlo para siempre en el momento en que alguien clickea "Eliminar".
+  historialEliminados() {
+    return this.prisma.cliente.findMany({
+      where: { eliminadoEn: { not: null } },
+      include: { delegado: true },
+      orderBy: { eliminadoEn: 'desc' },
     });
   }
 
@@ -44,7 +57,20 @@ export class ClientesService {
     return this.prisma.cliente.update({ where: { id }, data: dto });
   }
 
+  // Borrado blando: no borra la fila, solo la saca de las listas normales.
+  // Recuperable desde el historial hasta que alguien la borre "de forma
+  // definitiva" ahí mismo.
   remove(id: string) {
+    return this.prisma.cliente.update({ where: { id }, data: { eliminadoEn: new Date() } });
+  }
+
+  restaurar(id: string) {
+    return this.prisma.cliente.update({ where: { id }, data: { eliminadoEn: null } });
+  }
+
+  // Único borrado real (irreversible) — solo se ofrece desde el historial
+  // de eliminados, nunca desde la lista normal de clientes.
+  removeDefinitivo(id: string) {
     return this.prisma.cliente.delete({ where: { id } });
   }
 
@@ -54,6 +80,7 @@ export class ClientesService {
   async statsPorOrigen() {
     const conteos = await this.prisma.cliente.groupBy({
       by: ['origen'],
+      where: { eliminadoEn: null },
       _count: { _all: true },
     });
     const porOrigen = new Map(conteos.map((c) => [c.origen, c._count._all]));

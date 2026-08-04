@@ -99,7 +99,16 @@ function PropertyDetailModal({
     <div className="property-modal-overlay" onClick={onClose}>
       <div className="property-modal-card" onClick={(e) => e.stopPropagation()}>
         <div className="property-modal-photo" style={foto ? undefined : { background: gradienteFor(propiedad.id) }}>
-          {foto && <img src={`${BASE_URL}${foto.url}`} alt={propiedad.nombre} />}
+          {foto && (
+            <>
+              <div
+                className="property-modal-photo-bg"
+                style={{ backgroundImage: `url(${BASE_URL}${foto.url})` }}
+                aria-hidden="true"
+              />
+              <img className="property-modal-photo-img" src={`${BASE_URL}${foto.url}`} alt={propiedad.nombre} />
+            </>
+          )}
           <button type="button" className="property-modal-close" onClick={onClose} aria-label="Cerrar">
             ×
           </button>

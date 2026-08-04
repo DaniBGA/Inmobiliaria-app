@@ -5,11 +5,13 @@ import { useRevealOnScroll } from '../../hooks/useRevealOnScroll';
 import { useParallax } from '../../hooks/useParallax';
 import fondoBuscas from '../../images/FondoEncontraLoQueBuscas.jpeg';
 
-const BUCKETS: { key: keyof Awaited<ReturnType<typeof statsPorTipo>>; label: string; tipo: string }[] = [
-  { key: 'casas', label: 'Casas', tipo: 'CASA' },
-  { key: 'departamentos', label: 'Departamentos', tipo: 'DEPARTAMENTO_DUPLEX' },
-  { key: 'locales', label: 'Locales', tipo: 'LOCAL_OFICINA' },
-  { key: 'lotes', label: 'Lotes', tipo: 'LOTE' },
+// "Departamentos" agrupa DEPARTAMENTO + DUPLEX — de ahí que `tipo` sea una
+// lista (mismo criterio que FILTROS_TIPO en PropertyFilterChips.tsx).
+const BUCKETS: { key: keyof Awaited<ReturnType<typeof statsPorTipo>>; label: string; tipo: string[] }[] = [
+  { key: 'casas', label: 'Casas', tipo: ['CASA'] },
+  { key: 'departamentos', label: 'Departamentos', tipo: ['DEPARTAMENTO', 'DUPLEX'] },
+  { key: 'locales', label: 'Locales', tipo: ['LOCAL_OFICINA'] },
+  { key: 'lotes', label: 'Lotes', tipo: ['LOTE'] },
 ];
 
 function pad(n: number) {
@@ -43,7 +45,7 @@ export function TipoStatsBand() {
               key={b.key}
               type="button"
               className="tipo-stat"
-              onClick={() => navigate(`/propiedades?tipo=${b.tipo}`)}
+              onClick={() => navigate(`/propiedades?tipo=${b.tipo.join(',')}`)}
             >
               <span className="tipo-stat-val">{pad(stats.data?.[b.key] ?? 0)}</span>
               <span className="tipo-stat-lbl">{b.label}</span>

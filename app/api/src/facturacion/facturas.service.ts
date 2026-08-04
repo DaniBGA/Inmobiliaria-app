@@ -34,6 +34,9 @@ export class FacturasService {
     CAMUZZI: 'Camuzzi',
     OBRAS_SANITARIAS: 'Obras Sanitarias',
     RETRIBUTIVAS: 'Retributivas de Servicios',
+    CLOACAS: 'Cloacas',
+    GAS_ENVASADO: 'Gas envasado',
+    SISTEMA_BIODIGESTOR: 'Sistema biodigestor',
   };
 
   // Orden canónico en la factura, sin importar el orden en que se
@@ -44,6 +47,9 @@ export class FacturasService {
     ServicioFacturable.CAMUZZI,
     ServicioFacturable.OBRAS_SANITARIAS,
     ServicioFacturable.RETRIBUTIVAS,
+    ServicioFacturable.CLOACAS,
+    ServicioFacturable.GAS_ENVASADO,
+    ServicioFacturable.SISTEMA_BIODIGESTOR,
   ];
 
   // §3.5: ítems predeterminados con los que se abre la factura (o la

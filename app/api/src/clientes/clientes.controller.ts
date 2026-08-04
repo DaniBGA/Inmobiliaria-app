@@ -24,6 +24,11 @@ export class ClientesController {
     return this.clientesService.statsPorOrigen();
   }
 
+  @Get('eliminados')
+  historialEliminados() {
+    return this.clientesService.historialEliminados();
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.clientesService.findOne(id);
@@ -42,5 +47,15 @@ export class ClientesController {
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.clientesService.remove(id);
+  }
+
+  @Patch(':id/restaurar')
+  restaurar(@Param('id') id: string) {
+    return this.clientesService.restaurar(id);
+  }
+
+  @Delete(':id/definitivo')
+  removeDefinitivo(@Param('id') id: string) {
+    return this.clientesService.removeDefinitivo(id);
   }
 }

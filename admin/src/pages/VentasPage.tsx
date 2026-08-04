@@ -10,6 +10,26 @@ import { FotosPropiedad, type FotoPropiedadItem } from '../components/FotosPropi
 type EstadoVenta = 'PUBLICADA' | 'RESERVADA' | 'VENDIDA' | 'VENDIDA_POR_TERCEROS' | 'PAUSADA';
 type EtapaInteresado = 'CONSULTA' | 'VISITA' | 'NEGOCIACION' | 'RESERVA' | 'DESCARTADO';
 type EstadoCartel = 'COLOCADO' | 'A_PEDIDO' | 'RETIRADO';
+type ServicioFacturable =
+  | 'EXPENSAS'
+  | 'USINA'
+  | 'CAMUZZI'
+  | 'OBRAS_SANITARIAS'
+  | 'RETRIBUTIVAS'
+  | 'CLOACAS'
+  | 'GAS_ENVASADO'
+  | 'SISTEMA_BIODIGESTOR';
+
+const SERVICIOS_OPCIONES: { key: ServicioFacturable; label: string }[] = [
+  { key: 'EXPENSAS', label: 'Expensas' },
+  { key: 'USINA', label: 'Luz (Usina)' },
+  { key: 'CAMUZZI', label: 'Gas (Camuzzi)' },
+  { key: 'OBRAS_SANITARIAS', label: 'Agua (Obras Sanitarias)' },
+  { key: 'RETRIBUTIVAS', label: 'Retributivas de Servicios' },
+  { key: 'CLOACAS', label: 'Cloacas' },
+  { key: 'GAS_ENVASADO', label: 'Gas envasado' },
+  { key: 'SISTEMA_BIODIGESTOR', label: 'Sistema biodigestor' },
+];
 
 interface Cliente {
   id: string;
@@ -55,6 +75,8 @@ interface Propiedad {
   designado: { nombre: string } | null;
   honorariosTipo: TipoHonorarios;
   honorariosPorcentaje: string | number | null;
+  honorariosAdministracion: boolean;
+  honorariosAdministracionPorcentaje: string | number | null;
   venta: VentaResumen | null;
   inquilino: { nombre: string } | null;
   montoAlquilerVigente: string | number | null;
@@ -63,6 +85,7 @@ interface Propiedad {
   banos: number | null;
   superficieM2: string | number | null;
   caracterEspecial: boolean;
+  serviciosHabilitados: ServicioFacturable[];
   fotos: FotoPropiedadItem[];
 }
 
@@ -108,7 +131,8 @@ interface CartelesKpis {
 
 const TIPO_LABEL: Record<string, string> = {
   CASA: 'Casa',
-  DEPARTAMENTO_DUPLEX: 'Departamento/Dúplex',
+  DEPARTAMENTO: 'Departamento',
+  DUPLEX: 'Dúplex',
   QUINTA: 'Quinta',
   LOTE: 'Lote',
   CAMPO: 'Campo',
@@ -865,10 +889,19 @@ function SaleModal({
   const [designadoId, setDesignadoId] = useState(propiedad.designadoId ?? '');
   const [honorariosTipo, setHonorariosTipo] = useState<TipoHonorarios>(propiedad.honorariosTipo ?? null);
   const [honorariosPorcentaje, setHonorariosPorcentaje] = useState(String(propiedad.honorariosPorcentaje ?? ''));
+  const [honorariosAdministracion, setHonorariosAdministracion] = useState(propiedad.honorariosAdministracion);
+  const [honorariosAdministracionPorcentaje, setHonorariosAdministracionPorcentaje] = useState(
+    String(propiedad.honorariosAdministracionPorcentaje ?? ''),
+  );
   const [ambientes, setAmbientes] = useState(String(propiedad.ambientes ?? ''));
   const [banos, setBanos] = useState(String(propiedad.banos ?? ''));
   const [superficieM2, setSuperficieM2] = useState(String(propiedad.superficieM2 ?? ''));
   const [caracterEspecial, setCaracterEspecial] = useState(propiedad.caracterEspecial);
+  const [servicios, setServicios] = useState<ServicioFacturable[]>(propiedad.serviciosHabilitados ?? []);
+
+  function toggleServicio(key: ServicioFacturable) {
+    setServicios((prev) => (prev.includes(key) ? prev.filter((s) => s !== key) : [...prev, key]));
+  }
 
   const [precio, setPrecio] = useState(String(venta?.precio ?? ''));
   const [moneda, setMoneda] = useState<'ARS' | 'USD'>(venta?.moneda ?? 'ARS');
@@ -888,10 +921,16 @@ function SaleModal({
         designadoId: designadoId || undefined,
         honorariosTipo: honorariosTipo || undefined,
         honorariosPorcentaje: honorariosTipo === 'OTRO' && honorariosPorcentaje ? Number(honorariosPorcentaje) : undefined,
+        honorariosAdministracion,
+        honorariosAdministracionPorcentaje:
+          honorariosAdministracion && honorariosAdministracionPorcentaje
+            ? Number(honorariosAdministracionPorcentaje)
+            : undefined,
         ambientes: ambientes ? Number(ambientes) : undefined,
         banos: banos ? Number(banos) : undefined,
         superficieM2: superficieM2 ? Number(superficieM2) : undefined,
         caracterEspecial,
+        serviciosHabilitados: propiedad.modalidad === 'ALQUILER' ? servicios : undefined,
       });
       return api.post(`/propiedades/${propiedad.id}/venta`, {
         precio: Number(precio),
@@ -988,6 +1027,29 @@ function SaleModal({
             />
           </div>
         )}
+        <div className="fg" style={{ display: 'flex', alignItems: 'flex-end' }}>
+          <label className="chk">
+            <input
+              type="checkbox"
+              checked={honorariosAdministracion}
+              onChange={(e) => setHonorariosAdministracion(e.target.checked)}
+            />
+            <span>Honorarios de administración</span>
+          </label>
+        </div>
+        {honorariosAdministracion && (
+          <div className="fg">
+            <label>Honorarios de administración — %</label>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step="0.1"
+              value={honorariosAdministracionPorcentaje}
+              onChange={(e) => setHonorariosAdministracionPorcentaje(e.target.value)}
+            />
+          </div>
+        )}
         <div className="fg">
           <label>Ambientes</label>
           <input type="number" min={0} value={ambientes} onChange={(e) => setAmbientes(e.target.value)} placeholder="Opcional" />
@@ -1012,8 +1074,29 @@ function SaleModal({
         </div>
       </div>
 
+      {propiedad.modalidad === 'ALQUILER' && (
+        <>
+          <div className="secttl">SERVICIOS QUE SE FACTURAN</div>
+          <div className="formgrid" style={{ marginBottom: 4 }}>
+            {SERVICIOS_OPCIONES.map((s) => (
+              <div className="fg" key={s.key} style={{ minWidth: 0 }}>
+                <label className="chk">
+                  <input type="checkbox" checked={servicios.includes(s.key)} onChange={() => toggleServicio(s.key)} />
+                  <span>{s.label}</span>
+                </label>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       <div className="secttl">FOTOS</div>
-      <FotosPropiedad propiedadId={propiedad.id} fotos={propiedad.fotos} onChange={onFotosChange} />
+      <FotosPropiedad
+        propiedadId={propiedad.id}
+        fotos={propiedad.fotos}
+        mostrarPortada={propiedad.caracterEspecial}
+        onChange={onFotosChange}
+      />
 
       <div className="secttl">FICHA DE VENTA</div>
       <div className="formgrid">

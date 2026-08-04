@@ -20,7 +20,7 @@ const SELECT_PUBLICO = {
   superficieCubierta: true,
   descripcion: true,
   caracterEspecial: true,
-  fotos: { select: { id: true, url: true, orden: true }, orderBy: { orden: 'asc' as const } },
+  fotos: { select: { id: true, url: true, orden: true, esPortada: true }, orderBy: { orden: 'asc' as const } },
   venta: { select: { precio: true, moneda: true } },
 } satisfies Prisma.PropiedadSelect;
 
@@ -28,7 +28,8 @@ type PropiedadPublicaRaw = Prisma.PropiedadGetPayload<{ select: typeof SELECT_PU
 
 const BUCKET_STATS: Partial<Record<TipoPropiedad, keyof StatsPorTipo>> = {
   CASA: 'casas',
-  DEPARTAMENTO_DUPLEX: 'departamentos',
+  DEPARTAMENTO: 'departamentos',
+  DUPLEX: 'departamentos',
   LOCAL_OFICINA: 'locales',
   LOTE: 'lotes',
 };
@@ -58,7 +59,13 @@ function mapear(p: PropiedadPublicaRaw) {
     superficieCubierta: p.superficieCubierta != null ? Number(p.superficieCubierta) : null,
     descripcion: p.descripcion,
     caracterEspecial: p.caracterEspecial,
-    fotos: p.fotos,
+    // El carrusel destacado del Hero siempre usa `fotos[0]` como imagen
+    // principal — si hay una marcada como portada, se antepone acá para
+    // que ese `[0]` la use sin que el frontend tenga que saber nada de
+    // `esPortada` (por eso no se expone ese campo en la forma pública).
+    fotos: [...p.fotos]
+      .sort((a, b) => Number(b.esPortada) - Number(a.esPortada))
+      .map(({ id, url, orden }) => ({ id, url, orden })),
   };
 }
 
@@ -91,7 +98,10 @@ export class PublicPropiedadesService {
 
   async listar(params: {
     modalidad?: ModalidadPropiedad;
-    tipo?: TipoPropiedad;
+    // Lista (no un único valor): el chip "Deptos" de la landing agrupa
+    // DEPARTAMENTO + DUPLEX en un solo filtro (ver TipoStatsBand/
+    // PropertyFilterChips), así que un solo `tipo` ya no alcanza.
+    tipo?: TipoPropiedad[];
     especial?: boolean;
     page?: number;
     limit?: number;
@@ -101,7 +111,7 @@ export class PublicPropiedadesService {
 
     const condicion = this.condicionListable(params.modalidad);
     const extra: Prisma.PropiedadWhereInput[] = [];
-    if (params.tipo) extra.push({ tipo: params.tipo });
+    if (params.tipo && params.tipo.length > 0) extra.push({ tipo: { in: params.tipo } });
     if (params.especial) extra.push({ caracterEspecial: true });
     const where: Prisma.PropiedadWhereInput = extra.length > 0 ? { AND: [condicion, ...extra] } : condicion;
 

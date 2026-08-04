@@ -31,6 +31,31 @@
 
 html {
   scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-navy-2) var(--color-cream);
+}
+
+/* Scrollbar a tono con la paleta (Firefox arriba vía scrollbar-color;
+   Chrome/Edge/Safari acá) — reemplaza la barra gris genérica del sistema,
+   tanto en la página como en cualquier contenedor con scroll propio (ej. el
+   modal de "Ver detalle" de una propiedad). */
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-cream);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-navy-2);
+  border-radius: 100px;
+  border: 3px solid var(--color-cream);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-accent);
 }
 
 body {
@@ -565,6 +590,13 @@ p {
   .site-footer-inner {
     grid-template-columns: 1fr;
   }
+  .footer-bottom {
+    /* `space-between` + wrap empuja el segundo renglón contra el borde
+       derecho cuando no entran los dos textos en una sola línea — en
+       columna quedan alineados a la izquierda como el resto del footer. */
+    flex-direction: column;
+    justify-content: flex-start;
+  }
 }
 
 /* ===== Botón flotante de WhatsApp ===== */
@@ -612,7 +644,7 @@ p {
 
 .property-photo {
   position: relative;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 4 / 5;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -870,14 +902,38 @@ p {
 
 .property-modal-photo {
   position: relative;
-  height: clamp(260px, 34vh, 340px);
+  /* Altura acotada (no un 4:5 completo — eso dejaba la foto ocupando casi
+     toda la pantalla y el resto de la ficha abajo del todo, escondido tras
+     mucho scroll). `object-fit: contain` de abajo ya garantiza que la foto
+     se vea entera sin recortarse, sea cual sea su relación de aspecto —
+     esta altura es solo el tamaño de la caja, no un recorte. */
+  height: clamp(280px, 46vh, 420px);
   background: var(--color-navy);
+  overflow: hidden;
 }
 
-.property-modal-photo img {
+/* Relleno de los márgenes que deja `object-fit: contain` cuando la foto no
+   tiene exactamente la relación de aspecto de la caja — antes quedaban
+   lisos en navy, ahora es la misma foto de fondo, agrandada y desenfocada
+   (mismo criterio que Spotify/Instagram para letterboxing). `scale(1.15)`
+   evita que se note el borde nítido del blur en las orillas. */
+.property-modal-photo-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  filter: blur(28px) brightness(0.65) saturate(1.1);
+  transform: scale(1.15);
+}
+
+.property-modal-photo-img {
+  position: relative;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  /* `contain`, no `cover`: acá se quiere la foto completa sin recortar
+     (a diferencia de la miniatura de la card, donde recortar a la grilla
+     es lo esperado) — pedido explícito del usuario. */
+  object-fit: contain;
 }
 
 .property-modal-photo::after {
@@ -1574,14 +1630,14 @@ p {
   width: 100%;
   height: 132%;
   object-fit: cover;
-  opacity: 0.3;
+  opacity: 0.55;
 }
 
 .tipo-band-overlay {
   position: absolute;
   inset: 0;
   z-index: 0;
-  background: linear-gradient(180deg, #12273a 0%, rgba(18, 39, 58, 0.86) 35%, rgba(18, 39, 58, 0.86) 65%, #12273a 100%);
+  background: linear-gradient(180deg, #12273a 0%, rgba(18, 39, 58, 0.6) 35%, rgba(18, 39, 58, 0.6) 65%, #12273a 100%);
 }
 
 .tipo-band-inner {
@@ -1909,6 +1965,13 @@ p {
   align-items: stretch;
 }
 
+.contacto-inner > * {
+  /* Los tracks de grid tampoco se achican debajo del contenido por
+     default — mismo motivo que el min-width:0 de más abajo, hace falta
+     en ambos niveles para que un email largo no fuerce overflow. */
+  min-width: 0;
+}
+
 .contacto-info-rows {
   display: flex;
   flex-direction: column;
@@ -1968,6 +2031,16 @@ p {
   border-radius: 16px;
 }
 
+.contacto-info-row > span:last-child,
+.contacto-wa-card > span:last-child {
+  /* Los flex items no se achican debajo de su contenido por default
+     (min-width:auto implícito) — sin esto, un email largo sin espacios
+     (p. ej. "danielbanegas.gongora@gmail.com") empuja toda la tarjeta
+     (y de paso las demás, al compartir columna) más allá del viewport
+     en mobile en vez de cortar de línea. */
+  min-width: 0;
+}
+
 .contacto-info-icon {
   width: 40px;
   height: 40px;
@@ -1997,6 +2070,7 @@ p {
   font-family: var(--font-body);
   font-weight: 500;
   font-size: 15.5px;
+  overflow-wrap: break-word;
 }
 
 .contacto-form-card {

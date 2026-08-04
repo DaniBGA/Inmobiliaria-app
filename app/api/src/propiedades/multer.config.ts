@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { existsSync, mkdirSync } from 'fs';
-import { diskStorage } from 'multer';
+import { diskStorage, memoryStorage } from 'multer';
 import { extname, join } from 'path';
 
 // process.cwd() en vez de __dirname: tanto `nest start` (dev, ts-node)
@@ -10,22 +10,17 @@ import { extname, join } from 'path';
 // __dirname en cambio depende de dónde el compilador termina poniendo
 // este archivo dentro de dist/.
 export const UPLOADS_DIR = join(process.cwd(), 'uploads');
-const FOTOS_DIR = join(UPLOADS_DIR, 'propiedades');
+export const FOTOS_DIR = join(UPLOADS_DIR, 'propiedades');
 const DOCS_DIR = join(UPLOADS_DIR, 'documentos');
 
 const EXTENSIONES_PERMITIDAS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
 const MIMES_PERMITIDOS = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 export const fotoPropiedadMulterOptions = {
-  storage: diskStorage({
-    destination: (_req, _file, cb) => {
-      if (!existsSync(FOTOS_DIR)) mkdirSync(FOTOS_DIR, { recursive: true });
-      cb(null, FOTOS_DIR);
-    },
-    filename: (_req, file, cb) => {
-      cb(null, `${randomUUID()}${extname(file.originalname).toLowerCase()}`);
-    },
-  }),
+  // En memoria, no en disco: `PropiedadesService.agregarFoto()` reprocesa
+  // el buffer con sharp (recorte 1080x1350 + recomprimido) antes de
+  // escribirlo — no tiene sentido volcar a disco el archivo crudo primero.
+  storage: memoryStorage(),
   fileFilter: (_req: unknown, file: Express.Multer.File, cb: (error: Error | null, accept: boolean) => void) => {
     const ext = extname(file.originalname).toLowerCase();
     if (!EXTENSIONES_PERMITIDAS.has(ext) || !MIMES_PERMITIDOS.has(file.mimetype)) {
@@ -34,7 +29,9 @@ export const fotoPropiedadMulterOptions = {
     }
     cb(null, true);
   },
-  limits: { fileSize: 8 * 1024 * 1024 }, // 8MB por foto
+  // 20MB — las fotos de "feed"/marketing exportadas en alta resolución
+  // suelen pesar más que una foto de celular común; 8MB las rechazaba.
+  limits: { fileSize: 20 * 1024 * 1024 },
 };
 
 // Documentación de la propiedad (contratos, etc. — §7.4 del documento

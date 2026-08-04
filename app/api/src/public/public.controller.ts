@@ -29,14 +29,16 @@ export class PublicController {
   @Get('propiedades')
   listarPropiedades(
     @Query('modalidad') modalidad?: ModalidadPropiedad,
-    @Query('tipo') tipo?: TipoPropiedad,
+    // Acepta uno o varios valores separados por coma (ej: "DEPARTAMENTO,DUPLEX"
+    // para el chip agrupado "Deptos" de la landing — ver TipoStatsBand.tsx).
+    @Query('tipo') tipo?: string,
     @Query('especial') especial?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
     return this.propiedadesService.listar({
       modalidad,
-      tipo,
+      tipo: tipo ? (tipo.split(',').filter(Boolean) as TipoPropiedad[]) : undefined,
       especial: especial === 'true',
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,

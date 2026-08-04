@@ -6,7 +6,7 @@ import { GastosService } from '../gastos/gastos.service';
 import { ConfiguracionService } from '../configuracion/configuracion.service';
 import { CajaService } from '../caja/caja.service';
 import { mesStringAFecha } from '../common/fecha.util';
-import { resolverPorcentajeHonorarios } from '../common/honorarios.util';
+import { resolverPorcentajeHonorarios, resolverPorcentajeHonorariosAdministracion } from '../common/honorarios.util';
 import { LiquidacionDetalleInputDto } from './dto/liquidacion-detalle-input.dto';
 
 @Injectable()
@@ -83,7 +83,11 @@ export class LiquidacionesService {
         const baseAlquiler = Number(items.find((it) => it.descripcion === 'Alquiler')?.monto ?? 0);
         const honorarios = Math.round(baseAlquiler * (porcentajeHonorarios / 100) * 100) / 100;
 
-        const neto = cobradoTotal - gastosAbsorbidos - honorarios;
+        const porcentajeHonorariosAdministracion = resolverPorcentajeHonorariosAdministracion(propiedad);
+        const honorariosAdministracion =
+          Math.round(baseAlquiler * (porcentajeHonorariosAdministracion / 100) * 100) / 100;
+
+        const neto = cobradoTotal - gastosAbsorbidos - honorarios - honorariosAdministracion;
 
         return {
           propiedadId: propiedad.id,
@@ -92,10 +96,12 @@ export class LiquidacionesService {
           gastosAbsorbidos,
           gastosDetalle,
           honorarios,
-          // No se persiste — es para que el frontend pueda recalcular en
+          honorariosAdministracion,
+          // No se persisten — es para que el frontend pueda recalcular en
           // vivo los honorarios si el usuario edita el monto de Alquiler
           // antes de emitir, con la misma fórmula que usa el backend.
           porcentajeHonorarios,
+          porcentajeHonorariosAdministracion,
           neto,
           items,
         };
@@ -171,6 +177,7 @@ export class LiquidacionesService {
               cobradoTotal: d.cobradoTotal,
               gastosAbsorbidos: d.gastosAbsorbidos,
               honorarios: d.honorarios,
+              honorariosAdministracion: d.honorariosAdministracion,
               neto: d.neto,
               items: {
                 create: d.items.map((it, idx) => ({

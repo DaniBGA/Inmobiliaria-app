@@ -7,6 +7,7 @@ export interface ContactoInfoPublica {
   instagramUrl: string;
   direccion: string;
   matricula: string;
+  fotoNosotrosUrl: string | null;
 }
 
 export function fetchContactoInfo() {

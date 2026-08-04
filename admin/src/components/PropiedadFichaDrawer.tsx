@@ -4,12 +4,21 @@ import { Link } from 'react-router-dom';
 import { api, ApiError, BASE_URL } from '../api/client';
 import { Modal } from './Modal';
 import { formatMoney, formatUsd, formatDate, mesActualStr, mesLabel } from '../lib/format';
-import { honorariosLabel, resolverPorcentajeHonorarios, type TipoHonorarios } from '../lib/honorarios';
+import { honorariosLabel, resolverPorcentajeHonorarios, resolverPorcentajeHonorariosAdministracion, type TipoHonorarios } from '../lib/honorarios';
 import { FotosPropiedad, type FotoPropiedadItem } from './FotosPropiedad';
 import { ComprobanteImpreso } from './ComprobanteImpreso';
 import { descargarPdfComprobante } from '../lib/pdfComprobante';
 
 type Modalidad = 'ALQUILER' | 'VENTA';
+type ServicioFacturable =
+  | 'EXPENSAS'
+  | 'USINA'
+  | 'CAMUZZI'
+  | 'OBRAS_SANITARIAS'
+  | 'RETRIBUTIVAS'
+  | 'CLOACAS'
+  | 'GAS_ENVASADO'
+  | 'SISTEMA_BIODIGESTOR';
 type IndiceAjuste = 'IPC' | 'ICL' | null;
 type PunitorioFrecuencia = 'DIA' | 'SEMANA' | 'MES' | 'UNICO' | null;
 type PunitorioTipo = 'PORCENTAJE' | 'MONTO_FIJO' | null;
@@ -63,11 +72,14 @@ interface PropiedadFicha {
   superficieCubierta: string | number | null;
   descripcion: string | null;
   caracterEspecial: boolean;
+  serviciosHabilitados: ServicioFacturable[];
   fotos: FotoPropiedadItem[];
   montoAlquilerVigente: string | number | null;
   alquilerPublicado: boolean;
   honorariosTipo: TipoHonorarios;
   honorariosPorcentaje: string | number | null;
+  honorariosAdministracion: boolean;
+  honorariosAdministracionPorcentaje: string | number | null;
   indice: IndiceAjuste;
   frecuenciaAumentoMeses: number | null;
   contratoInicio: string | null;
@@ -142,9 +154,20 @@ interface Recibo {
   items: FacturaItem[];
 }
 
+const SERVICIOS_OPCIONES: { key: ServicioFacturable; label: string }[] = [
+  { key: 'EXPENSAS', label: 'Expensas' },
+  { key: 'USINA', label: 'Luz (Usina)' },
+  { key: 'CAMUZZI', label: 'Gas (Camuzzi)' },
+  { key: 'OBRAS_SANITARIAS', label: 'Agua (Obras Sanitarias)' },
+  { key: 'RETRIBUTIVAS', label: 'Retributivas de Servicios' },
+  { key: 'CLOACAS', label: 'Cloacas' },
+  { key: 'GAS_ENVASADO', label: 'Gas envasado' },
+  { key: 'SISTEMA_BIODIGESTOR', label: 'Sistema biodigestor' },
+];
 const TIPO_LABEL: Record<string, string> = {
   CASA: 'Casa',
-  DEPARTAMENTO_DUPLEX: 'Departamento/Dúplex',
+  DEPARTAMENTO: 'Departamento',
+  DUPLEX: 'Dúplex',
   QUINTA: 'Quinta',
   LOTE: 'Lote',
   CAMPO: 'Campo',
@@ -457,6 +480,12 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
                       <b style={{ marginBottom: 0 }}>Honorarios profesionales</b>
                       <span>{honorariosLabel(p, honorPct).toUpperCase()}</span>
                     </div>
+                    {p.honorariosAdministracion && (
+                      <div className="f" style={{ gridColumn: '1/-1', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <b style={{ marginBottom: 0 }}>Honorarios de administración</b>
+                        <span>{resolverPorcentajeHonorariosAdministracion(p)}%</span>
+                      </div>
+                    )}
                     {p.designado && (
                       <div className="f" style={{ gridColumn: '1/-1', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <b style={{ marginBottom: 0 }}>La muestra</b>
@@ -816,6 +845,8 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
           inquilino={p.inquilino}
           honorariosTipoActual={p.honorariosTipo}
           honorariosPorcentajeActual={p.honorariosPorcentaje}
+          honorariosAdministracionActual={p.honorariosAdministracion}
+          honorariosAdministracionPorcentajeActual={p.honorariosAdministracionPorcentaje}
           honorDefaultPct={honorPct}
           onClose={() => setFacturaModal(false)}
         />
@@ -843,6 +874,7 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
           <FotosPropiedad
             propiedadId={p.id}
             fotos={p.fotos}
+            mostrarPortada={p.caracterEspecial}
             onChange={() => qc.invalidateQueries({ queryKey: ['propiedades', propiedadId] })}
           />
           <div className="btnrow">
@@ -876,7 +908,12 @@ function EditarDatosGeneralesModal({
   const [superficieM2, setSuperficieM2] = useState(String(propiedad.superficieM2 ?? ''));
   const [superficieCubierta, setSuperficieCubierta] = useState(String(propiedad.superficieCubierta ?? ''));
   const [descripcion, setDescripcion] = useState(propiedad.descripcion ?? '');
+  const [servicios, setServicios] = useState<ServicioFacturable[]>(propiedad.serviciosHabilitados ?? []);
   const [error, setError] = useState<string | null>(null);
+
+  function toggleServicio(key: ServicioFacturable) {
+    setServicios((prev) => (prev.includes(key) ? prev.filter((s) => s !== key) : [...prev, key]));
+  }
 
   const guardar = useMutation({
     mutationFn: () =>
@@ -892,6 +929,7 @@ function EditarDatosGeneralesModal({
         superficieCubierta: superficieCubierta ? Number(superficieCubierta) : undefined,
         descripcion: descripcion.trim() || undefined,
         caracterEspecial,
+        serviciosHabilitados: propiedad.modalidad === 'ALQUILER' ? servicios : undefined,
       }),
     onSuccess: onSaved,
     onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo guardar la propiedad.'),
@@ -967,6 +1005,23 @@ function EditarDatosGeneralesModal({
           <textarea rows={3} value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Breve descripción del lugar (opcional)" />
         </div>
       </div>
+
+      {propiedad.modalidad === 'ALQUILER' && (
+        <>
+          <div className="secttl">SERVICIOS QUE SE FACTURAN</div>
+          <div className="formgrid" style={{ marginBottom: 4 }}>
+            {SERVICIOS_OPCIONES.map((s) => (
+              <div className="fg" key={s.key} style={{ minWidth: 0 }}>
+                <label className="chk">
+                  <input type="checkbox" checked={servicios.includes(s.key)} onChange={() => toggleServicio(s.key)} />
+                  <span>{s.label}</span>
+                </label>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       <div className="cfgnote">
         <i>△</i>
         <span>
@@ -1106,6 +1161,8 @@ function FacturaModal({
   inquilino,
   honorariosTipoActual,
   honorariosPorcentajeActual,
+  honorariosAdministracionActual,
+  honorariosAdministracionPorcentajeActual,
   honorDefaultPct,
   onClose,
 }: {
@@ -1114,6 +1171,8 @@ function FacturaModal({
   inquilino: Inquilino | null;
   honorariosTipoActual: TipoHonorarios;
   honorariosPorcentajeActual: number | string | null;
+  honorariosAdministracionActual: boolean;
+  honorariosAdministracionPorcentajeActual: number | string | null;
   honorDefaultPct: number;
   onClose: () => void;
 }) {
@@ -1146,6 +1205,10 @@ function FacturaModal({
   const [honorariosPorcentaje, setHonorariosPorcentaje] = useState(
     honorariosPorcentajeActual != null ? String(honorariosPorcentajeActual) : '',
   );
+  const [honorariosAdministracion, setHonorariosAdministracion] = useState(honorariosAdministracionActual);
+  const [honorariosAdministracionPorcentaje, setHonorariosAdministracionPorcentaje] = useState(
+    honorariosAdministracionPorcentajeActual != null ? String(honorariosAdministracionPorcentajeActual) : '',
+  );
 
   useEffect(() => {
     if (predeterminados.data && items === null) {
@@ -1177,12 +1240,27 @@ function FacturaModal({
     (honorariosTipo ?? '') !== (honorariosTipoActual ?? '') ||
     (honorariosTipo === 'OTRO' && honorariosPorcentaje !== String(honorariosPorcentajeActual ?? ''));
 
+  const pctAdministracionResuelto = resolverPorcentajeHonorariosAdministracion({
+    honorariosAdministracion,
+    honorariosAdministracionPorcentaje: honorariosAdministracionPorcentaje || null,
+  });
+  const honorariosAdministracionPreview = Math.round(montoAlquiler * (pctAdministracionResuelto / 100) * 100) / 100;
+  const honorariosAdministracionCambiaron =
+    honorariosAdministracion !== honorariosAdministracionActual ||
+    (honorariosAdministracion &&
+      honorariosAdministracionPorcentaje !== String(honorariosAdministracionPorcentajeActual ?? ''));
+
   const emitir = useMutation({
     mutationFn: async () => {
-      if (honorariosCambiaron) {
+      if (honorariosCambiaron || honorariosAdministracionCambiaron) {
         await api.patch(`/propiedades/${propiedadId}`, {
           honorariosTipo: honorariosTipo || undefined,
           honorariosPorcentaje: honorariosTipo === 'OTRO' && honorariosPorcentaje ? Number(honorariosPorcentaje) : undefined,
+          honorariosAdministracion,
+          honorariosAdministracionPorcentaje:
+            honorariosAdministracion && honorariosAdministracionPorcentaje
+              ? Number(honorariosAdministracionPorcentaje)
+              : undefined,
         });
         qc.invalidateQueries({ queryKey: ['propiedades'] });
       }
@@ -1268,6 +1346,40 @@ function FacturaModal({
             <span className="ld">Honorarios ({pctResuelto}% de {formatMoney(montoAlquiler)})</span>
             <span className="lv">{formatMoney(honorariosPreview)}</span>
           </div>
+
+          <div className="fg full" style={{ marginBottom: 4 }}>
+            <label className="chk">
+              <input
+                type="checkbox"
+                checked={honorariosAdministracion}
+                onChange={(e) => setHonorariosAdministracion(e.target.checked)}
+              />
+              <span>Honorarios de administración</span>
+            </label>
+          </div>
+          {honorariosAdministracion && (
+            <>
+              <div className="formgrid" style={{ marginBottom: 6 }}>
+                <div className="fg">
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.1"
+                    placeholder="%"
+                    value={honorariosAdministracionPorcentaje}
+                    onChange={(e) => setHonorariosAdministracionPorcentaje(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="liqline" style={{ marginBottom: 14 }}>
+                <span className="ld">
+                  Honorarios de administración ({pctAdministracionResuelto}% de {formatMoney(montoAlquiler)})
+                </span>
+                <span className="lv">{formatMoney(honorariosAdministracionPreview)}</span>
+              </div>
+            </>
+          )}
 
           <div className="itemlist">
             {items.map((it, idx) => (

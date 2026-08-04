@@ -125,7 +125,7 @@ export class AvisosService {
   // §2.8 / §2.6: clientes sin contactar
   private async clientesSinContactar() {
     const clientes = await this.prisma.cliente.findMany({
-      where: { estado: EstadoCliente.SIN_CONTACTAR },
+      where: { estado: EstadoCliente.SIN_CONTACTAR, eliminadoEn: null },
     });
     return clientes.map((c) => ({
       grupo: 'CLIENTE_SIN_CONTACTAR' as const,

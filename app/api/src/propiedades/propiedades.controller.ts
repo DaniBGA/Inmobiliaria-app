@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   UploadedFile,
+  UseFilters,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -17,6 +18,7 @@ import { UpdatePropiedadDto } from './dto/update-propiedad.dto';
 import { RegistrarAumentoDto } from './dto/registrar-aumento.dto';
 import { UpsertInquilinoDto } from './dto/upsert-inquilino.dto';
 import { fotoPropiedadMulterOptions, documentoMulterOptions } from './multer.config';
+import { MulterExceptionFilter } from './multer-exception.filter';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('propiedades')
@@ -72,6 +74,7 @@ export class PropiedadesController {
   }
 
   @Post(':id/fotos')
+  @UseFilters(MulterExceptionFilter)
   @UseInterceptors(FileInterceptor('archivo', fotoPropiedadMulterOptions))
   agregarFoto(@Param('id') id: string, @UploadedFile() archivo: Express.Multer.File) {
     return this.propiedadesService.agregarFoto(id, archivo);
@@ -82,7 +85,13 @@ export class PropiedadesController {
     return this.propiedadesService.eliminarFoto(id, fotoId);
   }
 
+  @Patch(':id/fotos/:fotoId/portada')
+  marcarFotoPortada(@Param('id') id: string, @Param('fotoId') fotoId: string) {
+    return this.propiedadesService.marcarFotoPortada(id, fotoId);
+  }
+
   @Post(':id/documentos')
+  @UseFilters(MulterExceptionFilter)
   @UseInterceptors(FileInterceptor('archivo', documentoMulterOptions))
   agregarDocumento(@Param('id') id: string, @UploadedFile() archivo: Express.Multer.File) {
     return this.propiedadesService.agregarDocumento(id, archivo);

@@ -82,7 +82,8 @@ const ZONA_LABEL: Record<ZonaCliente, string> = {
 };
 const TIPO_PROPIEDAD_LABEL: Record<string, string> = {
   CASA: 'Casa',
-  DEPARTAMENTO_DUPLEX: 'Departamento/Dúplex',
+  DEPARTAMENTO: 'Departamento',
+  DUPLEX: 'Dúplex',
   QUINTA: 'Quinta',
   LOTE: 'Lote',
   CAMPO: 'Campo',
@@ -102,6 +103,7 @@ export function ClientesPage() {
   const [busqueda, setBusqueda] = useState('');
   const [filtroTipo, setFiltroTipo] = useState<'todos' | TipoOperacionCliente>('todos');
   const [modal, setModal] = useState<'new' | Cliente | null>(null);
+  const [verEliminados, setVerEliminados] = useState(false);
 
   const clientes = useQuery({
     queryKey: ['clientes'],
@@ -197,6 +199,9 @@ export function ClientesPage() {
               <option value="VENDER">Propietario / quiere vender</option>
             </select>
             <span style={{ flex: 1 }}></span>
+            <button className="btn-sm" onClick={() => setVerEliminados(true)}>
+              Historial de eliminados
+            </button>
             <button className="btn-sm solid" onClick={() => setModal('new')}>
               + Nuevo cliente
             </button>
@@ -301,7 +306,103 @@ export function ClientesPage() {
           }}
         />
       )}
+
+      {verEliminados && <HistorialEliminadosModal onClose={() => setVerEliminados(false)} onChange={invalidar} />}
     </>
+  );
+}
+
+// Pensado para el caso de un cliente borrado por error: "Eliminar" desde la
+// ficha nunca borra la fila de verdad (ver ClientesService.remove), solo la
+// saca de la lista normal — acá se puede revisar y, si corresponde,
+// restaurar. El borrado real (irreversible) solo se ofrece en este modal.
+function HistorialEliminadosModal({ onClose, onChange }: { onClose: () => void; onChange: () => void }) {
+  const qc = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+
+  const eliminados = useQuery({
+    queryKey: ['clientes', 'eliminados'],
+    queryFn: () => api.get<(Cliente & { eliminadoEn: string })[]>('/clientes/eliminados'),
+  });
+
+  function invalidarEliminados() {
+    qc.invalidateQueries({ queryKey: ['clientes', 'eliminados'] });
+    onChange();
+  }
+
+  const restaurar = useMutation({
+    mutationFn: (id: string) => api.patch(`/clientes/${id}/restaurar`),
+    onSuccess: invalidarEliminados,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo restaurar el cliente.'),
+  });
+
+  const eliminarDefinitivo = useMutation({
+    mutationFn: (id: string) => api.delete(`/clientes/${id}/definitivo`),
+    onSuccess: invalidarEliminados,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo eliminar el cliente definitivamente.'),
+  });
+
+  function confirmarDefinitivo(c: Cliente) {
+    if (
+      window.confirm(
+        `¿Eliminar a "${c.nombre}" de forma DEFINITIVA? Esta acción no se puede deshacer — a diferencia de "Eliminar" en la lista normal, acá no hay forma de recuperarlo después.`,
+      )
+    ) {
+      eliminarDefinitivo.mutate(c.id);
+    }
+  }
+
+  const lista = eliminados.data ?? [];
+
+  return (
+    <Modal open onClose={onClose} title="Historial de clientes eliminados" width={620}>
+      {error && <div className="errstate" style={{ marginBottom: 14 }}>{error}</div>}
+      {eliminados.isLoading && <div className="loadstate">Cargando…</div>}
+      {!eliminados.isLoading && lista.length === 0 && (
+        <div className="empty">No hay clientes eliminados.</div>
+      )}
+      {lista.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {lista.map((c) => (
+            <div
+              key={c.id}
+              style={{
+                border: '1px solid var(--border2)',
+                borderRadius: 12,
+                padding: 14,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700 }}>{c.nombre}</div>
+                <div className="contact">
+                  {[c.telefono, c.email].filter(Boolean).join(' · ') || 'Sin datos de contacto'}
+                </div>
+                <div className="pdate" style={{ marginTop: 4 }}>
+                  Eliminado el {new Date(c.eliminadoEn).toLocaleDateString('es-AR')}
+                </div>
+              </div>
+              <button
+                className="btn-sm"
+                disabled={restaurar.isPending}
+                onClick={() => restaurar.mutate(c.id)}
+              >
+                Restaurar
+              </button>
+              <button
+                className="btn-sm ghostred"
+                disabled={eliminarDefinitivo.isPending}
+                onClick={() => confirmarDefinitivo(c)}
+              >
+                Eliminar definitivo
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
   );
 }
 

@@ -152,7 +152,8 @@ export class CajaService {
       include: { detalle: true },
     });
     const honorariosDelMes = liquidacionesDelMes.reduce(
-      (acc, l) => acc + l.detalle.reduce((a, d) => a + Number(d.honorarios), 0),
+      (acc, l) =>
+        acc + l.detalle.reduce((a, d) => a + Number(d.honorarios) + Number(d.honorariosAdministracion), 0),
       0,
     );
     const gastosInmobiliaria = await this.prisma.gasto.aggregate({

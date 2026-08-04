@@ -1,6 +1,7 @@
 export const TIPO_LABEL: Record<string, string> = {
   CASA: 'Casa',
-  DEPARTAMENTO_DUPLEX: 'Departamento/Dúplex',
+  DEPARTAMENTO: 'Departamento',
+  DUPLEX: 'Dúplex',
   QUINTA: 'Quinta',
   LOTE: 'Lote',
   CAMPO: 'Campo',

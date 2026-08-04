@@ -1,13 +1,16 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { unlink } from 'fs/promises';
+import { randomUUID } from 'crypto';
+import { existsSync, mkdirSync } from 'fs';
+import { unlink, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
+import { procesarFotoParaTarjeta } from '../common/imagen.util';
 import { CreatePropiedadDto } from './dto/create-propiedad.dto';
 import { UpdatePropiedadDto } from './dto/update-propiedad.dto';
 import { RegistrarAumentoDto } from './dto/registrar-aumento.dto';
 import { UpsertInquilinoDto } from './dto/upsert-inquilino.dto';
-import { UPLOADS_DIR } from './multer.config';
+import { UPLOADS_DIR, FOTOS_DIR } from './multer.config';
 
 const INCLUDE_FICHA = {
   propietario: true,
@@ -215,13 +218,39 @@ export class PropiedadesService {
       orderBy: { orden: 'desc' },
     });
 
+    // Recorte/recompresión estándar (1080x1350, JPEG) — ver imagen.util.ts.
+    // Siempre se guarda como .jpg sin importar el formato original.
+    const procesada = await procesarFotoParaTarjeta(archivo.buffer);
+    if (!existsSync(FOTOS_DIR)) mkdirSync(FOTOS_DIR, { recursive: true });
+    const nombreArchivo = `${randomUUID()}.jpg`;
+    await writeFile(join(FOTOS_DIR, nombreArchivo), procesada);
+
     return this.prisma.fotoPropiedad.create({
       data: {
         propiedadId,
-        url: `/uploads/propiedades/${archivo.filename}`,
+        url: `/uploads/propiedades/${nombreArchivo}`,
         orden: (ultima?.orden ?? -1) + 1,
       },
     });
+  }
+
+  // Cuál foto usa el carrusel destacado del Hero para esta propiedad (solo
+  // aplica si es "carácter especial") — a lo sumo una en true, así que hay
+  // que desmarcar cualquier otra de la misma propiedad en la misma
+  // transacción antes de marcar la elegida. Tocar la que ya es portada la
+  // destilda (vuelve a "sin portada explícita", usa la primera por orden).
+  async marcarFotoPortada(propiedadId: string, fotoId: string) {
+    const foto = await this.prisma.fotoPropiedad.findUniqueOrThrow({ where: { id: fotoId } });
+    if (foto.propiedadId !== propiedadId) {
+      throw new BadRequestException('Esa foto no pertenece a esta propiedad.');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.fotoPropiedad.updateMany({ where: { propiedadId, esPortada: true }, data: { esPortada: false } }),
+      ...(foto.esPortada ? [] : [this.prisma.fotoPropiedad.update({ where: { id: fotoId }, data: { esPortada: true } })]),
+    ]);
+
+    return { ok: true };
   }
 
   async eliminarFoto(propiedadId: string, fotoId: string) {

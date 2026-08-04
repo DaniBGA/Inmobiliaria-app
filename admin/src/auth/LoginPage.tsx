@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useAuth, ApiError } from './AuthContext';
 
 export function LoginPage() {
-  const { login } = useAuth();
+  const { login, sesionExpirada } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +32,9 @@ export function LoginPage() {
         </div>
         <h1>Iniciar sesión</h1>
         <p className="sub">Sistema de Gestión Inmobiliaria — Facundo Paris Propiedades</p>
+        {!error && sesionExpirada && (
+          <div className="err">Tu sesión expiró — iniciá sesión de nuevo.</div>
+        )}
         {error && <div className="err">{error}</div>}
         <form onSubmit={onSubmit}>
           <div className="fg">

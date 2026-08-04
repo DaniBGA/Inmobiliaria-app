@@ -30,7 +30,8 @@ export class ReportesService {
         include: { detalle: true },
       });
       const honorarios = liquidaciones.reduce(
-        (acc, l) => acc + l.detalle.reduce((a, d) => a + Number(d.honorarios), 0),
+        (acc, l) =>
+          acc + l.detalle.reduce((a, d) => a + Number(d.honorarios) + Number(d.honorariosAdministracion), 0),
         0,
       );
       const liquidado = liquidaciones.reduce((acc, l) => acc + Number(l.netoAGirar), 0);

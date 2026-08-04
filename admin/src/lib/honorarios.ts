@@ -24,3 +24,17 @@ export function honorariosLabel(propiedad: { honorariosTipo: TipoHonorarios; hon
   if (propiedad.honorariosTipo === 'LIBRE') return 'Libre de gastos';
   return `${resolverPorcentajeHonorarios(propiedad, defaultPorcentaje)}%`;
 }
+
+// Honorarios de administración (gestión mensual del alquiler) — opt-in por
+// propiedad, sin % por defecto de Configuración (a diferencia de los
+// profesionales de arriba). Espejo de
+// api/src/common/honorarios.util.ts::resolverPorcentajeHonorariosAdministracion.
+export function resolverPorcentajeHonorariosAdministracion(propiedad: {
+  honorariosAdministracion: boolean;
+  honorariosAdministracionPorcentaje: number | string | null;
+}): number {
+  if (!propiedad.honorariosAdministracion) return 0;
+  return propiedad.honorariosAdministracionPorcentaje != null
+    ? Number(propiedad.honorariosAdministracionPorcentaje)
+    : 0;
+}

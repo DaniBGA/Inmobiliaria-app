@@ -3,7 +3,8 @@ import { api } from './client';
 export type ModalidadPropiedad = 'ALQUILER' | 'VENTA';
 export type TipoPropiedad =
   | 'CASA'
-  | 'DEPARTAMENTO_DUPLEX'
+  | 'DEPARTAMENTO'
+  | 'DUPLEX'
   | 'QUINTA'
   | 'LOTE'
   | 'CAMPO'
@@ -54,7 +55,10 @@ export interface StatsPorTipo {
 export function listarPropiedades(
   params: {
     modalidad?: ModalidadPropiedad;
-    tipo?: TipoPropiedad;
+    // Uno o varios (ej: ['DEPARTAMENTO', 'DUPLEX'] para el chip agrupado
+    // "Deptos" — ver PropertyFilterChips.tsx) — se unen con coma para el
+    // backend (PublicController::listarPropiedades).
+    tipo?: TipoPropiedad | TipoPropiedad[];
     especial?: boolean;
     page?: number;
     limit?: number;
@@ -62,7 +66,7 @@ export function listarPropiedades(
 ) {
   const q = new URLSearchParams();
   if (params.modalidad) q.set('modalidad', params.modalidad);
-  if (params.tipo) q.set('tipo', params.tipo);
+  if (params.tipo) q.set('tipo', Array.isArray(params.tipo) ? params.tipo.join(',') : params.tipo);
   if (params.especial) q.set('especial', 'true');
   if (params.page) q.set('page', String(params.page));
   if (params.limit) q.set('limit', String(params.limit));

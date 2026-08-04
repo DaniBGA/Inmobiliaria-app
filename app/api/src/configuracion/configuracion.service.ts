@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
+import { existsSync, mkdirSync } from 'fs';
+import { unlink, writeFile } from 'fs/promises';
+import { join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
+import { procesarFotoParaTarjeta } from '../common/imagen.util';
 import { UpdateConfiguracionDto } from './dto/update-configuracion.dto';
+import { FOTO_NOSOTROS_DIR } from './foto-nosotros-multer.config';
 
 const CONFIG_ID = 1;
 
@@ -36,6 +42,7 @@ export class ConfiguracionService {
         publicoInstagramUrl: true,
         publicoDireccion: true,
         publicoMatricula: true,
+        publicoFotoNosotrosUrl: true,
       },
     });
     return {
@@ -45,7 +52,33 @@ export class ConfiguracionService {
       instagramUrl: c.publicoInstagramUrl,
       direccion: c.publicoDireccion,
       matricula: c.publicoMatricula,
+      fotoNosotrosUrl: c.publicoFotoNosotrosUrl || null,
     };
+  }
+
+  // Reemplaza la foto de la sección "Nosotros" de la landing — si había una
+  // anterior, se borra del disco (si ya no está ahí por algún motivo, no
+  // hace falta que la operación falle por eso).
+  async actualizarFotoNosotros(archivo: Express.Multer.File) {
+    const actual = await this.prisma.configuracion.findUniqueOrThrow({
+      where: { id: CONFIG_ID },
+      select: { publicoFotoNosotrosUrl: true },
+    });
+    if (actual.publicoFotoNosotrosUrl) {
+      await unlink(join(FOTO_NOSOTROS_DIR, actual.publicoFotoNosotrosUrl.split('/').pop()!)).catch(() => {});
+    }
+
+    // Mismo recorte/recompresión que las fotos de propiedad (1080x1350,
+    // JPEG) — la caja de "Nosotros" usa la misma relación 4:5 en CSS.
+    const procesada = await procesarFotoParaTarjeta(archivo.buffer);
+    if (!existsSync(FOTO_NOSOTROS_DIR)) mkdirSync(FOTO_NOSOTROS_DIR, { recursive: true });
+    const nombreArchivo = `${randomUUID()}.jpg`;
+    await writeFile(join(FOTO_NOSOTROS_DIR, nombreArchivo), procesada);
+
+    return this.prisma.configuracion.update({
+      where: { id: CONFIG_ID },
+      data: { publicoFotoNosotrosUrl: `/uploads/configuracion/${nombreArchivo}` },
+    });
   }
 
   // Cotización del dólar oficial en vivo (dolarapi.com, sin necesidad de
