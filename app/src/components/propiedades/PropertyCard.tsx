@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { BASE_URL } from '../../api/client';
@@ -191,6 +191,25 @@ export function PropertyCard({ propiedad }: { propiedad: PropiedadPublica }) {
     staleTime: 5 * 60_000,
   });
 
+  // Con varias fotos (§ propiedades con muchas imágenes), cambiar de foto
+  // se sentía con un lag perceptible: el <img> recién pedía la imagen de
+  // red al momento de mostrarla. En vez de precargar TODO de entrada para
+  // cada card del listado (desperdicia ancho de banda en propiedades que
+  // el usuario ni mira), se precarga el resto de la galería recién en la
+  // primera interacción real con las fotos de esta propiedad puntual —
+  // desde ahí, cambiar de foto es instantáneo (ya está en caché).
+  const fotosPrecargadasRef = useRef(false);
+  function irAFoto(i: number) {
+    if (!fotosPrecargadasRef.current) {
+      fotosPrecargadasRef.current = true;
+      propiedad.fotos.forEach((f) => {
+        const img = new window.Image();
+        img.src = `${BASE_URL}${f.url}`;
+      });
+    }
+    setIndice(i);
+  }
+
   const precio =
     propiedad.modalidad === 'VENTA' ? formatPrecio(propiedad.precio, propiedad.moneda) : formatMoney(propiedad.montoAlquilerVigente);
   const specs = specsDe(propiedad);
@@ -200,7 +219,7 @@ export function PropertyCard({ propiedad }: { propiedad: PropiedadPublica }) {
   return (
     <article className="property-card">
       <div style={{ position: 'relative' }}>
-        <PropertyPhotoCarousel propiedad={propiedad} indice={indice} setIndice={setIndice} />
+        <PropertyPhotoCarousel propiedad={propiedad} indice={indice} setIndice={irAFoto} />
         <span className="property-badge">
           <span className={`property-badge-dot${propiedad.modalidad === 'VENTA' ? ' venta' : ''}`} />
           {propiedad.modalidad === 'VENTA' ? 'En venta' : 'Alquiler'}
@@ -223,7 +242,14 @@ export function PropertyCard({ propiedad }: { propiedad: PropiedadPublica }) {
           </div>
         )}
         <div className="property-actions">
-          <button type="button" className="property-detail-btn" onClick={() => setDetalleAbierto(true)}>
+          <button
+            type="button"
+            className="property-detail-btn"
+            onClick={() => {
+              irAFoto(indice);
+              setDetalleAbierto(true);
+            }}
+          >
             Ver detalle
           </button>
           {whatsapp && (
@@ -240,7 +266,7 @@ export function PropertyCard({ propiedad }: { propiedad: PropiedadPublica }) {
           <PropertyDetailModal
             propiedad={propiedad}
             indice={indice}
-            setIndice={setIndice}
+            setIndice={irAFoto}
             whatsapp={whatsapp}
             onClose={() => setDetalleAbierto(false)}
           />,

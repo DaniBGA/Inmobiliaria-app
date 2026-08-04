@@ -6,7 +6,15 @@ import { UPLOADS_DIR } from './propiedades/multer.config';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  app.enableCors();
+  // En producción, ALLOWED_ORIGINS restringe qué sitios pueden leer las
+  // respuestas de la API (el propio dominio, landing+admin). Sin la
+  // variable definida (dev local, distintos puertos localhost) se refleja
+  // cualquier origen — mismo comportamiento que antes, solo para no
+  // trabar el flujo de desarrollo.
+  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+  app.enableCors(allowedOrigins?.length ? { origin: allowedOrigins } : undefined);
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, transform: true }),
   );
