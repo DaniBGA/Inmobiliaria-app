@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
+import { useAuth } from '../auth/AuthContext';
 import logo from '../images/logo.png';
 
 // Orden corregido según el documento funcional (§1): "Propietarios y
@@ -60,6 +61,7 @@ export function Sidebar() {
   const [navopen, setNavopen] = useState(false);
   const badges = useBadges();
   const location = useLocation();
+  const { logout } = useAuth();
 
   useEffect(() => {
     document.body.classList.toggle('navmin', navmin);
@@ -126,6 +128,10 @@ export function Sidebar() {
               </NavLink>
             );
           })}
+          <button className="navlogout" title="Cerrar sesión" onClick={logout}>
+            <span className="ico">⏻</span>
+            <span className="lbl">Cerrar sesión</span>
+          </button>
         </nav>
         <div className="ver">
           <b>PRODUCCIÓN</b>
