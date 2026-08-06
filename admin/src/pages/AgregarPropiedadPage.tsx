@@ -211,15 +211,17 @@ export function AgregarPropiedadPage() {
           honorariosAdministracion && honorariosAdministracionPorcentaje
             ? Number(honorariosAdministracionPorcentaje)
             : undefined,
-        ambientes: !esLoteVenta && ambientes ? Number(ambientes) : undefined,
-        dormitorios: !esLoteVenta && dormitorios ? Number(dormitorios) : undefined,
-        banos: !esLoteVenta && banos ? Number(banos) : undefined,
-        cochera,
+        ambientes: !esLote && ambientes ? Number(ambientes) : undefined,
+        dormitorios: !esLote && dormitorios ? Number(dormitorios) : undefined,
+        banos: !esLote && banos ? Number(banos) : undefined,
+        cochera: !esLote ? cochera : undefined,
         superficieM2: superficieM2 ? Number(superficieM2) : undefined,
-        superficieCubierta: !esLoteVenta && superficieCubierta ? Number(superficieCubierta) : undefined,
+        superficieCubierta: !esLote && superficieCubierta ? Number(superficieCubierta) : undefined,
         descripcion: descripcion.trim() || undefined,
         caracterEspecial,
-        serviciosHabilitados: modalidad === 'ALQUILER' || esLoteVenta ? servicios : undefined,
+        // Los servicios (luz, gas, etc.) se cargan para cualquier tipo y
+        // modalidad — antes solo se guardaban del lado de alquiler.
+        serviciosHabilitados: servicios,
         indice: modalidad === 'ALQUILER' && indice ? indice : undefined,
         frecuenciaAumentoMeses: modalidad === 'ALQUILER' && frecuenciaAumentoMeses ? Number(frecuenciaAumentoMeses) : undefined,
         montoAlquilerInicial: modalidad === 'ALQUILER' && montoAlquilerInicial ? Number(montoAlquilerInicial) : undefined,
@@ -278,11 +280,11 @@ export function AgregarPropiedadPage() {
   });
 
   // Un lote es terreno sin construir — no tiene sentido pedir ambientes,
-  // dormitorios, baños ni superficie cubierta. En su lugar se pregunta qué
-  // servicios tiene disponibles la zona (luz, gas, etc.), un dato que sí
-  // importa para vender un terreno y que hasta ahora solo se pedía del
+  // dormitorios, baños ni superficie cubierta, sea alquiler o venta. Los
+  // servicios (luz, gas, etc.), en cambio, se preguntan siempre para
+  // cualquier tipo de propiedad y modalidad — antes solo se pedían del
   // lado de alquiler.
-  const esLoteVenta = modalidad === 'VENTA' && tipo === 'LOTE';
+  const esLote = tipo === 'LOTE';
 
   const puedeGuardar =
     nombre.trim() &&
@@ -463,7 +465,7 @@ export function AgregarPropiedadPage() {
                   />
                 </div>
               )}
-              {!esLoteVenta && (
+              {!esLote && (
                 <>
                   <div className="fg">
                     <label>Ambientes</label>
@@ -486,19 +488,7 @@ export function AgregarPropiedadPage() {
                   <span>m²</span>
                 </div>
               </div>
-              {esLoteVenta ? (
-                <div className="fg full">
-                  <label>Servicios en la zona</label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 18px', marginTop: 4 }}>
-                    {SERVICIOS_OPCIONES.map((s) => (
-                      <label className="chk" key={s.key}>
-                        <input type="checkbox" checked={servicios.includes(s.key)} onChange={() => toggleServicio(s.key)} />
-                        <span>{s.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ) : (
+              {!esLote && (
                 <div className="fg">
                   <label>Superficie cubierta</label>
                   <div className="suffix">
@@ -513,12 +503,14 @@ export function AgregarPropiedadPage() {
                   </div>
                 </div>
               )}
-              <div className="fg">
-                <label className="chk" style={{ marginTop: 28 }}>
-                  <input type="checkbox" checked={cochera} onChange={(e) => setCochera(e.target.checked)} />
-                  <span>Tiene cochera</span>
-                </label>
-              </div>
+              {!esLote && (
+                <div className="fg">
+                  <label className="chk" style={{ marginTop: 28 }}>
+                    <input type="checkbox" checked={cochera} onChange={(e) => setCochera(e.target.checked)} />
+                    <span>Tiene cochera</span>
+                  </label>
+                </div>
+              )}
               <div className="fg">
                 <label className="chk" style={{ marginTop: 28 }}>
                   <input
@@ -612,7 +604,7 @@ export function AgregarPropiedadPage() {
           ) : (
             <div className="cfgcard">
               <h3>DATOS DE VENTA</h3>
-              <div className="hint">Precio y si la propiedad se publica en la página web pública.</div>
+              <div className="hint">Precio, si la propiedad se publica en la página web pública y qué servicios tiene.</div>
               <div className="cfgfields">
                 <div className="fg">
                   <label>Precio</label>
@@ -634,6 +626,17 @@ export function AgregarPropiedadPage() {
                 <div className="fg full">
                   <label>Cierre estimado</label>
                   <input type="date" value={cierreEstimado} onChange={(e) => setCierreEstimado(e.target.value)} />
+                </div>
+                <div className="fg full">
+                  <label>Servicios</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 18px', marginTop: 4 }}>
+                    {SERVICIOS_OPCIONES.map((s) => (
+                      <label className="chk" key={s.key}>
+                        <input type="checkbox" checked={servicios.includes(s.key)} onChange={() => toggleServicio(s.key)} />
+                        <span>{s.label}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
               <div className="cfgnote">
