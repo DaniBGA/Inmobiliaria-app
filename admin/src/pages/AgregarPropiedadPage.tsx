@@ -211,15 +211,15 @@ export function AgregarPropiedadPage() {
           honorariosAdministracion && honorariosAdministracionPorcentaje
             ? Number(honorariosAdministracionPorcentaje)
             : undefined,
-        ambientes: ambientes ? Number(ambientes) : undefined,
-        dormitorios: dormitorios ? Number(dormitorios) : undefined,
-        banos: banos ? Number(banos) : undefined,
+        ambientes: !esLoteVenta && ambientes ? Number(ambientes) : undefined,
+        dormitorios: !esLoteVenta && dormitorios ? Number(dormitorios) : undefined,
+        banos: !esLoteVenta && banos ? Number(banos) : undefined,
         cochera,
         superficieM2: superficieM2 ? Number(superficieM2) : undefined,
-        superficieCubierta: superficieCubierta ? Number(superficieCubierta) : undefined,
+        superficieCubierta: !esLoteVenta && superficieCubierta ? Number(superficieCubierta) : undefined,
         descripcion: descripcion.trim() || undefined,
         caracterEspecial,
-        serviciosHabilitados: modalidad === 'ALQUILER' ? servicios : undefined,
+        serviciosHabilitados: modalidad === 'ALQUILER' || esLoteVenta ? servicios : undefined,
         indice: modalidad === 'ALQUILER' && indice ? indice : undefined,
         frecuenciaAumentoMeses: modalidad === 'ALQUILER' && frecuenciaAumentoMeses ? Number(frecuenciaAumentoMeses) : undefined,
         montoAlquilerInicial: modalidad === 'ALQUILER' && montoAlquilerInicial ? Number(montoAlquilerInicial) : undefined,
@@ -276,6 +276,13 @@ export function AgregarPropiedadPage() {
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo cargar la propiedad.'),
   });
+
+  // Un lote es terreno sin construir — no tiene sentido pedir ambientes,
+  // dormitorios, baños ni superficie cubierta. En su lugar se pregunta qué
+  // servicios tiene disponibles la zona (luz, gas, etc.), un dato que sí
+  // importa para vender un terreno y que hasta ahora solo se pedía del
+  // lado de alquiler.
+  const esLoteVenta = modalidad === 'VENTA' && tipo === 'LOTE';
 
   const puedeGuardar =
     nombre.trim() &&
@@ -456,18 +463,22 @@ export function AgregarPropiedadPage() {
                   />
                 </div>
               )}
-              <div className="fg">
-                <label>Ambientes</label>
-                <input type="number" min={0} value={ambientes} onChange={(e) => setAmbientes(e.target.value)} />
-              </div>
-              <div className="fg">
-                <label>Dormitorios</label>
-                <input type="number" min={0} value={dormitorios} onChange={(e) => setDormitorios(e.target.value)} />
-              </div>
-              <div className="fg">
-                <label>Baños</label>
-                <input type="number" min={0} value={banos} onChange={(e) => setBanos(e.target.value)} />
-              </div>
+              {!esLoteVenta && (
+                <>
+                  <div className="fg">
+                    <label>Ambientes</label>
+                    <input type="number" min={0} value={ambientes} onChange={(e) => setAmbientes(e.target.value)} />
+                  </div>
+                  <div className="fg">
+                    <label>Dormitorios</label>
+                    <input type="number" min={0} value={dormitorios} onChange={(e) => setDormitorios(e.target.value)} />
+                  </div>
+                  <div className="fg">
+                    <label>Baños</label>
+                    <input type="number" min={0} value={banos} onChange={(e) => setBanos(e.target.value)} />
+                  </div>
+                </>
+              )}
               <div className="fg">
                 <label>Superficie total</label>
                 <div className="suffix">
@@ -475,19 +486,33 @@ export function AgregarPropiedadPage() {
                   <span>m²</span>
                 </div>
               </div>
-              <div className="fg">
-                <label>Superficie cubierta</label>
-                <div className="suffix">
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={superficieCubierta}
-                    onChange={(e) => setSuperficieCubierta(e.target.value)}
-                  />
-                  <span>m²</span>
+              {esLoteVenta ? (
+                <div className="fg full">
+                  <label>Servicios en la zona</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 18px', marginTop: 4 }}>
+                    {SERVICIOS_OPCIONES.map((s) => (
+                      <label className="chk" key={s.key}>
+                        <input type="checkbox" checked={servicios.includes(s.key)} onChange={() => toggleServicio(s.key)} />
+                        <span>{s.label}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="fg">
+                  <label>Superficie cubierta</label>
+                  <div className="suffix">
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={superficieCubierta}
+                      onChange={(e) => setSuperficieCubierta(e.target.value)}
+                    />
+                    <span>m²</span>
+                  </div>
+                </div>
+              )}
               <div className="fg">
                 <label className="chk" style={{ marginTop: 28 }}>
                   <input type="checkbox" checked={cochera} onChange={(e) => setCochera(e.target.checked)} />
