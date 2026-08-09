@@ -30,11 +30,15 @@ const ITEMS = [
 // incidencia, este badge se refresca solo — sin esa coincidencia de
 // prefijo, el contador del sidebar quedaba pegado hasta que pasaban los 60s
 // de staleTime o se recargaba la página entera.
-function useBadges() {
+function useBadges(esEquipo: boolean) {
+  // Incidencias y Avisos ahora son ADMIN-only en el backend — pedirlos
+  // como designado devolvería 403 en cada navegación, así que se
+  // deshabilitan directamente para ese rol.
   const incidencias = useQuery({
     queryKey: ['incidencias', 'badge'],
     queryFn: () => api.get<unknown[]>('/incidencias?estado=ABIERTA'),
     staleTime: 60_000,
+    enabled: !esEquipo,
   });
   const agenda = useQuery({
     queryKey: ['agenda', 'badge'],
@@ -47,6 +51,7 @@ function useBadges() {
     queryKey: ['avisos', 'badge'],
     queryFn: () => api.get<Record<string, unknown[]>>('/avisos'),
     staleTime: 60_000,
+    enabled: !esEquipo,
   });
 
   return {
@@ -56,12 +61,16 @@ function useBadges() {
   };
 }
 
+const ITEMS_EQUIPO = new Set(['/ventas', '/agenda']);
+
 export function Sidebar() {
   const [navmin, setNavmin] = useState(false);
   const [navopen, setNavopen] = useState(false);
-  const badges = useBadges();
+  const { logout, usuario } = useAuth();
+  const esEquipo = usuario?.rol === 'EQUIPO';
+  const badges = useBadges(esEquipo);
   const location = useLocation();
-  const { logout } = useAuth();
+  const items = esEquipo ? ITEMS.filter((item) => ITEMS_EQUIPO.has(item.to)) : ITEMS;
 
   useEffect(() => {
     document.body.classList.toggle('navmin', navmin);
@@ -111,7 +120,7 @@ export function Sidebar() {
           <span className="btxt">InmoGest</span>
         </div>
         <nav>
-          {ITEMS.map((item) => {
+          {items.map((item) => {
             const n = badgeValue(item.badge);
             return (
               <NavLink
@@ -129,7 +138,7 @@ export function Sidebar() {
             );
           })}
           <button className="navlogout" title="Cerrar sesión" onClick={logout}>
-            <span className="ico">⏻</span>
+            <span className="ico">⇥</span>
             <span className="lbl">Cerrar sesión</span>
           </button>
         </nav>

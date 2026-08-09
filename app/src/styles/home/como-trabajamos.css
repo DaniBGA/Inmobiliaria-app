@@ -1,0 +1,102 @@
+/* ===== Servicios / Cómo trabajamos ===== */
+.pasos-grid {
+  margin-top: 40px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: clamp(16px, 2vw, 22px);
+}
+
+.paso-card {
+  border: 1px solid rgba(18, 39, 58, 0.16);
+  border-radius: 20px;
+  padding: 32px 28px;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.paso-card:hover {
+  background: rgba(18, 39, 58, 0.04);
+  border-color: rgba(38, 191, 187, 0.5);
+}
+
+.paso-n {
+  font-family: var(--font-label);
+  font-weight: 500;
+  font-size: 34px;
+  color: var(--color-accent);
+  line-height: 1;
+}
+
+.paso-card h3 {
+  margin-top: 22px;
+  font-size: 20px;
+  letter-spacing: -0.3px;
+}
+
+.paso-card p {
+  margin-top: 12px;
+  font-size: 14.5px;
+  color: rgba(18, 39, 58, 0.75);
+  line-height: 1.65;
+}
+
+/* CTA banda "Desarrolladores e inversores" */
+.servicios-cta {
+  margin-top: clamp(28px, 4vw, 44px);
+  background: linear-gradient(120deg, var(--color-accent), var(--color-offwhite));
+  border: 1px solid rgba(38, 191, 187, 0.35);
+  border-radius: 22px;
+  padding: clamp(26px, 4vw, 48px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 26px;
+}
+
+.servicios-cta-copy {
+  max-width: 620px;
+}
+
+.servicios-cta-eyebrow {
+  font-family: var(--font-label);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #0c3b39;
+  margin-bottom: 12px;
+}
+
+.servicios-cta-title {
+  font-size: clamp(24px, 3.2vw, 36px);
+  letter-spacing: -1px;
+  line-height: 1.1;
+}
+
+.servicios-cta-text {
+  margin-top: 12px;
+  font-size: clamp(14px, 1.5vw, 16px);
+  line-height: 1.65;
+  color: rgba(18, 39, 58, 0.72);
+}
+
+.servicios-cta-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--color-navy);
+  color: var(--color-cream);
+  font-family: var(--font-label);
+  font-weight: 700;
+  font-size: 15px;
+  padding: 16px 28px;
+  border-radius: 100px;
+  transition: transform 0.15s, background 0.15s;
+}
+
+.servicios-cta-btn:hover {
+  transform: translateY(-2px);
+  background: #0c3b39;
+}
+

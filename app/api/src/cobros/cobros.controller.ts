@@ -3,9 +3,13 @@ import { CobrosService } from './cobros.service';
 import { CreatePagoDto } from './dto/create-pago.dto';
 import { UpdatePagoDto } from './dto/update-pago.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { RolUsuario } from '@prisma/client';
 
 @Controller('cobros')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(RolUsuario.ADMIN)
 export class CobrosController {
   constructor(private readonly cobrosService: CobrosService) {}
 

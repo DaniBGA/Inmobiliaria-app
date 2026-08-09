@@ -1,0 +1,95 @@
+/* ===== Splash / pantalla de carga ===== */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: var(--color-splash);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  transition: opacity 0.6s ease;
+}
+
+.splash.fading {
+  opacity: 0;
+}
+
+.splash-mark {
+  position: relative;
+  display: inline-block;
+  margin-bottom: clamp(48px, 8vh, 72px);
+  animation: fpLogoIn 0.6s ease both;
+}
+
+.splash-mark img {
+  width: clamp(90px, 22vw, 130px);
+  height: auto;
+  filter: brightness(0) invert(1) opacity(0.95);
+}
+
+.splash-bar {
+  width: clamp(160px, 48vw, 190px);
+  height: 4px;
+  border-radius: 100px;
+  background: rgba(47, 191, 191, 0.22);
+  overflow: hidden;
+}
+
+.splash-bar-fill {
+  height: 100%;
+  border-radius: 100px;
+  background: var(--color-splash-bar);
+  animation: fpLoadFill 2.2s cubic-bezier(0.55, 0.15, 0.35, 1) forwards;
+}
+
+@keyframes fpLoadFill {
+  0% {
+    width: 4%;
+  }
+  100% {
+    width: 100%;
+  }
+}
+
+@keyframes fpLogoIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes v2Ken {
+  0% {
+    transform: scale(1);
+  }
+  100% {
+    transform: scale(1.1);
+  }
+}
+
+@keyframes fpModalIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fpCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+

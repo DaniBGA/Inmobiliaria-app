@@ -79,4 +79,13 @@ export class UpdateConfiguracionDto {
   @IsOptional()
   @IsString()
   publicoMatricula?: string;
+
+  @IsOptional()
+  @IsString()
+  facturaWhatsappMensaje?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  diasMostrarDespuesVentaAlquiler?: number;
 }

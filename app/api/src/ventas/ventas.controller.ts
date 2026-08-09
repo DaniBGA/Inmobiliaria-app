@@ -8,6 +8,9 @@ import { VenderPorTercerosDto } from './dto/vender-por-terceros.dto';
 import { CreateInteresadoDto } from './dto/create-interesado.dto';
 import { UpdateInteresadoDto } from './dto/update-interesado.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { RolUsuario } from '@prisma/client';
 
 @Controller()
 @UseGuards(JwtAuthGuard)
@@ -29,7 +32,13 @@ export class VentasController {
     return this.ventasService.findOne(id);
   }
 
+  // Publicar una propiedad nueva en venta / editar precio, estado y
+  // publicación de una ficha existente — es "editar la propiedad", no el
+  // pipeline de venta en sí (interesados/seña/cierre/terceros abajo), así
+  // que queda ADMIN-only.
   @Post('propiedades/:propiedadId/venta')
+  @UseGuards(RolesGuard)
+  @Roles(RolUsuario.ADMIN)
   upsert(@Param('propiedadId') propiedadId: string, @Body() dto: UpsertVentaDto) {
     return this.ventasService.upsert(propiedadId, dto);
   }

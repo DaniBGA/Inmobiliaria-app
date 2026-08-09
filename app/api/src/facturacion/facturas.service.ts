@@ -1,11 +1,11 @@
-import { Injectable } from '@nestjs/common';
-import { DestinoGasto, ServicioFacturable } from '@prisma/client';
+import { ConflictException, Injectable } from '@nestjs/common';
+import { DestinoGasto, Prisma, PunitorioFrecuencia, PunitorioTipo, ServicioFacturable } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PropiedadesService } from '../propiedades/propiedades.service';
 import { GastosService } from '../gastos/gastos.service';
 import { CobrosService } from '../cobros/cobros.service';
 import { ConfiguracionService } from '../configuracion/configuracion.service';
-import { finDeMes, mesStringAFecha } from '../common/fecha.util';
+import { finDeMes, mesStringAFecha, sumarMeses } from '../common/fecha.util';
 import { FacturaItemInputDto } from './dto/factura-item-input.dto';
 
 export interface ItemPredeterminado {
@@ -60,7 +60,12 @@ export class FacturasService {
     const mes = mesStringAFecha(mesStr);
     const propiedad = await this.prisma.propiedad.findUniqueOrThrow({
       where: { id: propiedadId },
-      select: { serviciosHabilitados: true },
+      select: {
+        serviciosHabilitados: true,
+        punitorioFrecuencia: true,
+        punitorioTipo: true,
+        punitorioValor: true,
+      },
     });
     const rentaVigenteRaw = await this.propiedadesService.rentaVigente(propiedadId, finDeMes(mes));
 
@@ -78,18 +83,27 @@ export class FacturasService {
       (facturaAnterior?.items ?? []).map((it) => [it.descripcion, Number(it.monto)]),
     );
 
+    // "Retributivas de Servicios" es un ítem fijo de toda factura de
+    // alquiler (a diferencia del resto, no depende de que la propiedad la
+    // tenga tildada en `serviciosHabilitados`) — por eso va aparte del
+    // filtro de servicios de abajo, igual que "Alquiler".
     const items: ItemPredeterminado[] = [
       { descripcion: 'Alquiler', monto: rentaVigenteRaw != null ? Number(rentaVigenteRaw) : 0, orden: 0 },
+      {
+        descripcion: FacturasService.SERVICIO_DESCRIPCION.RETRIBUTIVAS,
+        monto: montoAnteriorPorDescripcion.get(FacturasService.SERVICIO_DESCRIPCION.RETRIBUTIVAS) ?? 0,
+        orden: 1,
+      },
     ];
-    const serviciosOrdenados = FacturasService.SERVICIO_ORDEN.filter((s) =>
-      propiedad.serviciosHabilitados.includes(s),
+    const serviciosOrdenados = FacturasService.SERVICIO_ORDEN.filter(
+      (s) => s !== ServicioFacturable.RETRIBUTIVAS && propiedad.serviciosHabilitados.includes(s),
     );
     serviciosOrdenados.forEach((servicio, i) => {
       const descripcion = FacturasService.SERVICIO_DESCRIPCION[servicio];
       items.push({
         descripcion,
         monto: montoAnteriorPorDescripcion.get(descripcion) ?? 0,
-        orden: 1 + i,
+        orden: 2 + i,
       });
     });
 
@@ -112,7 +126,90 @@ export class FacturasService {
       items.push({ descripcion: 'Deuda arrastrada', monto: deuda, orden: items.length });
     }
 
+    // Mora (§5.6 — "cálculo automático de punitorios al registrar un pago
+    // fuera de término", antes pendiente de producción): se sugiere sobre
+    // el mes cerrado inmediatamente anterior, si el punitorio del contrato
+    // está configurado y ese mes se terminó pagando tarde. Igual que
+    // "Deuda arrastrada", es un ítem editable — no se fuerza.
+    const mora = await this.calcularMora(propiedadId, sumarMeses(mes, -1), propiedad);
+    if (mora > 0) {
+      items.push({ descripcion: 'Mora', monto: mora, orden: items.length });
+    }
+
     return items;
+  }
+
+  // Ver comentario de itemsPredeterminados(). Si el mes anterior todavía
+  // tiene saldo pendiente, no se puede determinar la mora todavía (no se
+  // sabe con qué pago ni en qué fecha se va a saldar) — se recalcula sola
+  // el mes en que efectivamente se termine de pagar.
+  private async calcularMora(
+    propiedadId: string,
+    mesAnterior: Date,
+    propiedad: {
+      punitorioFrecuencia: PunitorioFrecuencia | null;
+      punitorioTipo: PunitorioTipo | null;
+      punitorioValor: Prisma.Decimal | null;
+    },
+  ): Promise<number> {
+    if (!propiedad.punitorioTipo || propiedad.punitorioValor == null || Number(propiedad.punitorioValor) <= 0) {
+      return 0;
+    }
+
+    // Un inquilino recién cargado "al día" no debe mora por meses previos a
+    // su alta en el sistema (ver Inquilino.alDiaDesde).
+    const inquilino = await this.prisma.inquilino.findUnique({
+      where: { propiedadId },
+      select: { alDiaDesde: true },
+    });
+    if (inquilino?.alDiaDesde && mesAnterior.getTime() < inquilino.alDiaDesde.getTime()) return 0;
+
+    const esperadoRaw = await this.propiedadesService.rentaVigente(propiedadId, finDeMes(mesAnterior));
+    if (esperadoRaw == null) return 0;
+    const esperado = Number(esperadoRaw);
+
+    const cobrado = await this.cobrosService.cobradoDelMes(propiedadId, mesAnterior);
+    if (cobrado < esperado) return 0;
+
+    const ultimoPago = await this.prisma.pago.findFirst({
+      where: { propiedadId, mes: mesAnterior, anulado: false },
+      orderBy: { fecha: 'desc' },
+    });
+    if (!ultimoPago) return 0;
+
+    const configuracion = await this.configuracionService.get();
+    const vencimiento = new Date(
+      Date.UTC(mesAnterior.getUTCFullYear(), mesAnterior.getUTCMonth(), configuracion.diaVencimientoAlquiler),
+    );
+    const diasAtraso = Math.round((ultimoPago.fecha.getTime() - vencimiento.getTime()) / 86_400_000);
+    if (diasAtraso <= 0) return 0;
+
+    const base =
+      propiedad.punitorioTipo === 'PORCENTAJE'
+        ? esperado * (Number(propiedad.punitorioValor) / 100)
+        : Number(propiedad.punitorioValor);
+
+    // Frecuencia = cada cuánto se aplica el valor de arriba mientras dure
+    // el atraso — "DIA" multiplica por cada día atrasado (ej. §4 del
+    // pedido: mora de $20.000/día, pagó 3 días tarde → $60.000).
+    let unidades: number;
+    switch (propiedad.punitorioFrecuencia) {
+      case 'SEMANA':
+        unidades = Math.ceil(diasAtraso / 7);
+        break;
+      case 'MES':
+        unidades = Math.ceil(diasAtraso / 30);
+        break;
+      case 'UNICO':
+        unidades = 1;
+        break;
+      case 'DIA':
+      default:
+        unidades = diasAtraso;
+        break;
+    }
+
+    return Math.round(base * unidades * 100) / 100;
   }
 
   private facturaVigente(propiedadId: string, mes: Date) {
@@ -128,38 +225,55 @@ export class FacturasService {
 
   // §3.5: al emitir, sus ítems quedan guardados en la propiedad, uno por
   // mes; volver a facturar el período reemplaza a la anterior.
-  async emitir(propiedadId: string, mesStr: string, itemsInput?: FacturaItemInputDto[]) {
+  //
+  // `numeroManual` (opcional): deja elegir el número de factura a mano —
+  // pensado para cuando la inmobiliaria ya lleva su propia numeración por
+  // fuera del sistema (ej. un talonario físico por inquilino) y quiere que
+  // coincida con eso, en vez del correlativo automático de Configuración.
+  // Si se manda, el contador automático NO avanza (queda intacto para la
+  // próxima factura sin número manual).
+  async emitir(propiedadId: string, mesStr: string, itemsInput?: FacturaItemInputDto[], numeroManual?: number) {
     await this.prisma.propiedad.findUniqueOrThrow({ where: { id: propiedadId } });
     const mes = mesStringAFecha(mesStr);
     const items = itemsInput ?? (await this.itemsPredeterminados(propiedadId, mesStr));
     const total = items.reduce((acc, it) => acc + Number(it.monto), 0);
 
-    return this.prisma.$transaction(async (tx) => {
-      const numero = await this.configuracionService.siguienteNumeroFactura(tx);
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const numero = numeroManual ?? (await this.configuracionService.siguienteNumeroFactura(tx));
 
-      // Reemplaza la factura anterior del mismo mes si existía (cascade
-      // borra sus FacturaItem).
-      await tx.factura.deleteMany({ where: { propiedadId, mes } });
+        // Reemplaza la factura anterior del mismo mes si existía (cascade
+        // borra sus FacturaItem).
+        await tx.factura.deleteMany({ where: { propiedadId, mes } });
 
-      return tx.factura.create({
-        data: {
-          propiedadId,
-          mes,
-          numero,
-          fecha: new Date(),
-          total,
-          items: {
-            create: items.map((it, idx) => ({
-              descripcion: it.descripcion,
-              monto: it.monto,
-              numeroLiquidacion: it.numeroLiquidacion,
-              orden: idx,
-            })),
+        return tx.factura.create({
+          data: {
+            propiedadId,
+            mes,
+            numero,
+            fecha: new Date(),
+            total,
+            items: {
+              create: items.map((it, idx) => ({
+                descripcion: it.descripcion,
+                monto: it.monto,
+                numeroLiquidacion: it.numeroLiquidacion,
+                orden: idx,
+              })),
+            },
           },
-        },
-        include: { items: { orderBy: { orden: 'asc' } } },
+          include: { items: { orderBy: { orden: 'asc' } } },
+        });
       });
-    });
+    } catch (error) {
+      // Mismo caso que en Liquidaciones: dos personas emitiendo la factura
+      // de la misma propiedad+mes casi al mismo tiempo pueden chocar contra
+      // el índice único — se devuelve un mensaje claro en vez de un 500.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Ya se emitió esta factura desde otra sesión — recargá y volvé a intentar.');
+      }
+      throw error;
+    }
   }
 
   // Facturación masiva del mes (§2.2): guarda cada factura igual que la

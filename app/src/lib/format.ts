@@ -57,13 +57,17 @@ export function specsDe(p: {
   ambientes: number | null;
   dormitorios: number | null;
   banos: number | null;
+  cochera?: boolean;
   superficieM2: number | string | null;
+  superficieCubierta?: number | string | null;
 }): Spec[] {
   return [
     p.ambientes != null ? { k: 'Amb.', v: String(p.ambientes) } : null,
     p.dormitorios != null ? { k: 'Dorm.', v: String(p.dormitorios) } : null,
     p.banos != null ? { k: 'Baños', v: String(p.banos) } : null,
+    p.cochera ? { k: 'Cochera', v: 'Sí' } : null,
     p.superficieM2 != null ? { k: 'Sup.', v: `${p.superficieM2}m²` } : null,
+    p.superficieCubierta != null ? { k: 'Sup. cub.', v: `${p.superficieCubierta}m²` } : null,
   ].filter(Boolean) as Spec[];
 }
 
@@ -71,7 +75,9 @@ export function specsLineDe(p: {
   ambientes: number | null;
   dormitorios: number | null;
   banos: number | null;
+  cochera?: boolean;
   superficieM2: number | string | null;
+  superficieCubierta?: number | string | null;
 }): string {
   return specsDe(p)
     .map((s) => `${s.k} ${s.v}`)

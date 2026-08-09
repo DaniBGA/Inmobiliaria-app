@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { EstadoIncidencia, Prisma } from '@prisma/client';
+import { DestinoGasto, EstadoIncidencia, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProveedoresService } from '../proveedores/proveedores.service';
 import { GastosService } from '../gastos/gastos.service';
@@ -139,10 +139,16 @@ export class IncidenciasService {
   }
 
   // §3.3: al marcar RESUELTA con costo, genera el gasto automáticamente
-  // (destino = quienPagaCosto) — sin egreso propio en Caja (eso lo hace el
-  // pago al proveedor).
+  // (destino = quienPagaCosto). Si hay proveedor asignado, no genera egreso
+  // propio en Caja — eso lo hace el pago al proveedor más adelante. Si NO
+  // hay proveedor y la paga la inmobiliaria, no hay ningún pago a proveedor
+  // que vaya a registrar esa salida de plata, así que el egreso en Caja se
+  // genera acá mismo.
   async resolver(id: string, dto: ResolverIncidenciaDto) {
-    const incidencia = await this.prisma.incidencia.findUniqueOrThrow({ where: { id } });
+    const incidencia = await this.prisma.incidencia.findUniqueOrThrow({
+      where: { id },
+      include: { propiedad: true },
+    });
     const fechaCierre = dto.fechaCierre ? new Date(dto.fechaCierre) : new Date();
 
     return this.prisma.$transaction(async (tx) => {
@@ -161,12 +167,14 @@ export class IncidenciasService {
           {
             incidenciaId: id,
             propiedadId: incidencia.propiedadId,
+            propiedadNombre: incidencia.propiedad.nombre,
             mes: primerDiaMes(fechaCierre),
             descripcion: incidencia.titulo,
             monto: dto.costo,
             fecha: fechaCierre,
             categoria: incidencia.rubro,
             destino: dto.quienPagaCosto,
+            generarEgresoCaja: !incidencia.proveedorId && dto.quienPagaCosto === DestinoGasto.INMOBILIARIA,
           },
           tx,
         );
@@ -179,11 +187,12 @@ export class IncidenciasService {
   // El gasto que genera `resolver()` apunta a la incidencia con
   // `onDelete: SetNull` (schema.prisma) — sin este paso, borrar la
   // incidencia no borra ese gasto, solo le vacía `incidenciaId`. Queda un
-  // gasto "destino: INMOBILIARIA" huérfano: invisible en Incidencias (ya no
-  // hay incidencia), invisible en Caja (crearDesdeIncidencia nunca generó
-  // movimiento propio) y sin embargo sigue restando de `gananciaPesos`
+  // gasto huérfano: invisible en Incidencias (ya no hay incidencia) y, si
+  // tenía proveedor (o no generó egreso propio, ver `generarEgresoCaja`),
+  // también invisible en Caja — pero sigue restando de `gananciaPesos`
   // (caja.service.ts::kpisDelMes) para siempre, sin ninguna pantalla desde
-  // donde corregirlo.
+  // donde corregirlo. Por eso acá también se borra su egreso en Caja
+  // (`movimientoCajaId`) cuando lo tiene.
   async remove(id: string) {
     return this.prisma.$transaction(async (tx) => {
       const gasto = await tx.gasto.findUnique({ where: { incidenciaId: id } });

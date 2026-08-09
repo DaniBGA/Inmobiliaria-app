@@ -14,6 +14,8 @@ export function resolverPorcentajeHonorarios(
       return 0;
     case TipoHonorarios.TRES_POR_CIENTO:
       return 3;
+    case TipoHonorarios.CUATRO_POR_CIENTO:
+      return 4;
     case TipoHonorarios.SEIS_POR_CIENTO:
       return 6;
     case TipoHonorarios.OTRO:

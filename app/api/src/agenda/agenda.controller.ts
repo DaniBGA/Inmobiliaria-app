@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { AgendaService } from './agenda.service';
 import { CreateEventoDto } from './dto/create-evento.dto';
 import { UpdateEventoDto } from './dto/update-evento.dto';
@@ -10,8 +10,8 @@ export class AgendaController {
   constructor(private readonly agendaService: AgendaService) {}
 
   @Get('mes/:mes')
-  eventosDelMes(@Param('mes') mes: string) {
-    return this.agendaService.eventosDelMes(mes);
+  eventosDelMes(@Param('mes') mes: string, @Req() req: any) {
+    return this.agendaService.eventosDelMes(mes, req.user);
   }
 
   @Get('clientes/:clienteId/proximo-evento')
@@ -20,22 +20,22 @@ export class AgendaController {
   }
 
   @Post()
-  crear(@Body() dto: CreateEventoDto) {
-    return this.agendaService.crear(dto);
+  crear(@Body() dto: CreateEventoDto, @Req() req: any) {
+    return this.agendaService.crear(dto, req.user);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateEventoDto) {
-    return this.agendaService.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: UpdateEventoDto, @Req() req: any) {
+    return this.agendaService.update(id, dto, req.user);
   }
 
   @Patch(':id/hecho')
-  marcarHecho(@Param('id') id: string, @Body('hecho') hecho: boolean) {
-    return this.agendaService.marcarHecho(id, hecho);
+  marcarHecho(@Param('id') id: string, @Body('hecho') hecho: boolean, @Req() req: any) {
+    return this.agendaService.marcarHecho(id, hecho, req.user);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.agendaService.remove(id);
+  remove(@Param('id') id: string, @Req() req: any) {
+    return this.agendaService.remove(id, req.user);
   }
 }

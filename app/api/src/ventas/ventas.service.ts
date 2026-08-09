@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { EstadoVenta, Moneda, MonedaVenta, OrigenMovimientoCaja, TipoMovimientoCaja, TipoPropiedad } from '@prisma/client';
+import { EstadoVenta, Moneda, MonedaVenta, OrigenMovimientoCaja, Prisma, TipoMovimientoCaja, TipoPropiedad } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CajaService } from '../caja/caja.service';
 import { ConfiguracionService } from '../configuracion/configuracion.service';
@@ -78,41 +78,42 @@ export class VentasService {
     });
   }
 
-  // §3.6: seña recibida (etapa reserva) → INGRESO EN USD del mes en Caja.
-  // Reemplaza el ingreso anterior si ya se había registrado una seña — este
-  // mismo endpoint sirve tanto para registrar la seña por primera vez como
-  // para corregirla después (Ventas y Carteles muestra "Editar seña" en vez
-  // de "Registrar seña" una vez que ya está reservada).
-  async registrarSena(id: string, dto: RegistrarSenaDto) {
-    const venta = await this.prisma.venta.findUniqueOrThrow({
-      where: { id },
-      include: { propiedad: true },
-    });
+  // Toma un lock de fila (`FOR UPDATE`) sobre la venta antes de leerla
+  // dentro de la transacción — si dos personas disparan la misma acción
+  // (ej. las dos "Cerrar venta") casi al mismo tiempo, la segunda espera a
+  // que la primera termine y recién ahí lee el estado ya actualizado, en
+  // vez de leer el mismo estado "viejo" que la primera y terminar creando
+  // un segundo movimiento de Caja duplicado.
+  private async lockVenta(tx: Prisma.TransactionClient, id: string) {
+    await tx.$queryRaw`SELECT id FROM "ventas" WHERE id = ${id} FOR UPDATE`;
+    const venta = await tx.venta.findUnique({ where: { id }, include: { propiedad: true } });
+    if (!venta) throw new NotFoundException('Venta no encontrada.');
+    return venta;
+  }
 
+  // §3.6: seña recibida (etapa reserva) — a diferencia del cierre (ver
+  // cerrar() más abajo), la seña NO genera movimiento en Caja: de una venta,
+  // lo único que se refleja ahí es el honorario/comisión al cerrarla. La
+  // seña solo queda registrada en la ficha de la venta. Este mismo endpoint
+  // sirve tanto para registrar la seña por primera vez como para corregirla
+  // después (Ventas y Carteles muestra "Editar seña" en vez de "Registrar
+  // seña" una vez que ya está reservada).
+  async registrarSena(id: string, dto: RegistrarSenaDto) {
     return this.prisma.$transaction(async (tx) => {
+      const venta = await this.lockVenta(tx, id);
+
+      // Limpieza de una seña cargada antes de este cambio, que sí había
+      // generado un movimiento — no se vuelve a crear uno nuevo.
       if (venta.movimientoCajaSenaId) {
         await tx.movimientoCaja.delete({ where: { id: venta.movimientoCajaSenaId } });
       }
-
-      const movimiento = await this.cajaService.registrarMovimiento(
-        {
-          fecha: new Date(dto.fecha),
-          tipo: TipoMovimientoCaja.INGRESO,
-          moneda: Moneda.USD,
-          monto: dto.monto,
-          concepto: `Seña de venta — ${venta.propiedad.nombre}`,
-          categoria: 'Ventas',
-          origen: OrigenMovimientoCaja.SENA_VENTA,
-        },
-        tx,
-      );
 
       return tx.venta.update({
         where: { id },
         data: {
           senaRecibida: dto.monto,
           estado: EstadoVenta.RESERVADA,
-          movimientoCajaSenaId: movimiento.id,
+          movimientoCajaSenaId: null,
         },
         include: INCLUDE_FICHA,
       });
@@ -122,12 +123,12 @@ export class VentasService {
   // Corrige un error de carga: quita la seña registrada (borra el ingreso en
   // Caja) y vuelve la venta a "Publicada" — simétrico de registrarSena.
   async eliminarSena(id: string) {
-    const venta = await this.prisma.venta.findUniqueOrThrow({ where: { id } });
-    if (venta.estado !== EstadoVenta.RESERVADA) {
-      throw new BadRequestException('Esta venta no tiene una seña registrada para quitar.');
-    }
-
     return this.prisma.$transaction(async (tx) => {
+      const venta = await this.lockVenta(tx, id);
+      if (venta.estado !== EstadoVenta.RESERVADA) {
+        throw new BadRequestException('Esta venta no tiene una seña registrada para quitar.');
+      }
+
       if (venta.movimientoCajaSenaId) {
         await tx.movimientoCaja.delete({ where: { id: venta.movimientoCajaSenaId } });
       }
@@ -150,21 +151,18 @@ export class VentasService {
   // precio final o una fecha de cierre mal cargados, sin duplicar el
   // ingreso en Caja.
   async cerrar(id: string, dto: CerrarVentaDto) {
-    const venta = await this.prisma.venta.findUniqueOrThrow({
-      where: { id },
-      include: { propiedad: true },
-    });
     const configuracion = await this.configuracionService.get();
 
-    const precioCierre = dto.precioFinal ?? Number(venta.precio);
-    const porcentaje = resolverPorcentajeHonorarios(
-      venta.propiedad,
-      Number(configuracion.honorariosDefaultPorcentaje),
-    );
-    const comision =
-      dto.comisionManual ?? Math.round(precioCierre * (porcentaje / 100) * 100) / 100;
-
     return this.prisma.$transaction(async (tx) => {
+      const venta = await this.lockVenta(tx, id);
+
+      const precioCierre = dto.precioFinal ?? Number(venta.precio);
+      const porcentaje = resolverPorcentajeHonorarios(
+        venta.propiedad,
+        Number(configuracion.honorariosDefaultPorcentaje),
+      );
+      const comision = dto.comisionManual ?? Math.round(precioCierre * (porcentaje / 100) * 100) / 100;
+
       if (venta.movimientoCajaComisionId) {
         await tx.movimientoCaja.delete({ where: { id: venta.movimientoCajaComisionId } });
       }
@@ -202,12 +200,12 @@ export class VentasService {
   // Corrige un error de carga: deshace el cierre (borra la comisión en Caja)
   // y vuelve la venta a "Reservada" — simétrico de eliminarSena.
   async deshacerCierre(id: string) {
-    const venta = await this.prisma.venta.findUniqueOrThrow({ where: { id } });
-    if (venta.estado !== EstadoVenta.VENDIDA) {
-      throw new BadRequestException('Esta venta no está cerrada.');
-    }
-
     return this.prisma.$transaction(async (tx) => {
+      const venta = await this.lockVenta(tx, id);
+      if (venta.estado !== EstadoVenta.VENDIDA) {
+        throw new BadRequestException('Esta venta no está cerrada.');
+      }
+
       if (venta.movimientoCajaComisionId) {
         await tx.movimientoCaja.delete({ where: { id: venta.movimientoCajaComisionId } });
       }

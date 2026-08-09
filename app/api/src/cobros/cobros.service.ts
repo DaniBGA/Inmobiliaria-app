@@ -67,7 +67,11 @@ export class CobrosService {
 
     const filas = await Promise.all(
       propiedades.map(async (p) => {
-        const esperadoRaw = await this.propiedadesService.rentaVigente(p.id, finDeMes(mes));
+        const alDiaDesde = p.inquilino?.alDiaDesde ?? null;
+        const antesDeAlDia = !!alDiaDesde && mes.getTime() < alDiaDesde.getTime();
+        const esperadoRaw = antesDeAlDia
+          ? null
+          : await this.propiedadesService.rentaVigente(p.id, finDeMes(mes));
         const esperado = esperadoRaw != null ? Number(esperadoRaw) : null;
         const cobrado = await this.cobradoDelMes(p.id, mes);
         const pagos = await this.prisma.pago.findMany({
@@ -185,10 +189,24 @@ export class CobrosService {
     });
   }
 
+  // Fecha desde la que corre la obligación de pago del inquilino actual —
+  // `null` si no tiene el checkbox "Se encuentra al día" tildado (deuda
+  // calculada desde siempre, comportamiento de base). Ver Inquilino.alDiaDesde.
+  private async alDiaDesde(propiedadId: string): Promise<Date | null> {
+    const inquilino = await this.prisma.inquilino.findUnique({
+      where: { propiedadId },
+      select: { alDiaDesde: true },
+    });
+    return inquilino?.alDiaDesde ?? null;
+  }
+
   // §5.4: deuda acumulada sobre los últimos 12 meses cerrados (el mes en
   // curso todavía no es deuda — es "Pendiente" hasta que cierra, §5.3).
   async deudaAcumulada(propiedadId: string, ahora: Date = new Date()) {
-    const meses = ultimosMesesCerrados(VENTANA_DEUDA_MESES, ahora);
+    const alDiaDesde = await this.alDiaDesde(propiedadId);
+    const meses = ultimosMesesCerrados(VENTANA_DEUDA_MESES, ahora).filter(
+      (mes) => !alDiaDesde || mes.getTime() >= alDiaDesde.getTime(),
+    );
     let deuda = 0;
     let mesesImpagos = 0;
 
@@ -210,7 +228,10 @@ export class CobrosService {
   // cobró) — lo usa el selector de "Pago de alquiler" en Caja para saber
   // qué meses concretos puede saldar un inquilino, en vez de un monto suelto.
   async mesesPendientes(propiedadId: string, ahora: Date = new Date()) {
-    const meses = [...ultimosMesesCerrados(VENTANA_DEUDA_MESES, ahora), primerDiaMes(ahora)];
+    const alDiaDesde = await this.alDiaDesde(propiedadId);
+    const meses = [...ultimosMesesCerrados(VENTANA_DEUDA_MESES, ahora), primerDiaMes(ahora)].filter(
+      (mes) => !alDiaDesde || mes.getTime() >= alDiaDesde.getTime(),
+    );
     const pendientes: { mes: string; esperado: number; cobrado: number; pendiente: number }[] = [];
 
     for (const mes of meses) {

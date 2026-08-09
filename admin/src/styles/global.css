@@ -503,7 +503,7 @@ textarea.avmsg:focus{outline:2px solid var(--indigo);border-color:transparent;ba
 .itemrow input:focus{outline:2px solid var(--indigo);border-color:transparent}
 .itemrow .itemdesc{flex:1;min-width:0}
 .itemrow .itemmonto{width:120px;font-family:var(--mono)}
-.itemrow .itemliq{width:74px;font-family:var(--mono);text-align:center}
+.itemrow .itemliq{width:118px;font-family:var(--mono);text-align:center}
 
 /* ===== Inquilinos ===== */
 .tenants{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:18px}

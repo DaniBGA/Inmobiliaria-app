@@ -34,21 +34,28 @@ export default function App() {
     return <LoginPage />;
   }
 
+  // Un designado (rol EQUIPO) solo puede ver "Ventas y Carteles" y
+  // "Agenda" — el resto de las páginas dependen de endpoints que ahora
+  // devuelven 403 para ese rol (ver el gating agregado en los controllers
+  // del backend), así que ni siquiera tiene sentido renderizarlas.
+  const esEquipo = usuario.rol === 'EQUIPO';
+  const soloAdmin = (el: JSX.Element) => (esEquipo ? <Navigate to="/ventas" replace /> : el);
+
   return (
     <Layout>
       <Routes>
-        <Route path="/" element={<DashboardPage />} />
-        <Route path="/propiedades/nueva" element={<AgregarPropiedadPage />} />
-        <Route path="/inquilinos" element={<InquilinosPage />} />
-        <Route path="/propietarios" element={<PropietariosPage />} />
+        <Route path="/" element={soloAdmin(<DashboardPage />)} />
+        <Route path="/propiedades/nueva" element={soloAdmin(<AgregarPropiedadPage />)} />
+        <Route path="/inquilinos" element={soloAdmin(<InquilinosPage />)} />
+        <Route path="/propietarios" element={soloAdmin(<PropietariosPage />)} />
         <Route path="/ventas" element={<VentasPage />} />
-        <Route path="/caja" element={<CajaPage />} />
-        <Route path="/incidencias" element={<IncidenciasPage />} />
-        <Route path="/clientes" element={<ClientesPage />} />
+        <Route path="/caja" element={soloAdmin(<CajaPage />)} />
+        <Route path="/incidencias" element={soloAdmin(<IncidenciasPage />)} />
+        <Route path="/clientes" element={soloAdmin(<ClientesPage />)} />
         <Route path="/agenda" element={<AgendaPage />} />
-        <Route path="/avisos" element={<AvisosPage />} />
-        <Route path="/configuracion" element={<ConfiguracionPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/avisos" element={soloAdmin(<AvisosPage />)} />
+        <Route path="/configuracion" element={soloAdmin(<ConfiguracionPage />)} />
+        <Route path="*" element={<Navigate to={esEquipo ? '/ventas' : '/'} replace />} />
       </Routes>
     </Layout>
   );

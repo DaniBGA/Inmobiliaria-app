@@ -1,0 +1,48 @@
+/* ===== Filtros de propiedades ===== */
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filter-chip {
+  background: transparent;
+  border: 1px solid rgba(237, 236, 234, 0.16);
+  color: rgba(237, 236, 234, 0.78);
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 12.5px;
+  padding: 10px 18px;
+  border-radius: 100px;
+  transition: all 0.15s;
+}
+
+.filter-chip:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.filter-chip.active {
+  background: var(--color-cream);
+  border-color: var(--color-cream);
+  color: var(--color-navy);
+}
+
+/* En la página de listado completo el filtro vive sobre fondo claro, no
+   sobre la banda oscura de la home — mismo componente, paleta invertida. */
+.filter-chips.on-light .filter-chip {
+  border-color: var(--color-border-2);
+  color: var(--color-text-muted);
+}
+
+.filter-chips.on-light .filter-chip:hover {
+  border-color: var(--color-accent-dark);
+  color: var(--color-accent-dark);
+}
+
+.filter-chips.on-light .filter-chip.active {
+  background: var(--color-navy);
+  border-color: var(--color-navy);
+  color: var(--color-cream);
+}
+

@@ -1,0 +1,419 @@
+/* ===== Hero ===== */
+.hero {
+  position: relative;
+  background: var(--color-offwhite);
+  color: var(--color-navy);
+}
+
+.hero-top {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-navy);
+  color: var(--color-cream);
+  padding: clamp(40px, 6vw, 64px) 0 clamp(90px, 11vw, 130px);
+}
+
+.hero-top-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.hero-top-bg img {
+  position: absolute;
+  left: 0;
+  top: -16%;
+  width: 100%;
+  height: 132%;
+  object-fit: cover;
+}
+
+/* ===== Parallax ===== */
+/* El desplazamiento lo calcula useParallax() en JS (translate3d inline);
+   acá solo se prepara la capa para que la transform sea barata (GPU) y no
+   dispare reflow. Los elementos con imagen se oversizean en su selector
+   propio (ver .hero-top-bg img, .tipo-band-bg img) para que el movimiento
+   vertical nunca deje ver un borde vacío. */
+.parallax-el {
+  will-change: transform;
+}
+
+.hero-top-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: linear-gradient(
+    90deg,
+    #12273a 0%,
+    rgba(18, 39, 58, 0.95) 30%,
+    rgba(18, 39, 58, 0.62) 56%,
+    rgba(18, 39, 58, 0.22) 100%
+  );
+}
+
+.hero-top-inner {
+  position: relative;
+  z-index: 1;
+  max-width: 720px;
+}
+
+.hero-badge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 26px;
+}
+
+.hero-badge-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.hero-badge span:last-child {
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: rgba(237, 236, 234, 0.72);
+}
+
+.hero-title {
+  font-weight: 500;
+  font-size: clamp(36px, 6.2vw, 76px);
+  line-height: 0.98;
+  letter-spacing: -3px;
+  max-width: 15ch;
+  color: var(--color-cream);
+}
+
+.hero-title em {
+  font-style: normal;
+  color: var(--color-accent);
+}
+
+.hero-sub {
+  font-family: var(--font-body);
+  font-size: clamp(16px, 1.8vw, 19px);
+  line-height: 1.6;
+  color: rgba(237, 236, 234, 0.78);
+  margin: 20px 0 0;
+  max-width: 460px;
+}
+
+.hero-cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 32px;
+}
+
+.hero-cta-row .btn-outline {
+  border-color: rgba(237, 236, 234, 0.5);
+  color: var(--color-cream);
+}
+
+.hero-cta-row .btn-outline:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: transparent;
+}
+
+/* Tarjeta blanca de stats que se superpone entre el hero oscuro y el
+   carrusel — imita el efecto "flotante" del boceto de referencia. */
+.hero-stats-wrap {
+  position: relative;
+  z-index: 2;
+  margin-top: clamp(-56px, -6vw, -40px);
+}
+
+.hero-stats-card {
+  background: #fff;
+  border-radius: 20px;
+  padding: clamp(22px, 3vw, 30px) clamp(18px, 3vw, 34px);
+  box-shadow: 0 24px 50px rgba(18, 39, 58, 0.16);
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+
+.hero-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+}
+
+.hero-stat-icon {
+  color: var(--color-accent-dark);
+}
+
+.hero-stat-val {
+  font-family: var(--font-label);
+  font-weight: 700;
+  font-size: clamp(19px, 2.2vw, 25px);
+  letter-spacing: -0.5px;
+}
+
+.hero-stat-lbl {
+  font-family: var(--font-label);
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+@media (max-width: 640px) {
+  .hero-stats-card {
+    grid-template-columns: repeat(2, 1fr);
+    row-gap: 26px;
+  }
+}
+
+.hero-bottom {
+  position: relative;
+  z-index: 1;
+  padding: clamp(48px, 6vw, 64px) 0 clamp(56px, 6vw, 72px);
+}
+
+/* ===== Carrusel destacado del Hero ===== */
+.hero-carousel {
+  position: relative;
+  border-radius: 22px;
+  overflow: hidden;
+  height: clamp(320px, 44vw, 520px);
+  background: var(--color-navy);
+}
+
+.hero-slide {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.8s ease;
+}
+
+.hero-slide.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Fondo plano del navy de marca — atrás de la foto en todo el slide (no
+   una copia desenfocada de la imagen). Flex + justify-content:flex-end
+   para que la foto (que ahora mide lo que mide realmente, ver abajo)
+   quede pegada a la derecha y centrada verticalmente. */
+.hero-slide-bg {
+  position: absolute;
+  inset: 0;
+  background: var(--color-navy);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  overflow: hidden;
+}
+
+/* La foto se ve completa, sin recortar. A propósito NO se usa
+   `width:100%; height:100%; object-fit:contain` — con eso el elemento
+   <img> mide todo el slide y dentro queda una franja "fantasma"
+   transparente alrededor de la foto real (el letterbox de `contain`), y
+   un degradado calculado sobre ese 100% no cae sobre los píxeles visibles
+   de la imagen sino sobre ese espacio vacío — por eso no se notaba ningún
+   fundido antes. Con `max-width/max-height` y `width/height:auto` el
+   propio <img> mide justo lo que mide la foto ya escalada, sin sobrante,
+   así la máscara de abajo cae exactamente sobre los píxeles reales. */
+.hero-slide-bg img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 60%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 60%);
+}
+
+.hero-slide-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(18, 39, 58, 0.85) 0%, rgba(18, 39, 58, 0.55) 28%, rgba(18, 39, 58, 0) 52%, rgba(18, 39, 58, 0) 100%);
+}
+
+.hero-slide-copy {
+  position: absolute;
+  left: clamp(24px, 4vw, 56px);
+  top: 50%;
+  transform: translateY(-50%);
+  max-width: 480px;
+  color: var(--color-cream);
+}
+
+.hero-slide-meta {
+  font-family: var(--font-label);
+  font-weight: 500;
+  font-size: clamp(13px, 1.4vw, 16px);
+  color: rgba(237, 236, 234, 0.9);
+}
+
+.hero-slide-title {
+  font-weight: 500;
+  font-size: clamp(30px, 4.8vw, 58px);
+  letter-spacing: -2px;
+  line-height: 1;
+  margin: 12px 0 14px;
+}
+
+.hero-slide-addr {
+  font-family: var(--font-body);
+  font-size: clamp(14px, 1.5vw, 16px);
+  line-height: 1.6;
+  color: rgba(237, 236, 234, 0.82);
+  max-width: 400px;
+}
+
+.hero-slide-price {
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: clamp(22px, 2.8vw, 32px);
+  letter-spacing: -0.5px;
+  margin-top: 16px;
+}
+
+.hero-carousel-controls {
+  position: absolute;
+  bottom: 18px;
+  right: 20px;
+  z-index: 3;
+  display: flex;
+  gap: 8px;
+}
+
+.hero-carousel-arrow {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(237, 236, 234, 0.85);
+  color: var(--color-navy);
+  font-size: 20px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.hero-carousel-arrow:hover {
+  background: #fff;
+}
+
+.hero-carousel-dots {
+  position: absolute;
+  bottom: 22px;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.hero-carousel-dots button {
+  width: 10px;
+  height: 10px;
+  border-radius: 100px;
+  border: none;
+  padding: 0;
+  background: rgba(237, 236, 234, 0.5);
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.hero-carousel-dots button.active {
+  width: 28px;
+  background: var(--color-cream);
+}
+
+/* ===== Search card ===== */
+.search-card {
+  margin-top: 22px;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 22px;
+  padding: clamp(20px, 3vw, 32px);
+  box-shadow: 0 16px 38px rgba(18, 39, 58, 0.07);
+}
+
+.search-tabs {
+  display: inline-flex;
+  gap: 4px;
+  background: var(--color-input-bg);
+  border-radius: 100px;
+  padding: 4px;
+}
+
+.search-tabs button {
+  border: none;
+  background: transparent;
+  color: #3b4a5c;
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 13.5px;
+  padding: 11px 24px;
+  border-radius: 100px;
+  transition: all 0.15s;
+}
+
+.search-tabs button.active {
+  background: var(--color-navy-2);
+  color: #fff;
+}
+
+.search-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.search-fields select {
+  flex: 1;
+  min-width: 180px;
+  height: 58px;
+  border: 1px solid var(--color-border-2);
+  border-radius: 14px;
+  padding: 0 18px;
+  font-family: var(--font-label);
+  font-size: 15px;
+  color: var(--color-navy);
+  background: var(--color-input-bg);
+  cursor: pointer;
+}
+
+.search-fields .btn-primary {
+  flex-shrink: 0;
+  height: 58px;
+  padding: 0 40px;
+  background: var(--color-navy-2);
+  color: #fff;
+  border-radius: 14px;
+}
+
+.search-fields .btn-primary:hover {
+  background: var(--color-navy);
+}
+
+@media (max-width: 640px) {
+  .search-fields {
+    flex-direction: column;
+  }
+  .search-fields select,
+  .search-fields .btn-primary {
+    width: 100%;
+  }
+}
+

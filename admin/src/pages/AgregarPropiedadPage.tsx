@@ -5,7 +5,6 @@ import { api, ApiError } from '../api/client';
 import { PageHeader } from '../components/PageHeader';
 
 type Modalidad = 'ALQUILER' | 'VENTA';
-type TipoHonorarios = '' | 'LIBRE' | 'TRES_POR_CIENTO' | 'SEIS_POR_CIENTO' | 'OTRO';
 type IndiceAjuste = '' | 'IPC' | 'ICL';
 type Moneda = 'ARS' | 'USD';
 type ServicioFacturable =
@@ -42,10 +41,6 @@ interface Propietario {
   id: string;
   nombre: string;
 }
-interface Delegado {
-  id: string;
-  nombre: string;
-}
 
 const TIPO_LABEL: Record<string, string> = {
   CASA: 'Casa',
@@ -68,10 +63,6 @@ export function AgregarPropiedadPage() {
     queryKey: ['propietarios'],
     queryFn: () => api.get<Propietario[]>('/propietarios'),
   });
-  const delegados = useQuery({
-    queryKey: ['integrantes-equipo'],
-    queryFn: () => api.get<Delegado[]>('/integrantes-equipo'),
-  });
 
   // Datos generales
   const [nombre, setNombre] = useState('');
@@ -81,9 +72,6 @@ export function AgregarPropiedadPage() {
   const [propietarioId, setPropietarioId] = useState('');
   const [propietarioNuevoNombre, setPropietarioNuevoNombre] = useState('');
   const [origenPropietarioNuevo, setOrigenPropietarioNuevo] = useState<OrigenCliente | ''>('');
-  const [designadoId, setDesignadoId] = useState('');
-  const [honorariosTipo, setHonorariosTipo] = useState<TipoHonorarios>('');
-  const [honorariosPorcentaje, setHonorariosPorcentaje] = useState('');
   const [honorariosAdministracion, setHonorariosAdministracion] = useState(false);
   const [honorariosAdministracionPorcentaje, setHonorariosAdministracionPorcentaje] = useState('');
   const [ambientes, setAmbientes] = useState('');
@@ -112,7 +100,6 @@ export function AgregarPropiedadPage() {
   const [precio, setPrecio] = useState('');
   const [moneda, setMoneda] = useState<Moneda>('USD');
   const [publicada, setPublicada] = useState(true);
-  const [cierreEstimado, setCierreEstimado] = useState('');
   const [imagenes, setImagenes] = useState<{ file: File; preview: string }[]>([]);
   // Índice (dentro de `imagenes`) elegido como portada del carrusel
   // destacado — recién se traduce a un fotoId real después de subir las
@@ -152,9 +139,6 @@ export function AgregarPropiedadPage() {
     setPropietarioId('');
     setPropietarioNuevoNombre('');
     setOrigenPropietarioNuevo('');
-    setDesignadoId('');
-    setHonorariosTipo('');
-    setHonorariosPorcentaje('');
     setHonorariosAdministracion(false);
     setHonorariosAdministracionPorcentaje('');
     setAmbientes('');
@@ -172,7 +156,6 @@ export function AgregarPropiedadPage() {
     setPrecio('');
     setMoneda('USD');
     setPublicada(true);
-    setCierreEstimado('');
     imagenes.forEach((img) => URL.revokeObjectURL(img.preview));
     setImagenes([]);
     setPortadaIdx(null);
@@ -203,12 +186,12 @@ export function AgregarPropiedadPage() {
         tipo,
         modalidad,
         propietarioId: propId || undefined,
-        designadoId: designadoId || undefined,
-        honorariosTipo: honorariosTipo || undefined,
-        honorariosPorcentaje: honorariosTipo === 'OTRO' && honorariosPorcentaje ? Number(honorariosPorcentaje) : undefined,
-        honorariosAdministracion,
+        // Honorarios profesionales y a quién se designa para mostrar la
+        // propiedad se definen después, desde la ficha en Ventas y
+        // Carteles — no hace falta pedirlos al cargarla.
+        honorariosAdministracion: modalidad === 'ALQUILER' ? honorariosAdministracion : undefined,
         honorariosAdministracionPorcentaje:
-          honorariosAdministracion && honorariosAdministracionPorcentaje
+          modalidad === 'ALQUILER' && honorariosAdministracion && honorariosAdministracionPorcentaje
             ? Number(honorariosAdministracionPorcentaje)
             : undefined,
         ambientes: !esLote && ambientes ? Number(ambientes) : undefined,
@@ -233,7 +216,6 @@ export function AgregarPropiedadPage() {
           precio: Number(precio),
           moneda,
           publicada,
-          cierreEstimado: cierreEstimado || undefined,
         });
       }
 
@@ -408,62 +390,32 @@ export function AgregarPropiedadPage() {
                   </select>
                 </div>
               )}
-              <div className="fg">
-                <label>Designado para mostrar</label>
-                <select value={designadoId} onChange={(e) => setDesignadoId(e.target.value)}>
-                  <option value="">— Sin designar —</option>
-                  {(delegados.data ?? []).map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.nombre}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="fg">
-                <label>Honorarios profesionales</label>
-                <select value={honorariosTipo} onChange={(e) => setHonorariosTipo(e.target.value as TipoHonorarios)}>
-                  <option value="">Usar el % por defecto de Configuración</option>
-                  <option value="LIBRE">Libre de gastos (0%)</option>
-                  <option value="TRES_POR_CIENTO">3%</option>
-                  <option value="SEIS_POR_CIENTO">6%</option>
-                  <option value="OTRO">Otro %</option>
-                </select>
-              </div>
-              {honorariosTipo === 'OTRO' && (
-                <div className="fg">
-                  <label>Otro — indicar %</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step="0.1"
-                    value={honorariosPorcentaje}
-                    onChange={(e) => setHonorariosPorcentaje(e.target.value)}
-                  />
-                </div>
-              )}
-              <div className="fg">
-                <label className="chk" style={{ marginTop: 28 }}>
-                  <input
-                    type="checkbox"
-                    checked={honorariosAdministracion}
-                    onChange={(e) => setHonorariosAdministracion(e.target.checked)}
-                  />
-                  <span>Honorarios de administración</span>
-                </label>
-              </div>
-              {honorariosAdministracion && (
-                <div className="fg">
-                  <label>Honorarios de administración — %</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step="0.1"
-                    value={honorariosAdministracionPorcentaje}
-                    onChange={(e) => setHonorariosAdministracionPorcentaje(e.target.value)}
-                  />
-                </div>
+              {modalidad === 'ALQUILER' && (
+                <>
+                  <div className="fg">
+                    <label className="chk" style={{ marginTop: 28 }}>
+                      <input
+                        type="checkbox"
+                        checked={honorariosAdministracion}
+                        onChange={(e) => setHonorariosAdministracion(e.target.checked)}
+                      />
+                      <span>Honorarios de administración</span>
+                    </label>
+                  </div>
+                  {honorariosAdministracion && (
+                    <div className="fg">
+                      <label>Honorarios de administración — %</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step="0.01"
+                        value={honorariosAdministracionPorcentaje}
+                        onChange={(e) => setHonorariosAdministracionPorcentaje(e.target.value)}
+                      />
+                    </div>
+                  )}
+                </>
               )}
               {!esLote && (
                 <>
@@ -568,6 +520,7 @@ export function AgregarPropiedadPage() {
                     <input
                       type="number"
                       min={0}
+                      step="0.01"
                       value={montoAlquilerInicial}
                       onChange={(e) => setMontoAlquilerInicial(e.target.value)}
                     />
@@ -608,7 +561,7 @@ export function AgregarPropiedadPage() {
               <div className="cfgfields">
                 <div className="fg">
                   <label>Precio</label>
-                  <input type="number" min={0} value={precio} onChange={(e) => setPrecio(e.target.value)} />
+                  <input type="number" min={0} step="0.01" value={precio} onChange={(e) => setPrecio(e.target.value)} />
                 </div>
                 <div className="fg">
                   <label>Moneda</label>
@@ -622,10 +575,6 @@ export function AgregarPropiedadPage() {
                     <input type="checkbox" checked={publicada} onChange={(e) => setPublicada(e.target.checked)} />
                     <span>Mostrar en la página web (landing page)</span>
                   </label>
-                </div>
-                <div className="fg full">
-                  <label>Cierre estimado</label>
-                  <input type="date" value={cierreEstimado} onChange={(e) => setCierreEstimado(e.target.value)} />
                 </div>
                 <div className="fg full">
                   <label>Servicios</label>

@@ -328,7 +328,9 @@ function LiquidacionModal({
 
   // Mismo cálculo que `LiquidacionesService.calcularDetalle()` en el
   // backend, para que el total que se ve acá mientras se edita coincida con
-  // el que va a quedar guardado al emitir.
+  // el que va a quedar guardado al emitir. Los honorarios profesionales no
+  // aplican a alquiler (solo a venta), así que acá solo se descuentan los
+  // de administración.
   function honorariosDe(pct: number, items: ItemEditable[]) {
     const alquiler = Number(items.find((it) => it.descripcion === 'Alquiler')?.monto ?? 0);
     return Math.round(alquiler * (pct / 100) * 100) / 100;
@@ -337,13 +339,7 @@ function LiquidacionModal({
   const netoEditable = (preview.data ?? []).reduce((acc, d) => {
     const items = itemsPorPropiedad?.[d.propiedadId] ?? [];
     const cobrado = items.reduce((s, it) => s + (Number(it.monto) || 0), 0);
-    return (
-      acc +
-      (cobrado -
-        d.gastosAbsorbidos -
-        honorariosDe(d.porcentajeHonorarios, items) -
-        honorariosDe(d.porcentajeHonorariosAdministracion, items))
-    );
+    return acc + (cobrado - d.gastosAbsorbidos - honorariosDe(d.porcentajeHonorariosAdministracion, items));
   }, 0);
 
   const neto = L ? Number(L.netoAGirar) : netoEditable;
@@ -369,7 +365,6 @@ function LiquidacionModal({
           )}
           {preview.data.map((d) => {
             const items = itemsPorPropiedad[d.propiedadId] ?? [];
-            const honorarios = honorariosDe(d.porcentajeHonorarios, items);
             const honorariosAdministracion = honorariosDe(d.porcentajeHonorariosAdministracion, items);
             return (
               <div key={d.propiedadId} style={{ marginBottom: 18 }}>
@@ -420,10 +415,6 @@ function LiquidacionModal({
                     <span className="lv">− {formatMoney(g.monto)}</span>
                   </div>
                 ))}
-                <div className="liqline neg">
-                  <span className="ld">Honorarios profesionales ({d.porcentajeHonorarios}% del alquiler)</span>
-                  <span className="lv">− {formatMoney(honorarios)}</span>
-                </div>
                 {d.porcentajeHonorariosAdministracion > 0 && (
                   <div className="liqline neg">
                     <span className="ld">Honorarios de administración ({d.porcentajeHonorariosAdministracion}% del alquiler)</span>

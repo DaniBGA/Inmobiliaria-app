@@ -1,10 +1,12 @@
-import { Injectable } from '@nestjs/common';
-import { EstadoIncidencia } from '@prisma/client';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { EstadoIncidencia, RolUsuario } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PropiedadesService } from '../propiedades/propiedades.service';
 import { CreateEventoDto } from './dto/create-evento.dto';
 import { UpdateEventoDto } from './dto/update-evento.dto';
 import { mesStringAFecha, sumarMeses } from '../common/fecha.util';
+
+type UsuarioRequest = { id: string; rol: RolUsuario };
 
 @Injectable()
 export class AgendaService {
@@ -13,24 +15,46 @@ export class AgendaService {
     private readonly propiedadesService: PropiedadesService,
   ) {}
 
-  crear(dto: CreateEventoDto) {
+  // El dueño de un evento manual sale siempre del JWT, nunca de lo que
+  // mande el cliente (CreateEventoDto no tiene `usuarioId`): un designado
+  // (rol EQUIPO) solo puede crear eventos para sí mismo — un ADMIN crea
+  // eventos globales (usuarioId: null), visibles para todo el equipo.
+  crear(dto: CreateEventoDto, usuario: UsuarioRequest) {
     return this.prisma.eventoAgenda.create({
-      data: { ...dto, fecha: new Date(dto.fecha) },
+      data: {
+        ...dto,
+        fecha: new Date(dto.fecha),
+        usuarioId: usuario.rol === RolUsuario.EQUIPO ? usuario.id : null,
+      },
     });
   }
 
-  update(id: string, dto: UpdateEventoDto) {
+  // Un designado (EQUIPO) no puede tocar el evento de otro, aunque sepa el
+  // id — protege contra un JWT robado usado directo contra la API.
+  private async assertPropietario(id: string, usuario: UsuarioRequest) {
+    if (usuario.rol !== RolUsuario.EQUIPO) return;
+    const evento = await this.prisma.eventoAgenda.findUnique({ where: { id } });
+    if (!evento) throw new NotFoundException('Evento no encontrado.');
+    if (evento.usuarioId !== usuario.id) {
+      throw new ForbiddenException('No podés modificar un evento que no es tuyo.');
+    }
+  }
+
+  async update(id: string, dto: UpdateEventoDto, usuario: UsuarioRequest) {
+    await this.assertPropietario(id, usuario);
     return this.prisma.eventoAgenda.update({
       where: { id },
       data: { ...dto, fecha: dto.fecha ? new Date(dto.fecha) : undefined },
     });
   }
 
-  marcarHecho(id: string, hecho: boolean) {
+  async marcarHecho(id: string, hecho: boolean, usuario: UsuarioRequest) {
+    await this.assertPropietario(id, usuario);
     return this.prisma.eventoAgenda.update({ where: { id }, data: { hecho } });
   }
 
-  remove(id: string) {
+  async remove(id: string, usuario: UsuarioRequest) {
+    await this.assertPropietario(id, usuario);
     return this.prisma.eventoAgenda.delete({ where: { id } });
   }
 
@@ -46,13 +70,23 @@ export class AgendaService {
   // automáticamente (no se guardan como registro propio, §4 del documento):
   // vencimiento de contrato, próximo aumento, incidencia abierta sin
   // resolver, y fecha de ejecución mientras la incidencia esté EN_CURSO.
-  async eventosDelMes(mesStr: string) {
+  // Un designado (EQUIPO) solo ve sus propios eventos manuales; un ADMIN
+  // solo ve los globales (sin dueño) — nunca la agenda individual de un
+  // designado puntual, para evitar confusiones sobre de quién es cada
+  // evento. Los automáticos (vencimientos, aumentos, incidencias) siguen
+  // siendo globales para todos, no son de nadie en particular.
+  async eventosDelMes(mesStr: string, usuario: UsuarioRequest) {
     const mes = mesStringAFecha(mesStr);
     const finMes = sumarMeses(mes, 1);
     const enRango = { gte: mes, lt: finMes };
 
+    const whereManuales: { fecha: typeof enRango; usuarioId: string | null } = {
+      fecha: enRango,
+      usuarioId: usuario.rol === RolUsuario.EQUIPO ? usuario.id : null,
+    };
+
     const manuales = await this.prisma.eventoAgenda.findMany({
-      where: { fecha: enRango },
+      where: whereManuales,
       include: { cliente: true, propiedad: true },
       orderBy: { fecha: 'asc' },
     });

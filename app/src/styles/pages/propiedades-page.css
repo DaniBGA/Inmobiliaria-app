@@ -1,0 +1,44 @@
+/* ===== Página de Propiedades ===== */
+.propiedades-toolbar {
+  margin-top: 28px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 32px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.search-tabs.standalone {
+  background: var(--color-input-bg);
+}
+
+.propiedades-grid {
+  margin-top: 32px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+.pagination {
+  margin-top: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  font-family: var(--font-label);
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 980px) {
+  .propiedades-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .propiedades-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -70,10 +70,27 @@ const MEDIOS = [
 ];
 
 interface PropiedadDb extends PropiedadParaAlquilar {
-  inquilino: { nombre: string } | null;
+  tipo: string;
+  inquilino: { nombre: string; telefono: string | null; email: string | null } | null;
   montoAlquilerVigente: string | number | null;
   alquilerPublicado: boolean;
+  propietario: { nombre: string } | null;
+  designado: { nombre: string } | null;
 }
+
+const TIPO_LABEL: Record<string, string> = {
+  CASA: 'Casa',
+  DEPARTAMENTO: 'Departamento',
+  DUPLEX: 'Dúplex',
+  QUINTA: 'Quinta',
+  LOTE: 'Lote',
+  CAMPO: 'Campo',
+  GALPON: 'Galpón',
+  LOCAL_OFICINA: 'Local/Oficina',
+  CABANIAS_HOTELES_OTROS: 'Cabañas/Hoteles/Otros',
+  FONDO_DE_COMERCIO: 'Fondo de comercio',
+  COCHERAS: 'Cocheras',
+};
 
 export function InquilinosPage() {
   const [mes, setMes] = useState(mesActualStr());
@@ -107,13 +124,10 @@ export function InquilinosPage() {
     qc.invalidateQueries({ queryKey: ['avisos'] });
   }
 
-  // Propiedades de alquiler sin inquilino asignado — no generan cobros ni
-  // fichas (por eso no aparecen en ninguna tabla de arriba), pero siguen
-  // siendo parte de la cartera de alquiler y necesitan un lugar desde donde
-  // se las pueda encontrar y gestionar (publicarlas/pausarlas en la web,
-  // asignarles inquilino, editar sus datos) — antes de esto no había
-  // ninguna pantalla del admin donde una propiedad así fuera visible.
-  const vacantes = (propiedades.data ?? []).filter((p) => p.modalidad === 'ALQUILER' && !p.inquilino);
+  // Toda la cartera de alquiler (ocupada y vacante) vive acá — Ventas y
+  // Carteles solo lista modalidad VENTA. Se muestra con el mismo estilo de
+  // tarjeta ("salecard") que usa Ventas y Carteles para su grilla.
+  const alquileres = (propiedades.data ?? []).filter((p) => p.modalidad === 'ALQUILER');
 
   const filasVisibles = (resumen.data?.filas ?? []).filter((f) => (f.esperado ?? 0) > 0);
   const progreso = resumen.data && resumen.data.totales.esperado > 0
@@ -260,7 +274,7 @@ export function InquilinosPage() {
               onChange={(e) => setBusqueda(e.target.value)}
             />
             <button className="btn-sm solid" onClick={() => setAlquilarModal(true)}>
-              + Agregar inquilino
+              + Agregar propiedad de alquiler
             </button>
           </div>
         </div>
@@ -327,48 +341,77 @@ export function InquilinosPage() {
           )}
         </div>
 
-        <div className="secttl" style={{ marginTop: 26 }}>PROPIEDADES VACANTES</div>
-        <div className="tablewrap">
-          <table>
-            <thead>
-              <tr>
-                <th>PROPIEDAD</th>
-                <th style={{ textAlign: 'right' }}>ALQUILER</th>
-                <th>PUBLICADA EN LA WEB</th>
-              </tr>
-            </thead>
-            <tbody>
-              {vacantes.length === 0 && (
-                <tr>
-                  <td colSpan={3} className="empty">
-                    No hay propiedades de alquiler vacantes.
-                  </td>
-                </tr>
-              )}
-              {vacantes.map((p) => (
-                <tr key={p.id} className="movrow" onClick={() => setFichaId(p.id)} title="Clic para ver la ficha de la propiedad">
-                  <td>
-                    <div className="pname">{p.nombre}</div>
-                    <div className="psub">{p.direccion}</div>
-                  </td>
-                  <td style={{ textAlign: 'right' }}>
-                    <span className="money">
-                      {p.montoAlquilerVigente != null ? formatMoney(p.montoAlquilerVigente) : '—'}
+        <div className="secttl" style={{ marginTop: 26 }}>PROPIEDADES EN ALQUILER</div>
+        <div className="salegrid">
+          {alquileres.length === 0 && (
+            <div className="empty" style={{ gridColumn: '1/-1' }}>
+              No hay propiedades de alquiler cargadas.
+            </div>
+          )}
+          {alquileres.map((p) => {
+            const ocupada = !!p.inquilino;
+            return (
+              <div
+                className="salecard"
+                key={p.id}
+                style={{ cursor: 'pointer' }}
+                title="Clic para ver la ficha de la propiedad"
+                onClick={() => setFichaId(p.id)}
+              >
+                <div className="shead">
+                  <div className="stop">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <h4>{p.nombre}</h4>
+                      <div className="saddr">
+                        {p.direccion} · {TIPO_LABEL[p.tipo] ?? p.tipo}
+                      </div>
+                    </div>
+                    <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      {ocupada ? (
+                        <span className="badge alquilada">Ocupada</span>
+                      ) : (
+                        <span className={`badge ${p.alquilerPublicado ? 'publicada' : 'pausada'}`}>
+                          {p.alquilerPublicado ? 'Publicada' : 'Pausada'}
+                        </span>
+                      )}
                     </span>
-                  </td>
-                  <td>
-                    {p.alquilerPublicado ? (
-                      <span className="badge disponible">
-                        <span className="dot"></span>Sí
-                      </span>
-                    ) : (
-                      <span style={{ color: 'var(--muted)' }}>Pausada</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                  <div className="sprice">
+                    {p.montoAlquilerVigente != null ? formatMoney(p.montoAlquilerVigente) : 'Consultar'}
+                    <small>ARS/mes</small>
+                  </div>
+                </div>
+                <div className="sbody">
+                  {ocupada ? (
+                    <div className="srow">
+                      <span>Inquilino</span>
+                      <b>{p.inquilino!.nombre}</b>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 10 }}>
+                      Vacante — disponible para alquilar.
+                    </div>
+                  )}
+                  <div className="srow">
+                    <span>Propietario</span>
+                    <b>{p.propietario?.nombre ?? '—'}</b>
+                  </div>
+                  <div className="srow">
+                    <span>Publicada en la web</span>
+                    <b>{p.alquilerPublicado ? 'Sí' : 'No'}</b>
+                  </div>
+                  <div className="srow">
+                    <span>La muestra</span>
+                    <b>
+                      {p.designado?.nombre ?? (
+                        <span style={{ color: 'var(--muted)', fontWeight: 600 }}>sin designar</span>
+                      )}
+                    </b>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </main>
 
@@ -385,7 +428,7 @@ export function InquilinosPage() {
       )}
       {alquilarModal && (
         <AlquilarPropiedadModal
-          propiedades={(propiedades.data ?? []).filter((p) => !(p.modalidad === 'ALQUILER' && p.inquilino))}
+          propiedades={(propiedades.data ?? []).filter((p) => p.modalidad === 'ALQUILER' && !p.inquilino)}
           onClose={() => setAlquilarModal(false)}
           onSaved={() => setAlquilarModal(false)}
         />

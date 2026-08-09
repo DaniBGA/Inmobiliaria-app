@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { api, ApiError, BASE_URL } from '../api/client';
 import { Modal } from './Modal';
 import { formatMoney, formatUsd, formatDate, mesActualStr, mesLabel } from '../lib/format';
-import { honorariosLabel, resolverPorcentajeHonorarios, resolverPorcentajeHonorariosAdministracion, type TipoHonorarios } from '../lib/honorarios';
+import { resolverPorcentajeHonorariosAdministracion, type TipoHonorarios } from '../lib/honorarios';
 import { FotosPropiedad, type FotoPropiedadItem } from './FotosPropiedad';
 import { ComprobanteImpreso } from './ComprobanteImpreso';
 import { descargarPdfComprobante } from '../lib/pdfComprobante';
@@ -25,6 +25,7 @@ type PunitorioTipo = 'PORCENTAJE' | 'MONTO_FIJO' | null;
 type EstadoVenta = 'PUBLICADA' | 'RESERVADA' | 'VENDIDA' | 'VENDIDA_POR_TERCEROS' | 'PAUSADA';
 
 interface Inquilino {
+  numero: number;
   nombre: string;
   telefono: string | null;
   email: string | null;
@@ -134,6 +135,7 @@ interface Configuracion {
   empresaDireccion: string;
   empresaContacto: string;
   publicoMatricula: string;
+  facturaWhatsappMensaje: string;
 }
 interface FacturaItem {
   id: string;
@@ -217,6 +219,7 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
   const [reciboModal, setReciboModal] = useState(false);
   const [datosModal, setDatosModal] = useState(false);
   const [fotosModal, setFotosModal] = useState(false);
+  const [editarInquilinoModal, setEditarInquilinoModal] = useState(false);
 
   const propiedad = useQuery({
     queryKey: ['propiedades', propiedadId],
@@ -375,7 +378,7 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
 
   const montoVigente = Number(rentaVigente.data?.monto ?? p?.montoAlquilerVigente ?? 0);
   const indiceValor = cfg ? Number(p?.indice === 'ICL' ? cfg.icl : cfg.ipc) : 0;
-  const sugerido = montoVigente > 0 && indiceValor > 0 ? Math.round(montoVigente * (1 + indiceValor / 100)) : null;
+  const sugerido = montoVigente > 0 && indiceValor > 0 ? Math.round(montoVigente * (1 + indiceValor / 100) * 100) / 100 : null;
 
   function confirmarAumento() {
     const nuevo = Number(montoNuevo);
@@ -476,10 +479,6 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
                         </span>
                       </div>
                     )}
-                    <div className="f" style={{ gridColumn: '1/-1', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <b style={{ marginBottom: 0 }}>Honorarios profesionales</b>
-                      <span>{honorariosLabel(p, honorPct).toUpperCase()}</span>
-                    </div>
                     {p.honorariosAdministracion && (
                       <div className="f" style={{ gridColumn: '1/-1', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <b style={{ marginBottom: 0 }}>Honorarios de administración</b>
@@ -528,14 +527,19 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
                             🧾 Emitir recibo
                           </button>
                         </div>
-                        <button
-                          className="btn-sm ghostred"
-                          style={{ width: '100%', marginTop: 8 }}
-                          disabled={quitarInquilino.isPending}
-                          onClick={confirmarQuitarInquilino}
-                        >
-                          ✕ Marcar como vacante
-                        </button>
+                        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                          <button className="btn-sm" style={{ flex: 1 }} onClick={() => setEditarInquilinoModal(true)}>
+                            ✎ Editar datos
+                          </button>
+                          <button
+                            className="btn-sm ghostred"
+                            style={{ flex: 1 }}
+                            disabled={quitarInquilino.isPending}
+                            onClick={confirmarQuitarInquilino}
+                          >
+                            ✕ Marcar como vacante
+                          </button>
+                        </div>
                       </>
                     ) : (
                       <div className="contactline" style={{ color: 'var(--muted)' }}>
@@ -690,6 +694,7 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
                             <input
                               type="number"
                               min={0}
+                              step="0.01"
                               placeholder="Copiá aquí el resultado de la calculadora"
                               value={montoNuevo}
                               onChange={(e) => setMontoNuevo(e.target.value)}
@@ -843,11 +848,8 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
           propiedadId={p.id}
           propiedadNombre={p.nombre}
           inquilino={p.inquilino}
-          honorariosTipoActual={p.honorariosTipo}
-          honorariosPorcentajeActual={p.honorariosPorcentaje}
           honorariosAdministracionActual={p.honorariosAdministracion}
           honorariosAdministracionPorcentajeActual={p.honorariosAdministracionPorcentaje}
-          honorDefaultPct={honorPct}
           onClose={() => setFacturaModal(false)}
         />
       )}
@@ -866,6 +868,17 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
           onSaved={() => {
             setDatosModal(false);
             qc.invalidateQueries({ queryKey: ['propiedades'] });
+          }}
+        />
+      )}
+      {editarInquilinoModal && p?.inquilino && (
+        <EditarInquilinoModal
+          propiedadId={p.id}
+          inquilino={p.inquilino}
+          onClose={() => setEditarInquilinoModal(false)}
+          onSaved={() => {
+            setEditarInquilinoModal(false);
+            invalidarTodo();
           }}
         />
       )}
@@ -909,6 +922,11 @@ function EditarDatosGeneralesModal({
   const [superficieCubierta, setSuperficieCubierta] = useState(String(propiedad.superficieCubierta ?? ''));
   const [descripcion, setDescripcion] = useState(propiedad.descripcion ?? '');
   const [servicios, setServicios] = useState<ServicioFacturable[]>(propiedad.serviciosHabilitados ?? []);
+  const [punitorioTipo, setPunitorioTipo] = useState<'' | 'MONTO_FIJO' | 'PORCENTAJE'>(propiedad.punitorioTipo ?? '');
+  const [punitorioValor, setPunitorioValor] = useState(propiedad.punitorioValor != null ? String(propiedad.punitorioValor) : '');
+  const [punitorioFrecuencia, setPunitorioFrecuencia] = useState<'DIA' | 'SEMANA' | 'MES' | 'UNICO'>(
+    propiedad.punitorioFrecuencia ?? 'DIA',
+  );
   const [error, setError] = useState<string | null>(null);
 
   function toggleServicio(key: ServicioFacturable) {
@@ -930,6 +948,9 @@ function EditarDatosGeneralesModal({
         descripcion: descripcion.trim() || undefined,
         caracterEspecial,
         serviciosHabilitados: propiedad.modalidad === 'ALQUILER' ? servicios : undefined,
+        punitorioTipo: propiedad.modalidad === 'ALQUILER' ? punitorioTipo || null : undefined,
+        punitorioValor: propiedad.modalidad === 'ALQUILER' && punitorioTipo && punitorioValor ? Number(punitorioValor) : null,
+        punitorioFrecuencia: propiedad.modalidad === 'ALQUILER' && punitorioTipo ? punitorioFrecuencia : null,
       }),
     onSuccess: onSaved,
     onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo guardar la propiedad.'),
@@ -1019,6 +1040,44 @@ function EditarDatosGeneralesModal({
               </div>
             ))}
           </div>
+
+          <div className="secttl">MORA POR ATRASO</div>
+          <div className="formgrid" style={{ marginBottom: 4 }}>
+            <div className="fg">
+              <label>Tipo</label>
+              <select value={punitorioTipo} onChange={(e) => setPunitorioTipo(e.target.value as typeof punitorioTipo)}>
+                <option value="">— Sin mora —</option>
+                <option value="MONTO_FIJO">Monto fijo</option>
+                <option value="PORCENTAJE">Porcentaje del alquiler</option>
+              </select>
+            </div>
+            {punitorioTipo && (
+              <>
+                <div className="fg">
+                  <label>Valor</label>
+                  <div className="suffix">
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={punitorioValor}
+                      onChange={(e) => setPunitorioValor(e.target.value)}
+                    />
+                    <span>{punitorioTipo === 'PORCENTAJE' ? '%' : '$'}</span>
+                  </div>
+                </div>
+                <div className="fg">
+                  <label>Se aplica por</label>
+                  <select value={punitorioFrecuencia} onChange={(e) => setPunitorioFrecuencia(e.target.value as typeof punitorioFrecuencia)}>
+                    <option value="DIA">Día de atraso</option>
+                    <option value="SEMANA">Semana de atraso</option>
+                    <option value="MES">Mes de atraso</option>
+                    <option value="UNICO">Una sola vez</option>
+                  </select>
+                </div>
+              </>
+            )}
+          </div>
         </>
       )}
 
@@ -1034,6 +1093,65 @@ function EditarDatosGeneralesModal({
           Cancelar
         </button>
         <button className="btn-dark" disabled={guardar.isPending || !nombre.trim() || !direccion.trim()} onClick={() => guardar.mutate()}>
+          Guardar
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function EditarInquilinoModal({
+  propiedadId,
+  inquilino,
+  onClose,
+  onSaved,
+}: {
+  propiedadId: string;
+  inquilino: Inquilino;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [nombre, setNombre] = useState(inquilino.nombre);
+  const [telefono, setTelefono] = useState(inquilino.telefono ?? '');
+  const [email, setEmail] = useState(inquilino.email ?? '');
+  const [error, setError] = useState<string | null>(null);
+
+  // Mismo endpoint que usa "+ Agregar inquilino" (upsert por propiedadId) —
+  // al ya existir un inquilino para esta propiedad, esto actualiza sus
+  // datos en el lugar sin tocar su `numero` correlativo.
+  const guardar = useMutation({
+    mutationFn: () =>
+      api.patch(`/propiedades/${propiedadId}/inquilino`, {
+        nombre: nombre.trim(),
+        telefono: telefono.trim() || undefined,
+        email: email.trim() || undefined,
+      }),
+    onSuccess: onSaved,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo guardar el inquilino.'),
+  });
+
+  return (
+    <Modal open onClose={onClose} title={`Editar Inquilino — N° ${inquilino.numero}`} width={420}>
+      {error && <div className="errstate" style={{ marginBottom: 14 }}>{error}</div>}
+      <div className="formgrid">
+        <div className="fg full">
+          <label>Nombre</label>
+          <input value={nombre} onChange={(e) => setNombre(e.target.value)} />
+        </div>
+        <div className="fg">
+          <label>Teléfono</label>
+          <input value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="Opcional" />
+        </div>
+        <div className="fg">
+          <label>Email</label>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Opcional" />
+        </div>
+      </div>
+      <div className="btnrow">
+        <button className="btn-ghost" onClick={onClose}>
+          Cancelar
+        </button>
+        <button className="btn-dark" disabled={guardar.isPending || !nombre.trim()} onClick={() => guardar.mutate()}>
           Guardar
         </button>
       </div>
@@ -1159,21 +1277,15 @@ function FacturaModal({
   propiedadId,
   propiedadNombre,
   inquilino,
-  honorariosTipoActual,
-  honorariosPorcentajeActual,
   honorariosAdministracionActual,
   honorariosAdministracionPorcentajeActual,
-  honorDefaultPct,
   onClose,
 }: {
   propiedadId: string;
   propiedadNombre: string;
   inquilino: Inquilino | null;
-  honorariosTipoActual: TipoHonorarios;
-  honorariosPorcentajeActual: number | string | null;
   honorariosAdministracionActual: boolean;
   honorariosAdministracionPorcentajeActual: number | string | null;
-  honorDefaultPct: number;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -1201,10 +1313,11 @@ function FacturaModal({
   });
 
   const [items, setItems] = useState<ItemEditable[] | null>(null);
-  const [honorariosTipo, setHonorariosTipo] = useState<TipoHonorarios>(honorariosTipoActual ?? null);
-  const [honorariosPorcentaje, setHonorariosPorcentaje] = useState(
-    honorariosPorcentajeActual != null ? String(honorariosPorcentajeActual) : '',
-  );
+  // Número de factura a mano (opcional) — para cuando la inmobiliaria ya
+  // lleva su propia numeración por fuera del sistema y quiere que la
+  // factura emitida coincida con esa. Si se deja vacío, el backend asigna
+  // el correlativo automático de Configuración (comportamiento de siempre).
+  const [numeroFactura, setNumeroFactura] = useState('');
   const [honorariosAdministracion, setHonorariosAdministracion] = useState(honorariosAdministracionActual);
   const [honorariosAdministracionPorcentaje, setHonorariosAdministracionPorcentaje] = useState(
     honorariosAdministracionPorcentajeActual != null ? String(honorariosAdministracionPorcentajeActual) : '',
@@ -1225,20 +1338,14 @@ function FacturaModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [predeterminados.data]);
 
-  // Honorarios (§2.3, §5.5): se calculan sobre el alquiler puro, no sobre
-  // el total facturado (que también incluye expensas/servicios/deuda que
-  // la inmobiliaria solo intermedia) — mismo criterio que
-  // liquidaciones.service.ts::generar(). Elegir el % acá lo deja guardado
-  // en la propiedad para esta y las próximas liquidaciones.
+  // Honorarios de administración (§2.3, §5.5): se calculan sobre el
+  // alquiler puro, no sobre el total facturado (que también incluye
+  // expensas/servicios/deuda que la inmobiliaria solo intermedia) — mismo
+  // criterio que liquidaciones.service.ts::generar(). Elegir el % acá lo
+  // deja guardado en la propiedad para esta y las próximas liquidaciones.
+  // Los honorarios profesionales (comisión) no aplican acá — son solo para
+  // propiedades en venta.
   const montoAlquiler = Number(items?.find((it) => it.descripcion === 'Alquiler')?.monto ?? 0);
-  const pctResuelto = resolverPorcentajeHonorarios(
-    { honorariosTipo, honorariosPorcentaje: honorariosPorcentaje || null },
-    honorDefaultPct,
-  );
-  const honorariosPreview = Math.round(montoAlquiler * (pctResuelto / 100) * 100) / 100;
-  const honorariosCambiaron =
-    (honorariosTipo ?? '') !== (honorariosTipoActual ?? '') ||
-    (honorariosTipo === 'OTRO' && honorariosPorcentaje !== String(honorariosPorcentajeActual ?? ''));
 
   const pctAdministracionResuelto = resolverPorcentajeHonorariosAdministracion({
     honorariosAdministracion,
@@ -1252,10 +1359,8 @@ function FacturaModal({
 
   const emitir = useMutation({
     mutationFn: async () => {
-      if (honorariosCambiaron || honorariosAdministracionCambiaron) {
+      if (honorariosAdministracionCambiaron) {
         await api.patch(`/propiedades/${propiedadId}`, {
-          honorariosTipo: honorariosTipo || undefined,
-          honorariosPorcentaje: honorariosTipo === 'OTRO' && honorariosPorcentaje ? Number(honorariosPorcentaje) : undefined,
           honorariosAdministracion,
           honorariosAdministracionPorcentaje:
             honorariosAdministracion && honorariosAdministracionPorcentaje
@@ -1266,6 +1371,7 @@ function FacturaModal({
       }
       return api.post<Factura>(`/facturacion/propiedades/${propiedadId}/facturas`, {
         mes,
+        numero: numeroFactura.trim() ? Number(numeroFactura) : undefined,
         items: (items ?? [])
           .filter((it) => it.descripcion.trim())
           .map((it) => ({
@@ -1286,7 +1392,16 @@ function FacturaModal({
     setEnviandoWhatsapp(true);
     try {
       await descargarPdfComprobante(comprobanteRef.current, `Factura ${F.numero} - ${propiedadNombre}.pdf`);
-      const texto = `Hola ${inquilino.nombre}, te comparto la Factura N° ${F.numero} de ${propiedadNombre} correspondiente a ${mesLabel(mes)}. Te dejo el PDF descargado — adjuntalo acá mismo en el chat.`;
+      // Plantilla editable desde Configuración y Reportes (§ facturaWhatsappMensaje)
+      // — con un default razonable por si todavía no se cargó nada ahí.
+      const plantilla =
+        cfg?.facturaWhatsappMensaje ||
+        'Hola {nombre}, te comparto la Factura N° {numero} de {propiedad} correspondiente a {mes}. Te dejo el PDF descargado — adjuntalo acá mismo en el chat.';
+      const texto = plantilla
+        .split('{nombre}').join(inquilino.nombre)
+        .split('{numero}').join(String(F.numero))
+        .split('{propiedad}').join(propiedadNombre)
+        .split('{mes}').join(mesLabel(mes));
       window.open(`https://wa.me/${inquilino.telefono.replace(/\D/g, '')}?text=${encodeURIComponent(texto)}`, '_blank');
     } finally {
       setEnviandoWhatsapp(false);
@@ -1315,36 +1430,21 @@ function FacturaModal({
 
       {!F && items && (
         <>
-          <div className="fg full" style={{ marginBottom: 4 }}>
-            <label>Honorarios profesionales (sobre el alquiler)</label>
-          </div>
-          <div className="formgrid" style={{ marginBottom: 6 }}>
+          <div className="formgrid" style={{ marginBottom: 14 }}>
             <div className="fg">
-              <select value={honorariosTipo ?? ''} onChange={(e) => setHonorariosTipo((e.target.value || null) as TipoHonorarios)}>
-                <option value="">Usar el % por defecto ({honorDefaultPct}%)</option>
-                <option value="LIBRE">Libre de gastos (0%)</option>
-                <option value="TRES_POR_CIENTO">3%</option>
-                <option value="SEIS_POR_CIENTO">6%</option>
-                <option value="OTRO">Otro %</option>
-              </select>
+              <label>N° de factura (opcional)</label>
+              <input
+                type="number"
+                min={1}
+                placeholder="Automático si se deja vacío"
+                value={numeroFactura}
+                onChange={(e) => setNumeroFactura(e.target.value)}
+              />
             </div>
-            {honorariosTipo === 'OTRO' && (
-              <div className="fg">
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step="0.1"
-                  placeholder="%"
-                  value={honorariosPorcentaje}
-                  onChange={(e) => setHonorariosPorcentaje(e.target.value)}
-                />
-              </div>
-            )}
-          </div>
-          <div className="liqline" style={{ marginBottom: 14 }}>
-            <span className="ld">Honorarios ({pctResuelto}% de {formatMoney(montoAlquiler)})</span>
-            <span className="lv">{formatMoney(honorariosPreview)}</span>
+            <div className="fg">
+              <label>Inquilino</label>
+              <input value={inquilino ? `N° ${inquilino.numero} — ${inquilino.nombre}` : '—'} disabled />
+            </div>
           </div>
 
           <div className="fg full" style={{ marginBottom: 4 }}>
@@ -1365,7 +1465,7 @@ function FacturaModal({
                     type="number"
                     min={0}
                     max={100}
-                    step="0.1"
+                    step="0.01"
                     placeholder="%"
                     value={honorariosAdministracionPorcentaje}
                     onChange={(e) => setHonorariosAdministracionPorcentaje(e.target.value)}
@@ -1391,19 +1491,18 @@ function FacturaModal({
                   placeholder="Descripción"
                 />
                 <input
+                  className="itemliq"
+                  placeholder="Liq"
+                  title="Número de liquidación"
+                  value={it.numeroLiquidacion}
+                  onChange={(e) => actualizarItem(idx, 'numeroLiquidacion', e.target.value.replace(/[^\d-]/g, ''))}
+                />
+                <input
                   className="itemmonto"
                   type="number"
                   step="0.01"
                   value={it.monto}
                   onChange={(e) => actualizarItem(idx, 'monto', e.target.value)}
-                />
-                <input
-                  className="itemliq"
-                  inputMode="numeric"
-                  placeholder="Liq"
-                  title="Número de liquidación"
-                  value={it.numeroLiquidacion}
-                  onChange={(e) => actualizarItem(idx, 'numeroLiquidacion', e.target.value.replace(/\D/g, ''))}
                 />
                 <button className="btn-sm ghostred" onClick={() => quitarItem(idx)} title="Quitar ítem">
                   ✕

@@ -6,6 +6,7 @@ import { unlink, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { procesarFotoParaTarjeta } from '../common/imagen.util';
+import { primerDiaMes } from '../common/fecha.util';
 import { CreatePropiedadDto } from './dto/create-propiedad.dto';
 import { UpdatePropiedadDto } from './dto/update-propiedad.dto';
 import { RegistrarAumentoDto } from './dto/registrar-aumento.dto';
@@ -156,20 +157,27 @@ export class PropiedadesService {
   async proximoAumento(propiedadId: string) {
     const propiedad = await this.prisma.propiedad.findUniqueOrThrow({
       where: { id: propiedadId },
-      select: { frecuenciaAumentoMeses: true },
+      select: { frecuenciaAumentoMeses: true, contratoInicio: true, inquilino: { select: { id: true } } },
     });
-    if (!propiedad.frecuenciaAumentoMeses) return null;
+    // Vacante = sin contrato vigente — aunque queden `frecuenciaAumentoMeses`
+    // o historial de una tenencia anterior, no corresponde mostrar ningún
+    // "próximo aumento" hasta que haya un inquilino de nuevo.
+    if (!propiedad.inquilino) return null;
+    if (!propiedad.frecuenciaAumentoMeses || !propiedad.contratoInicio) return null;
 
-    const ultimo = await this.prisma.historialAumento.findFirst({
-      where: { propiedadId },
+    // El ancla es el último aumento ya registrado DESDE que arrancó este
+    // contrato (fecha >= contratoInicio) — así un aumento que haya quedado
+    // de un inquilino anterior nunca se cuela acá. Si todavía no se
+    // registró ninguno para este contrato, el ancla es el propio inicio.
+    const ultimoDeEsteContrato = await this.prisma.historialAumento.findFirst({
+      where: { propiedadId, fecha: { gte: propiedad.contratoInicio } },
       orderBy: [{ fecha: 'desc' }, { createdAt: 'desc' }],
     });
-    if (!ultimo) return null;
+    const anclaFecha = ultimoDeEsteContrato ? new Date(ultimoDeEsteContrato.fecha) : new Date(propiedad.contratoInicio);
 
-    const ultimaFecha = new Date(ultimo.fecha);
-    const mesParcial = ultimaFecha.getUTCDate() === 1 ? 0 : 1;
+    const mesParcial = anclaFecha.getUTCDate() === 1 ? 0 : 1;
     const mesesAAgregar = propiedad.frecuenciaAumentoMeses + mesParcial;
-    return new Date(Date.UTC(ultimaFecha.getUTCFullYear(), ultimaFecha.getUTCMonth() + mesesAAgregar, 1));
+    return new Date(Date.UTC(anclaFecha.getUTCFullYear(), anclaFecha.getUTCMonth() + mesesAAgregar, 1));
   }
 
   async registrarAumento(propiedadId: string, dto: RegistrarAumentoDto) {
@@ -196,10 +204,17 @@ export class PropiedadesService {
 
   async upsertInquilino(propiedadId: string, dto: UpsertInquilinoDto) {
     await this.prisma.propiedad.findUniqueOrThrow({ where: { id: propiedadId } });
+    const { alDia, ...datos } = dto;
+    // Solo se toca `alDiaDesde` cuando el checkbox viene explícito en el
+    // request (creación desde AlquilarPropiedadModal); una edición que no
+    // lo manda (EditarInquilinoModal) no debe pisar el valor ya guardado.
+    // El mes se calcula del lado del servidor (no del cliente) para no
+    // depender del reloj del navegador.
+    const alDiaDesde = alDia === undefined ? undefined : alDia ? primerDiaMes(new Date()) : null;
     await this.prisma.inquilino.upsert({
       where: { propiedadId },
-      update: dto,
-      create: { ...dto, propiedadId },
+      update: { ...datos, ...(alDia === undefined ? {} : { alDiaDesde }) },
+      create: { ...datos, propiedadId, alDiaDesde: alDiaDesde ?? undefined },
     });
     return this.findOne(propiedadId);
   }

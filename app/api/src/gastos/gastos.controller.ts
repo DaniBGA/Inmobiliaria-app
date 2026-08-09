@@ -3,9 +3,13 @@ import { GastosService } from './gastos.service';
 import { CreateGastoDto } from './dto/create-gasto.dto';
 import { UpdateGastoDto } from './dto/update-gasto.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { RolUsuario } from '@prisma/client';
 
 @Controller('gastos')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(RolUsuario.ADMIN)
 export class GastosController {
   constructor(private readonly gastosService: GastosService) {}
 

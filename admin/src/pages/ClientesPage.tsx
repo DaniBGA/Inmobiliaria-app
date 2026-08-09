@@ -533,11 +533,11 @@ function ClienteModal({
         </div>
         <div className="fg">
           <label>Presupuesto desde</label>
-          <input type="number" min={0} value={montoDesde} onChange={(e) => setMontoDesde(e.target.value)} placeholder="Opcional" />
+          <input type="number" min={0} step="0.01" value={montoDesde} onChange={(e) => setMontoDesde(e.target.value)} placeholder="Opcional" />
         </div>
         <div className="fg">
           <label>Presupuesto hasta</label>
-          <input type="number" min={0} value={montoHasta} onChange={(e) => setMontoHasta(e.target.value)} placeholder="Opcional" />
+          <input type="number" min={0} step="0.01" value={montoHasta} onChange={(e) => setMontoHasta(e.target.value)} placeholder="Opcional" />
         </div>
         <div className="fg">
           <label>Delegado / designado</label>

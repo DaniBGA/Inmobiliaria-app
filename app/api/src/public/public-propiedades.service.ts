@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { EstadoVenta, ModalidadPropiedad, Prisma, TipoPropiedad } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { ConfiguracionService } from '../configuracion/configuracion.service';
 
 // Select explícito de solo lo que es seguro mostrar en la web pública —
 // nunca propietario, honorarios, contrato, punitorios ni nada del pipeline
@@ -21,10 +22,14 @@ const SELECT_PUBLICO = {
   descripcion: true,
   caracterEspecial: true,
   fotos: { select: { id: true, url: true, orden: true, esPortada: true }, orderBy: { orden: 'asc' as const } },
-  venta: { select: { precio: true, moneda: true } },
+  venta: { select: { precio: true, moneda: true, estado: true } },
+  // Solo para derivar `estadoPublico` (§ventana de gracia) — nunca se
+  // expone el inquilino en sí, solo si existe o no.
+  inquilino: { select: { id: true } },
 } satisfies Prisma.PropiedadSelect;
 
 type PropiedadPublicaRaw = Prisma.PropiedadGetPayload<{ select: typeof SELECT_PUBLICO }>;
+type EstadoPublico = 'DISPONIBLE' | 'ALQUILADA' | 'VENDIDA';
 
 const BUCKET_STATS: Partial<Record<TipoPropiedad, keyof StatsPorTipo>> = {
   CASA: 'casas',
@@ -42,12 +47,26 @@ export interface StatsPorTipo {
 }
 
 function mapear(p: PropiedadPublicaRaw) {
+  // Ventana de gracia (§Configuracion.diasMostrarDespuesVentaAlquiler): la
+  // propiedad puede seguir listada un tiempo después de alquilarse/venderse
+  // — `estadoPublico` es lo que le permite al frontend mostrar "Alquilada"/
+  // "Vendida" en vez de dejarla parecer disponible.
+  const estadoPublico: EstadoPublico =
+    p.modalidad === ModalidadPropiedad.VENTA
+      ? p.venta && (p.venta.estado === EstadoVenta.VENDIDA || p.venta.estado === EstadoVenta.VENDIDA_POR_TERCEROS)
+        ? 'VENDIDA'
+        : 'DISPONIBLE'
+      : p.inquilino
+        ? 'ALQUILADA'
+        : 'DISPONIBLE';
+
   return {
     id: p.id,
     nombre: p.nombre,
     direccion: p.direccion,
     tipo: p.tipo,
     modalidad: p.modalidad,
+    estadoPublico,
     montoAlquilerVigente: p.montoAlquilerVigente != null ? Number(p.montoAlquilerVigente) : null,
     precio: p.venta ? Number(p.venta.precio) : null,
     moneda: p.venta?.moneda ?? null,
@@ -71,24 +90,48 @@ function mapear(p: PropiedadPublicaRaw) {
 
 @Injectable()
 export class PublicPropiedadesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configuracionService: ConfiguracionService,
+  ) {}
 
   // §PublicModule: alquiler "disponible para publicar" = vacante (sin
   // inquilino) Y no pausada (`alquilerPublicado`, equivalente a
-  // `Venta.publicada` pero sin ficha satélite) — una propiedad ocupada
-  // nunca se muestra en la web pública, tenga o no el flag en true. Venta
-  // publicable = `publicada` Y todavía activa (una venta cerrada nunca
-  // vuelve a `publicada:false` sola, así que hace falta chequear el estado
-  // además del booleano).
-  private condicionListable(modalidad?: ModalidadPropiedad): Prisma.PropiedadWhereInput {
+  // `Venta.publicada` pero sin ficha satélite). Venta publicable =
+  // `publicada` Y todavía activa (una venta cerrada nunca vuelve a
+  // `publicada:false` sola, así que hace falta chequear el estado además
+  // del booleano).
+  //
+  // Además, `Configuracion.diasMostrarDespuesVentaAlquiler` (0 = apagado)
+  // mantiene la propiedad visible una cantidad de días DESPUÉS de que se
+  // alquiló/vendió — así no desaparece de la web en el instante mismo de la
+  // operación. Se ancla en `contratoInicio` (alquiler) o `venta.cierreReal`
+  // (venta: cubre tanto "vendida" por la inmobiliaria como "vendida por
+  // terceros"), no en la fecha en que se cargó el registro.
+  private async condicionListable(modalidad?: ModalidadPropiedad): Promise<Prisma.PropiedadWhereInput> {
+    const dias = Number((await this.configuracionService.get()).diasMostrarDespuesVentaAlquiler ?? 0);
+    const desde = new Date();
+    desde.setDate(desde.getDate() - dias);
+
     const condicionAlquiler: Prisma.PropiedadWhereInput = {
       modalidad: ModalidadPropiedad.ALQUILER,
-      inquilino: null,
       alquilerPublicado: true,
+      OR: [
+        { inquilino: null },
+        ...(dias > 0 ? [{ inquilino: { isNot: null }, contratoInicio: { gte: desde } }] : []),
+      ],
     };
     const condicionVenta: Prisma.PropiedadWhereInput = {
       modalidad: ModalidadPropiedad.VENTA,
-      venta: { publicada: true, estado: EstadoVenta.PUBLICADA },
+      venta: {
+        publicada: true,
+        OR: [
+          { estado: EstadoVenta.PUBLICADA },
+          ...(dias > 0
+            ? [{ estado: { in: [EstadoVenta.VENDIDA, EstadoVenta.VENDIDA_POR_TERCEROS] }, cierreReal: { gte: desde } }]
+            : []),
+        ],
+      },
     };
 
     if (modalidad === ModalidadPropiedad.ALQUILER) return condicionAlquiler;
@@ -109,7 +152,7 @@ export class PublicPropiedadesService {
     const page = params.page && params.page > 0 ? params.page : 1;
     const limit = params.limit && params.limit > 0 ? Math.min(params.limit, 48) : 12;
 
-    const condicion = this.condicionListable(params.modalidad);
+    const condicion = await this.condicionListable(params.modalidad);
     const extra: Prisma.PropiedadWhereInput[] = [];
     if (params.tipo && params.tipo.length > 0) extra.push({ tipo: { in: params.tipo } });
     if (params.especial) extra.push({ caracterEspecial: true });
@@ -131,7 +174,7 @@ export class PublicPropiedadesService {
 
   async statsPorTipo(): Promise<StatsPorTipo> {
     const propiedades = await this.prisma.propiedad.findMany({
-      where: this.condicionListable(),
+      where: await this.condicionListable(),
       select: { tipo: true },
     });
 

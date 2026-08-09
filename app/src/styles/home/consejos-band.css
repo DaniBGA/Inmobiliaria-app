@@ -1,0 +1,36 @@
+/* ===== Consejos (banda oscura) ===== */
+.consejos-grid {
+  position: relative;
+  z-index: 1;
+  margin-top: 40px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+.consejo-card {
+  background: rgba(237, 236, 234, 0.05);
+  border: 1px solid rgba(237, 236, 234, 0.14);
+  border-radius: 14px;
+  padding: 26px;
+}
+
+.consejo-card h3 {
+  font-size: 16px;
+  color: #fff;
+  letter-spacing: -0.3px;
+}
+
+.consejo-card p {
+  margin-top: 10px;
+  font-size: 13.5px;
+  color: rgba(237, 236, 234, 0.7);
+  line-height: 1.7;
+}
+
+@media (max-width: 880px) {
+  .consejos-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

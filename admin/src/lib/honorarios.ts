@@ -1,4 +1,4 @@
-export type TipoHonorarios = 'LIBRE' | 'TRES_POR_CIENTO' | 'SEIS_POR_CIENTO' | 'OTRO' | null;
+export type TipoHonorarios = 'LIBRE' | 'TRES_POR_CIENTO' | 'CUATRO_POR_CIENTO' | 'SEIS_POR_CIENTO' | 'OTRO' | null;
 
 // Espejo de api/src/common/honorarios.util.ts::resolverPorcentajeHonorarios —
 // mismo criterio en todos los cálculos (liquidaciones, honorarios de venta).
@@ -11,6 +11,8 @@ export function resolverPorcentajeHonorarios(
       return 0;
     case 'TRES_POR_CIENTO':
       return 3;
+    case 'CUATRO_POR_CIENTO':
+      return 4;
     case 'SEIS_POR_CIENTO':
       return 6;
     case 'OTRO':

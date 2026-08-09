@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
+import { useAuth } from '../auth/AuthContext';
 import { PageHeader } from '../components/PageHeader';
 import { Modal } from '../components/Modal';
 import { formatMoney, formatUsd, formatDate } from '../lib/format';
@@ -197,6 +198,11 @@ function fmtPrecio(precio: number, moneda: 'ARS' | 'USD') {
 
 export function VentasPage() {
   const qc = useQueryClient();
+  const { usuario } = useAuth();
+  // Un designado (rol EQUIPO) solo trabaja el pipeline de venta sobre lo
+  // que ya existe (interesados/seña/cierre/terceros) — no edita la ficha
+  // de la propiedad ni agrega propiedades nuevas ni administra carteles.
+  const esEquipo = usuario?.rol === 'EQUIPO';
   const [filtroTipo, setFiltroTipo] = useState('');
   const [filtroEtapa, setFiltroEtapa] = useState<EtapaInteresado | ''>('');
   const [busquedaCar, setBusquedaCar] = useState('');
@@ -300,25 +306,14 @@ export function VentasPage() {
   const dolarReferencia = Number(configuracion.data?.dolarReferencia ?? 0);
   const ventaPorPropiedadId = new Map((ventas.data ?? []).map((v) => [v.propiedadId, v]));
 
-  // Una propiedad que estuvo en venta y terminó alquilada (vía "+ Alquilar
-  // propiedad existente") cambia su `modalidad` a ALQUILER, pero conserva su
-  // ficha de venta con todo el historial de interesados — no tiene que
-  // desaparecer de acá, solo dejar de listarse como una venta activa. Por
-  // eso el filtro no es solo `modalidad === 'VENTA'`, sino también cualquier
-  // propiedad que ya tenga una ficha de venta asociada.
-  //
-  // Además, publicar una propiedad como Alquiler vacante (sin inquilino,
-  // vía "+ Publicar propiedad existente") no crea ninguna ficha de venta
-  // — es un flujo enteramente distinto (PATCH modalidad + POST aumentos).
-  // Sin esto, esa propiedad quedaba guardada correctamente pero invisible
-  // en esta grilla (el usuario la publica acá y "no aparece con las demás
-  // publicadas o pausadas"), aunque sí aparecía en la landing pública.
+  // Ventas y Carteles muestra únicamente la cartera en modalidad VENTA — los
+  // alquileres (ocupados o vacantes) viven en Inquilinos y Cobros. Si una
+  // propiedad que estaba en venta se termina alquilando (vía "+ Alquilar
+  // propiedad existente"), su ficha de venta con el historial de interesados
+  // no se borra, pero deja de listarse acá; queda accesible desde la ficha
+  // de la propiedad en Inquilinos y Cobros.
   const propiedadesVenta = (propiedades.data ?? [])
-    .filter(
-      (p) =>
-        (p.modalidad === 'VENTA' || p.venta != null || (p.modalidad === 'ALQUILER' && !p.inquilino)) &&
-        (!filtroTipo || p.tipo === filtroTipo),
-    )
+    .filter((p) => p.modalidad === 'VENTA' && (!filtroTipo || p.tipo === filtroTipo))
     .filter((p) => {
       if (!filtroEtapa) return true;
       const v = ventaPorPropiedadId.get(p.id) ?? p.venta;
@@ -395,11 +390,13 @@ export function VentasPage() {
                 ))}
               </select>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn-sm solid" onClick={() => setPublicarModal(true)}>
-                + Publicar propiedad existente
-              </button>
-            </div>
+            {!esEquipo && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn-sm solid" onClick={() => setPublicarModal(true)}>
+                  + Publicar propiedad en venta
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -412,60 +409,7 @@ export function VentasPage() {
           {propiedadesVenta.map((p) => {
             const v = ventaPorPropiedadId.get(p.id) ?? p.venta;
 
-            // Alquiler vacante publicado desde acá mismo (sin ficha de venta,
-            // ver el filtro de arriba) — es una operación distinta a una
-            // venta, así que se muestra con una tarjeta simplificada en vez
-            // de forzarla en los campos de precio/interesados de venta.
-            if (p.modalidad === 'ALQUILER' && !v) {
-              return (
-                <div className="salecard" key={p.id}>
-                  <div className="shead">
-                    <div className="stop">
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <h4>{p.nombre}</h4>
-                        <div className="saddr">
-                          {p.direccion} · {TIPO_LABEL[p.tipo] ?? p.tipo}
-                        </div>
-                      </div>
-                      <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                        <span className="badge alquilada">Alquiler</span>
-                        <span className={`badge ${p.alquilerPublicado ? 'publicada' : 'pausada'}`}>
-                          {p.alquilerPublicado ? 'Publicada' : 'Pausada'}
-                        </span>
-                      </span>
-                    </div>
-                    <div className="sprice">
-                      {p.montoAlquilerVigente != null ? formatMoney(p.montoAlquilerVigente) : 'Consultar'}
-                      <small>ARS/mes</small>
-                    </div>
-                  </div>
-                  <div className="sbody">
-                    <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 10 }}>
-                      Vacante — disponible para alquilar. No tiene ficha de venta porque no está en venta.
-                    </div>
-                    <div className="srow">
-                      <span>Propietario</span>
-                      <b>{p.propietario?.nombre ?? '—'}</b>
-                    </div>
-                    <div className="srow">
-                      <span>Publicada en la web</span>
-                      <b>{p.alquilerPublicado ? 'Sí' : 'No'}</b>
-                    </div>
-                    <div className="srow">
-                      <span>La muestra</span>
-                      <b>
-                        {p.designado?.nombre ?? (
-                          <span style={{ color: 'var(--muted)', fontWeight: 600 }}>sin designar</span>
-                        )}
-                      </b>
-                    </div>
-                  </div>
-                </div>
-              );
-            }
-
             const estado = v?.estado ?? 'PUBLICADA';
-            const alquilada = p.modalidad === 'ALQUILER';
             const precio = Number(v?.precio ?? 0);
             const moneda = v?.moneda ?? 'ARS';
             const ars = moneda === 'USD' ? precio * dolarReferencia : precio;
@@ -489,7 +433,6 @@ export function VentasPage() {
                       </div>
                     </div>
                     <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                      {alquilada && <span className="badge alquilada">Alquilada</span>}
                       <span className={`badge ${ESTADO_VENTA_CLASE[estado]}`}>{ESTADO_VENTA_LABEL[estado]}</span>
                     </span>
                   </div>
@@ -500,11 +443,6 @@ export function VentasPage() {
                   {moneda === 'USD' && ars > 0 && <div className="sars">≈ {formatMoney(ars)} al dólar de referencia</div>}
                 </div>
                 <div className="sbody">
-                  {alquilada && (
-                    <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 10 }}>
-                      Esta propiedad ya no está en venta: se alquiló. Se muestra igual por su historial de venta.
-                    </div>
-                  )}
                   <div className="srow">
                     <span>Propietario</span>
                     <b>{p.propietario?.nombre ?? '—'}</b>
@@ -585,7 +523,7 @@ export function VentasPage() {
                   )}
                 </div>
                 <div className="sfoot" style={{ flexWrap: 'wrap' }}>
-                  {!alquilada && (
+                  {!esEquipo && (
                     <button className="btn-sm" style={{ flex: 1 }} onClick={() => setFichaDe(p)}>
                       ✎ Editar ficha
                     </button>
@@ -677,9 +615,11 @@ export function VentasPage() {
               onChange={(e) => setBusquedaCar(e.target.value)}
             />
             <span style={{ flex: 1 }}></span>
-            <button className="btn-sm solid" onClick={() => setCartelModal('new')}>
-              + Nuevo cartel
-            </button>
+            {!esEquipo && (
+              <button className="btn-sm solid" onClick={() => setCartelModal('new')}>
+                + Nuevo cartel
+              </button>
+            )}
           </div>
           <table>
             <thead>
@@ -701,7 +641,12 @@ export function VentasPage() {
                 </tr>
               )}
               {cartelesVisibles.map((c) => (
-                <tr className="movrow" key={c.id} onClick={() => setCartelModal(c)}>
+                <tr
+                  className="movrow"
+                  key={c.id}
+                  style={esEquipo ? { cursor: 'default' } : undefined}
+                  onClick={esEquipo ? undefined : () => setCartelModal(c)}
+                >
                   <td>
                     <div className="pname">{c.propiedad.nombre}</div>
                     <div className="psub">{c.propiedad.direccion}</div>
@@ -724,39 +669,43 @@ export function VentasPage() {
                     )}
                   </td>
                   <td style={{ textAlign: 'right' }}>
-                    <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                      {c.tipoCartel === 'A_PEDIDO' && (
-                        <button
-                          className="btn-sm solid"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            marcarColocado.mutate(c.id);
-                          }}
-                        >
-                          Marcar colocado
-                        </button>
-                      )}
-                      {c.tipoCartel === 'COLOCADO' && (
+                    {esEquipo ? (
+                      <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>
+                    ) : (
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        {c.tipoCartel === 'A_PEDIDO' && (
+                          <button
+                            className="btn-sm solid"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              marcarColocado.mutate(c.id);
+                            }}
+                          >
+                            Marcar colocado
+                          </button>
+                        )}
+                        {c.tipoCartel === 'COLOCADO' && (
+                          <button
+                            className="btn-sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              marcarRetirado.mutate(c.id);
+                            }}
+                          >
+                            Marcar retirado
+                          </button>
+                        )}
                         <button
                           className="btn-sm"
                           onClick={(e) => {
                             e.stopPropagation();
-                            marcarRetirado.mutate(c.id);
+                            setCartelModal(c);
                           }}
                         >
-                          Marcar retirado
+                          Editar
                         </button>
-                      )}
-                      <button
-                        className="btn-sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setCartelModal(c);
-                        }}
-                      >
-                        Editar
-                      </button>
-                    </div>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -930,7 +879,7 @@ function SaleModal({
         banos: banos ? Number(banos) : undefined,
         superficieM2: superficieM2 ? Number(superficieM2) : undefined,
         caracterEspecial,
-        serviciosHabilitados: propiedad.modalidad === 'ALQUILER' ? servicios : undefined,
+        serviciosHabilitados: tipo !== 'LOTE' ? servicios : undefined,
       });
       return api.post(`/propiedades/${propiedad.id}/venta`, {
         precio: Number(precio),
@@ -1010,6 +959,7 @@ function SaleModal({
             <option value="">Usar el % por defecto de Configuración</option>
             <option value="LIBRE">Libre de gastos (0%)</option>
             <option value="TRES_POR_CIENTO">3%</option>
+            <option value="CUATRO_POR_CIENTO">4%</option>
             <option value="SEIS_POR_CIENTO">6%</option>
             <option value="OTRO">Otro %</option>
           </select>
@@ -1021,7 +971,7 @@ function SaleModal({
               type="number"
               min={0}
               max={100}
-              step="0.1"
+              step="0.01"
               value={honorariosPorcentaje}
               onChange={(e) => setHonorariosPorcentaje(e.target.value)}
             />
@@ -1044,7 +994,7 @@ function SaleModal({
               type="number"
               min={0}
               max={100}
-              step="0.1"
+              step="0.01"
               value={honorariosAdministracionPorcentaje}
               onChange={(e) => setHonorariosAdministracionPorcentaje(e.target.value)}
             />
@@ -1074,7 +1024,7 @@ function SaleModal({
         </div>
       </div>
 
-      {propiedad.modalidad === 'ALQUILER' && (
+      {tipo !== 'LOTE' && (
         <>
           <div className="secttl">SERVICIOS QUE SE FACTURAN</div>
           <div className="formgrid" style={{ marginBottom: 4 }}>
@@ -1181,76 +1131,24 @@ function PublicarExistenteModal({
   onSaved: () => void;
 }) {
   const qc = useQueryClient();
-  const [modalidad, setModalidad] = useState<'VENTA' | 'ALQUILER'>('VENTA');
   const [propiedadId, setPropiedadId] = useState('');
-
-  // Venta
   const [precio, setPrecio] = useState('');
   const [moneda, setMoneda] = useState<'ARS' | 'USD'>('USD');
   const [publicada, setPublicada] = useState(true);
   const [cierreEstimado, setCierreEstimado] = useState('');
-
-  // Alquiler
-  const [indice, setIndice] = useState<'' | 'IPC' | 'ICL'>('');
-  const [frecuenciaAumentoMeses, setFrecuenciaAumentoMeses] = useState('');
-  const [montoAlquilerInicial, setMontoAlquilerInicial] = useState('');
-  const [contratoInicio, setContratoInicio] = useState('');
-  const [contratoFin, setContratoFin] = useState('');
-  const [tieneInquilino, setTieneInquilino] = useState(false);
-  const [alquilerPublicado, setAlquilerPublicado] = useState(true);
-  const [inqNombre, setInqNombre] = useState('');
-  const [inqTelefono, setInqTelefono] = useState('');
-  const [inqEmail, setInqEmail] = useState('');
-
   const [error, setError] = useState<string | null>(null);
 
-  // La lista de propiedades disponibles depende de la modalidad elegida:
-  // para venta, cualquiera sin ficha de venta todavía; para alquiler,
-  // cualquiera sin inquilino asignado (no se puede pisar un contrato
-  // vigente desde acá).
-  const opciones =
-    modalidad === 'VENTA'
-      ? propiedades.filter((p) => !ventaIds.has(p.id))
-      : propiedades.filter((p) => !(p.modalidad === 'ALQUILER' && p.inquilino));
-
-  function cambiarModalidad(next: 'VENTA' | 'ALQUILER') {
-    setModalidad(next);
-    setPropiedadId('');
-  }
-
-  const propiedadElegida = opciones.find((p) => p.id === propiedadId);
+  // Cualquier propiedad ya en modalidad Venta que todavía no tiene ficha
+  // de venta cargada.
+  const opciones = propiedades.filter((p) => p.modalidad === 'VENTA' && !ventaIds.has(p.id));
 
   const guardar = useMutation({
     mutationFn: async () => {
-      if (modalidad === 'VENTA') {
-        if (propiedadElegida && propiedadElegida.modalidad !== 'VENTA') {
-          await api.patch(`/propiedades/${propiedadId}`, { modalidad: 'VENTA' });
-        }
-        return api.post(`/propiedades/${propiedadId}/venta`, {
-          precio: Number(precio),
-          moneda,
-          publicada,
-          cierreEstimado: cierreEstimado || undefined,
-        });
-      }
-
-      await api.patch(`/propiedades/${propiedadId}`, {
-        modalidad: 'ALQUILER',
-        indice: indice || undefined,
-        frecuenciaAumentoMeses: frecuenciaAumentoMeses ? Number(frecuenciaAumentoMeses) : undefined,
-        contratoInicio: contratoInicio || undefined,
-        contratoFin: contratoFin || undefined,
-        alquilerPublicado,
-      });
-      await api.post(`/propiedades/${propiedadId}/aumentos`, {
-        fecha: contratoInicio || new Date().toISOString().slice(0, 10),
-        monto: Number(montoAlquilerInicial),
-      });
-      if (!tieneInquilino) return;
-      return api.patch(`/propiedades/${propiedadId}/inquilino`, {
-        nombre: inqNombre.trim(),
-        telefono: inqTelefono || undefined,
-        email: inqEmail || undefined,
+      return api.post(`/propiedades/${propiedadId}/venta`, {
+        precio: Number(precio),
+        moneda,
+        publicada,
+        cierreEstimado: cierreEstimado || undefined,
       });
     },
     onSuccess: () => {
@@ -1264,190 +1162,51 @@ function PublicarExistenteModal({
     onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo publicar la propiedad.'),
   });
 
-  const puedeGuardar =
-    modalidad === 'VENTA'
-      ? !!propiedadId && !!precio
-      : !!propiedadId && !!montoAlquilerInicial && (!tieneInquilino || !!inqNombre.trim());
-
-  // El formulario de Alquiler es largo — el botón "Publicar" queda abajo de
-  // todo, lejos del mensaje de error (arriba del todo) o de por qué sigue
-  // deshabilitado. Sin esto, si falta un campo o falla el guardado, desde el
-  // scroll donde está el botón "no pasa nada visible" (parece que el clic no
-  // hizo nada, cuando en realidad sí hay un motivo, solo que está fuera de
-  // vista).
-  const faltantes: string[] = [];
-  if (!propiedadId) faltantes.push('elegir una propiedad');
-  if (modalidad === 'VENTA' && !precio) faltantes.push('el precio');
-  if (modalidad === 'ALQUILER' && !montoAlquilerInicial) faltantes.push('el monto de alquiler inicial');
-  if (modalidad === 'ALQUILER' && tieneInquilino && !inqNombre.trim()) faltantes.push('el nombre del inquilino');
+  const puedeGuardar = !!propiedadId && !!precio;
 
   return (
-    <Modal open onClose={onClose} title="Publicar propiedad existente" width={560}>
+    <Modal open onClose={onClose} title="Publicar propiedad en venta" width={480}>
       {error && <div className="errstate" style={{ marginBottom: 14 }}>{error}</div>}
       <div className="formgrid">
-        <div className="fg full">
-          <label>Modalidad</label>
-          <select value={modalidad} onChange={(e) => cambiarModalidad(e.target.value as 'VENTA' | 'ALQUILER')}>
-            <option value="VENTA">Venta</option>
-            <option value="ALQUILER">Alquiler</option>
-          </select>
-        </div>
         <div className="fg full">
           <label>Propiedad</label>
           <select value={propiedadId} onChange={(e) => setPropiedadId(e.target.value)}>
             <option value="">— Elegir de la cartera —</option>
             {opciones.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.nombre} — {p.direccion} ({p.modalidad === 'ALQUILER' ? (p.inquilino ? 'hoy en alquiler' : 'vacante') : 'sin ficha de venta'})
+                {p.nombre} — {p.direccion} (sin ficha de venta)
               </option>
             ))}
           </select>
           {opciones.length === 0 && (
             <div className="hint" style={{ marginTop: 6 }}>
-              {modalidad === 'VENTA'
-                ? 'Todas las propiedades de la cartera ya están en venta.'
-                : 'Todas las propiedades de la cartera ya tienen un inquilino asignado.'}
+              Todas las propiedades de la cartera ya están en venta.
             </div>
           )}
         </div>
-
-        {modalidad === 'VENTA' ? (
-          <>
-            <div className="fg">
-              <label>Precio</label>
-              <input type="number" min={0} step="0.01" value={precio} onChange={(e) => setPrecio(e.target.value)} />
-            </div>
-            <div className="fg">
-              <label>Moneda</label>
-              <select value={moneda} onChange={(e) => setMoneda(e.target.value as 'ARS' | 'USD')}>
-                <option value="USD">USD</option>
-                <option value="ARS">ARS</option>
-              </select>
-            </div>
-            <div className="fg full">
-              <label className="chk">
-                <input type="checkbox" checked={publicada} onChange={(e) => setPublicada(e.target.checked)} />
-                <span>Mostrar en la página web (landing page)</span>
-              </label>
-            </div>
-            <div className="fg full">
-              <label>Cierre estimado</label>
-              <input type="date" value={cierreEstimado} onChange={(e) => setCierreEstimado(e.target.value)} />
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="fg">
-              <label>Índice de ajuste</label>
-              <select value={indice} onChange={(e) => setIndice(e.target.value as '' | 'IPC' | 'ICL')}>
-                <option value="">— Sin definir —</option>
-                <option value="IPC">IPC</option>
-                <option value="ICL">ICL</option>
-              </select>
-            </div>
-            <div className="fg">
-              <label>Frecuencia de aumento</label>
-              <div className="suffix">
-                <input
-                  type="number"
-                  min={1}
-                  value={frecuenciaAumentoMeses}
-                  onChange={(e) => setFrecuenciaAumentoMeses(e.target.value)}
-                />
-                <span>meses</span>
-              </div>
-            </div>
-            <div className="fg">
-              <label>Monto de alquiler inicial</label>
-              <div className="suffix">
-                <input
-                  type="number"
-                  min={0}
-                  value={montoAlquilerInicial}
-                  onChange={(e) => setMontoAlquilerInicial(e.target.value)}
-                />
-                <span>$</span>
-              </div>
-            </div>
-            <div className="fg">
-              <label>Contrato — inicio</label>
-              <input type="date" value={contratoInicio} onChange={(e) => setContratoInicio(e.target.value)} />
-            </div>
-            <div className="fg">
-              <label>Contrato — fin</label>
-              <input type="date" value={contratoFin} onChange={(e) => setContratoFin(e.target.value)} />
-            </div>
-            <div className="fg full">
-              <label className="chk">
-                <input type="checkbox" checked={tieneInquilino} onChange={(e) => setTieneInquilino(e.target.checked)} />
-                <span>Ya tiene inquilino asignado</span>
-              </label>
-            </div>
-            {!tieneInquilino && (
-              <div className="fg full">
-                <label className="chk">
-                  <input type="checkbox" checked={alquilerPublicado} onChange={(e) => setAlquilerPublicado(e.target.checked)} />
-                  <span>Mostrar en la página web (landing page)</span>
-                </label>
-              </div>
-            )}
-            {tieneInquilino && (
-              <>
-                <div className="fg full">
-                  <label>Nombre del inquilino</label>
-                  <input value={inqNombre} onChange={(e) => setInqNombre(e.target.value)} placeholder="Nombre y apellido" />
-                </div>
-                <div className="fg">
-                  <label>Teléfono</label>
-                  <input value={inqTelefono} onChange={(e) => setInqTelefono(e.target.value)} placeholder="Opcional" />
-                </div>
-                <div className="fg">
-                  <label>Email</label>
-                  <input type="email" value={inqEmail} onChange={(e) => setInqEmail(e.target.value)} placeholder="Opcional" />
-                </div>
-              </>
-            )}
-          </>
-        )}
+        <div className="fg">
+          <label>Precio</label>
+          <input type="number" min={0} step="0.01" value={precio} onChange={(e) => setPrecio(e.target.value)} />
+        </div>
+        <div className="fg">
+          <label>Moneda</label>
+          <select value={moneda} onChange={(e) => setMoneda(e.target.value as 'ARS' | 'USD')}>
+            <option value="USD">USD</option>
+            <option value="ARS">ARS</option>
+          </select>
+        </div>
+        <div className="fg full">
+          <label className="chk">
+            <input type="checkbox" checked={publicada} onChange={(e) => setPublicada(e.target.checked)} />
+            <span>Mostrar en la página web (landing page)</span>
+          </label>
+        </div>
+        <div className="fg full">
+          <label>Cierre estimado</label>
+          <input type="date" value={cierreEstimado} onChange={(e) => setCierreEstimado(e.target.value)} />
+        </div>
       </div>
-      {modalidad === 'ALQUILER' && !tieneInquilino && (
-        <div className="cfgnote" style={{ marginTop: 4 }}>
-          <i>△</i>
-          <span>
-            Sin inquilino, la propiedad queda "Disponible" y, si además está tildado "Mostrar en la página web", se
-            publica en la landing pública. Una vez que se le asigne un inquilino, deja de aparecer en la web
-            automáticamente.
-          </span>
-        </div>
-      )}
 
-      {modalidad === 'VENTA' && propiedadElegida?.modalidad === 'ALQUILER' && (
-        <div className="cfgnote" style={{ marginTop: 4 }}>
-          <i>△</i>
-          <span>
-            Esta propiedad está cargada como alquiler — al publicarla pasa a modalidad "Venta" y deja de aparecer en
-            Inquilinos y Cobros. Si tiene un contrato de alquiler vigente, no se borra, pero conviene coordinarlo con
-            el inquilino antes de este paso.
-          </span>
-        </div>
-      )}
-      {modalidad === 'ALQUILER' && propiedadElegida?.modalidad === 'VENTA' && (
-        <div className="cfgnote" style={{ marginTop: 4 }}>
-          <i>△</i>
-          <span>
-            Esta propiedad está publicada en venta — al alquilarla pasa a modalidad "Alquiler" y deja de listarse en
-            Ventas y Carteles como publicada. Si tiene ficha de venta con interesados, no se borra, pero conviene
-            coordinarlo antes de este paso.
-          </span>
-        </div>
-      )}
-
-      {error && <div className="errstate" style={{ marginTop: 14 }}>{error}</div>}
-      {!puedeGuardar && faltantes.length > 0 && (
-        <div className="hint" style={{ marginTop: 14, textAlign: 'right' }}>
-          Falta completar: {faltantes.join(', ')}.
-        </div>
-      )}
       <div className="btnrow">
         <button className="btn-ghost" onClick={onClose}>
           Cancelar
@@ -1475,11 +1234,10 @@ function SenaModal({
 }) {
   const esEdicion = montoInicial != null && Number(montoInicial) > 0;
   const [monto, setMonto] = useState(montoInicial != null ? String(montoInicial) : '');
-  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
   const [error, setError] = useState<string | null>(null);
 
   const guardar = useMutation({
-    mutationFn: () => api.post(`/ventas/${ventaId}/sena`, { monto: Number(monto), fecha }),
+    mutationFn: () => api.post(`/ventas/${ventaId}/sena`, { monto: Number(monto) }),
     onSuccess: onSaved,
     onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo registrar la seña.'),
   });
@@ -1492,10 +1250,10 @@ function SenaModal({
           <label>Monto de la seña (USD)</label>
           <input type="number" min={0.01} step="0.01" value={monto} onChange={(e) => setMonto(e.target.value)} />
         </div>
-        <div className="fg full">
-          <label>Fecha</label>
-          <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
-        </div>
+      </div>
+      <div className="cfgnote" style={{ marginTop: 4 }}>
+        <i>△</i>
+        <span>La seña queda registrada en la ficha de la venta, pero no genera movimiento en Caja — lo único que se refleja ahí es el honorario al cerrar la venta.</span>
       </div>
       <div className="btnrow">
         <button className="btn-ghost" onClick={onClose}>

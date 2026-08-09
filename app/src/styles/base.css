@@ -1,0 +1,241 @@
+:root {
+  --color-navy: #12273a;
+  --color-navy-2: #1c4066;
+  --color-navy-3: #1d3c5c;
+  --color-splash: #1c3b5a;
+  --color-cream: #edecea;
+  --color-offwhite: #f6f5f3;
+  --color-accent: #26bfbb;
+  --color-accent-dark: #0e7c79;
+  --color-splash-bar: #2fbfbf;
+  --color-border: #dedddd;
+  --color-border-soft: #e2e1de;
+  --color-border-2: #d3d2cf;
+  --color-input-bg: #e4e3e0;
+  --color-text-muted: #7b8794;
+  --color-text-muted2: #8a96a2;
+  --color-card-bg: #f6f5f3;
+  --color-footer-bg: #12273a;
+  --color-whatsapp: #25d366;
+
+  --font-display: 'Montserrat', sans-serif;
+  --font-body: 'Montserrat', sans-serif;
+  --font-label: 'Montserrat', sans-serif;
+
+  --container-width: 1280px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-navy-2) var(--color-cream);
+}
+
+/* Scrollbar a tono con la paleta (Firefox arriba vía scrollbar-color;
+   Chrome/Edge/Safari acá) — reemplaza la barra gris genérica del sistema,
+   tanto en la página como en cualquier contenedor con scroll propio (ej. el
+   modal de "Ver detalle" de una propiedad). */
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-cream);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-navy-2);
+  border-radius: 100px;
+  border: 3px solid var(--color-cream);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-accent);
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  font-weight: 400;
+  color: var(--color-navy);
+  background: var(--color-offwhite);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  margin: 0;
+  line-height: 1.08;
+  letter-spacing: -1px;
+}
+
+p {
+  margin: 0;
+}
+
+.container {
+  width: 100%;
+  max-width: var(--container-width);
+  margin: 0 auto;
+  padding: 0 clamp(20px, 4vw, 44px);
+}
+
+.section {
+  position: relative;
+  padding: clamp(56px, 7vw, 100px) 0;
+}
+
+.section.dark {
+  background: var(--color-navy);
+  color: var(--color-cream);
+}
+
+.eyebrow {
+  display: inline-block;
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--color-accent-dark);
+  margin-bottom: 14px;
+}
+
+.section.dark .eyebrow {
+  color: var(--color-accent);
+}
+
+.section-title {
+  font-size: clamp(30px, 4.4vw, 50px);
+}
+
+.section-intro {
+  max-width: 620px;
+  margin-top: 16px;
+  color: rgba(18, 39, 58, 0.7);
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.section.dark .section-intro {
+  color: rgba(237, 236, 234, 0.78);
+}
+
+/* ===== Reveal-on-scroll (reemplaza data-reveal + IntersectionObserver del boceto) ===== */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity 0.7s cubic-bezier(0.22, 0.61, 0.36, 1),
+    transform 0.7s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.reveal.visible {
+  opacity: 1;
+  transform: none;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--font-label);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  padding: 15px 28px;
+  border-radius: 12px;
+  border: 1.5px solid transparent;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s,
+    transform 0.15s;
+}
+
+.btn-primary {
+  background: var(--color-accent);
+  color: var(--color-navy);
+}
+
+.btn-primary:hover {
+  background: var(--color-cream);
+}
+
+.btn-outline {
+  border-color: rgba(18, 39, 58, 0.5);
+  color: var(--color-navy);
+}
+
+.btn-outline:hover {
+  border-color: var(--color-navy);
+  background: var(--color-navy);
+  color: var(--color-cream);
+}
+
+.section.dark .btn-outline {
+  border-color: rgba(237, 236, 234, 0.5);
+  color: var(--color-cream);
+}
+
+.section.dark .btn-outline:hover {
+  background: var(--color-cream);
+  color: var(--color-navy);
+  border-color: var(--color-cream);
+}
+
+.btn-whatsapp {
+  background: var(--color-whatsapp);
+  color: #fff;
+}
+
+.btn-whatsapp:hover {
+  transform: translateY(-2px);
+}
+
+.loadstate,
+.errstate,
+.empty {
+  padding: 48px;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 14px;
+}
+
+.errstate {
+  color: #b3413a;
+}
+
+@media (max-width: 880px) {
+  .section {
+    padding: 48px 0;
+  }
+}
+

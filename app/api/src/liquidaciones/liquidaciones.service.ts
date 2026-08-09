@@ -1,12 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { DestinoGasto, Moneda, OrigenMovimientoCaja, TipoMovimientoCaja } from '@prisma/client';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { DestinoGasto, Moneda, OrigenMovimientoCaja, Prisma, TipoMovimientoCaja } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { FacturasService } from '../facturacion/facturas.service';
 import { GastosService } from '../gastos/gastos.service';
 import { ConfiguracionService } from '../configuracion/configuracion.service';
 import { CajaService } from '../caja/caja.service';
 import { mesStringAFecha } from '../common/fecha.util';
-import { resolverPorcentajeHonorarios, resolverPorcentajeHonorariosAdministracion } from '../common/honorarios.util';
+import { resolverPorcentajeHonorariosAdministracion } from '../common/honorarios.util';
 import { LiquidacionDetalleInputDto } from './dto/liquidacion-detalle-input.dto';
 
 @Injectable()
@@ -72,22 +72,20 @@ export class LiquidacionesService {
         }));
         const gastosAbsorbidos = gastosDetalle.reduce((acc, g) => acc + g.monto, 0);
 
-        const porcentajeHonorarios = resolverPorcentajeHonorarios(
-          propiedad,
-          Number(configuracion.honorariosDefaultPorcentaje),
-        );
-        // Los honorarios se calculan sobre el alquiler puro, no sobre
-        // `cobradoTotal` (que además incluye expensas, servicios trasladados
-        // y deuda arrastrada — montos que la inmobiliaria solo intermedia,
-        // no factura como propios).
-        const baseAlquiler = Number(items.find((it) => it.descripcion === 'Alquiler')?.monto ?? 0);
-        const honorarios = Math.round(baseAlquiler * (porcentajeHonorarios / 100) * 100) / 100;
-
+        // Los honorarios profesionales (comisión por venta) solo existen
+        // para modalidad VENTA — un alquiler nunca los cobra, así que acá no
+        // se calculan (quedan en 0). Lo único que la inmobiliaria retiene de
+        // un alquiler es, si está habilitado, el honorario de administración.
         const porcentajeHonorariosAdministracion = resolverPorcentajeHonorariosAdministracion(propiedad);
+        // Los honorarios de administración se calculan sobre el alquiler
+        // puro, no sobre `cobradoTotal` (que además incluye expensas,
+        // servicios trasladados y deuda arrastrada — montos que la
+        // inmobiliaria solo intermedia, no factura como propios).
+        const baseAlquiler = Number(items.find((it) => it.descripcion === 'Alquiler')?.monto ?? 0);
         const honorariosAdministracion =
           Math.round(baseAlquiler * (porcentajeHonorariosAdministracion / 100) * 100) / 100;
 
-        const neto = cobradoTotal - gastosAbsorbidos - honorarios - honorariosAdministracion;
+        const neto = cobradoTotal - gastosAbsorbidos - honorariosAdministracion;
 
         return {
           propiedadId: propiedad.id,
@@ -95,12 +93,12 @@ export class LiquidacionesService {
           cobradoTotal,
           gastosAbsorbidos,
           gastosDetalle,
-          honorarios,
+          honorarios: 0,
           honorariosAdministracion,
           // No se persisten — es para que el frontend pueda recalcular en
           // vivo los honorarios si el usuario edita el monto de Alquiler
           // antes de emitir, con la misma fórmula que usa el backend.
-          porcentajeHonorarios,
+          porcentajeHonorarios: 0,
           porcentajeHonorariosAdministracion,
           neto,
           items,
@@ -129,8 +127,16 @@ export class LiquidacionesService {
     const detalle = await this.calcularDetalle(propietarioId, mesStr, overridePorPropiedad);
 
     const netoAGirar = detalle.reduce((acc, d) => acc + d.neto, 0);
+    // Lo único que la inmobiliaria retiene de una liquidación es el
+    // honorario de administración — el neto girado al propietario es plata
+    // suya, no tiene sentido registrarlo como un movimiento propio de Caja
+    // (ver `netoAGirar` arriba, que sigue quedando guardado en la
+    // liquidación para el comprobante y los reportes, solo que ya no genera
+    // egreso).
+    const totalHonorariosAdministracion = detalle.reduce((acc, d) => acc + d.honorariosAdministracion, 0);
 
-    return this.prisma.$transaction(async (tx) => {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
       const numero = await this.configuracionService.siguienteNumeroLiquidacion(tx);
 
       // Reemplaza la liquidación anterior del mismo mes si existía.
@@ -144,18 +150,19 @@ export class LiquidacionesService {
         await tx.liquidacion.delete({ where: { id: anterior.id } });
       }
 
-      // Egreso automático en Caja (§3.4) — solo si hay algo positivo para
-      // girar; si el neto da negativo o cero no se genera movimiento.
+      // Ingreso automático en Caja (§3.4) — solo por el honorario de
+      // administración retenido; si no hay honorarios de administración
+      // habilitados, no se genera movimiento.
       let movimientoCajaId: string | undefined;
-      if (netoAGirar > 0) {
+      if (totalHonorariosAdministracion > 0) {
         const movimiento = await this.cajaService.registrarMovimiento(
           {
             fecha: new Date(),
-            tipo: TipoMovimientoCaja.EGRESO,
+            tipo: TipoMovimientoCaja.INGRESO,
             moneda: Moneda.ARS,
-            monto: netoAGirar,
-            concepto: `Liquidación a propietario — ${propietario.nombre} (${mesStr})`,
-            categoria: 'Liquidación',
+            monto: totalHonorariosAdministracion,
+            concepto: `Honorarios de administración — ${propietario.nombre} (${mesStr})`,
+            categoria: 'Honorarios de administración',
             origen: OrigenMovimientoCaja.LIQUIDACION_PROPIETARIO,
           },
           tx,
@@ -210,6 +217,18 @@ export class LiquidacionesService {
 
       return liquidacion;
     });
+    } catch (error) {
+      // Dos personas generando la misma liquidación (mismo propietario+mes)
+      // casi al mismo tiempo pueden chocar contra el índice único — sin
+      // este catch, quien pierde la carrera se lleva un 500 genérico en vez
+      // de un mensaje claro de qué pasó.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException(
+          'Ya se generó esta liquidación desde otra sesión — recargá y volvé a intentar.',
+        );
+      }
+      throw error;
+    }
   }
 
   obtenerDelMes(propietarioId: string, mesStr: string) {
@@ -224,6 +243,21 @@ export class LiquidacionesService {
           },
         },
       },
+    });
+  }
+
+  // Por si se emite una liquidación por error (propietario o mes
+  // equivocado) — borra la liquidación (el `detalle`/`items`/`gastos` caen
+  // en cascada, schema.prisma) junto con el ingreso que generó en Caja, si
+  // tenía. No toca los cobros/gastos reales que se usaron para calcularla:
+  // esos siguen existiendo y se puede volver a liquidar el mes de nuevo.
+  async eliminar(id: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const liquidacion = await tx.liquidacion.findUniqueOrThrow({ where: { id } });
+      if (liquidacion.movimientoCajaId) {
+        await tx.movimientoCaja.delete({ where: { id: liquidacion.movimientoCajaId } });
+      }
+      return tx.liquidacion.delete({ where: { id } });
     });
   }
 }

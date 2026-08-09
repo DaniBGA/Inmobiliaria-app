@@ -30,14 +30,23 @@ model Usuario {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
+  integranteEquipo IntegranteEquipo?
+  eventosAgenda    EventoAgenda[]
+
   @@map("usuarios")
 }
 
 // "Equipo — designados para mostrar" (§2.10): lista de integrantes que
 // alimenta el desplegable "Designado para mostrar" de Propiedades y Clientes.
+// `usuarioId` es opcional: un integrante puede existir solo como nombre en
+// el roster, o además tener login propio (rol EQUIPO) para entrar al panel
+// — ver IntegrantesEquipoService.update().
 model IntegranteEquipo {
   id     String @id @default(uuid())
   nombre String @unique
+
+  usuarioId String?  @unique
+  usuario   Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
 
   propiedades Propiedad[]
   clientes    Cliente[]
@@ -77,6 +86,11 @@ model Configuracion {
   diasAnticipacionVencimiento Int     @default(30)
   saldoInicialCaja            Decimal @default(0) @db.Decimal(14, 2)
 
+  // Cuántos días después de vendida/alquilada una propiedad sigue
+  // apareciendo en la landing pública — 0 = desaparece apenas se vende o
+  // alquila (comportamiento de siempre). Ver PublicPropiedadesService.
+  diasMostrarDespuesVentaAlquiler Int @default(0)
+
   // Contacto público (landing page) — deliberadamente separado de los
   // datos fiscales de arriba: el WhatsApp/email que se muestra en la web
   // puede no ser el mismo que encabeza los comprobantes.
@@ -90,6 +104,11 @@ model Configuracion {
   // Foto de Facundo/oficina para la sección "Nosotros" de la landing —
   // vacío = se muestra el placeholder "Foto próximamente" (ver Nosotros.tsx).
   publicoFotoNosotrosUrl String @default("")
+
+  // Plantilla del mensaje que arma el botón "Enviar por WhatsApp" al emitir
+  // una factura (ver FacturaModal::enviarPorWhatsapp) — admite los
+  // placeholders {nombre} {numero} {propiedad} {mes}, reemplazados al vuelo.
+  facturaWhatsappMensaje String @default("Hola {nombre}, te comparto la Factura N° {numero} de {propiedad} correspondiente a {mes}. Te dejo el PDF descargado — adjuntalo acá mismo en el chat.")
 
   updatedAt DateTime @updatedAt
 
@@ -122,6 +141,7 @@ enum TipoPropiedad {
 enum TipoHonorarios {
   LIBRE
   TRES_POR_CIENTO
+  CUATRO_POR_CIENTO
   SEIS_POR_CIENTO
   OTRO
 }
@@ -274,13 +294,24 @@ model Propiedad {
 
 // Ficha del inquilino (§2.2) — 1:1 con la propiedad que alquila actualmente.
 model Inquilino {
-  id       String  @id @default(uuid())
-  nombre   String
+  id     String @id @default(uuid())
+  // Nº correlativo, autoincremental y de solo lectura — para identificar
+  // rápido "qué inquilino es" al lado del número de factura manual (§ emisión
+  // de facturas), sin tener que andar mostrando el UUID interno.
+  numero Int    @unique @default(autoincrement())
+  nombre String
   telefono String?
   email    String?
 
   propiedadId String    @unique
   propiedad   Propiedad @relation(fields: [propiedadId], references: [id], onDelete: Cascade)
+
+  // Tildado desde "Se encuentra al día" al cargar un inquilino que ya
+  // alquilaba desde antes de entrar al sistema (pagaba por fuera): anula el
+  // cómputo de deuda/mora para los meses anteriores a este, y la obligación
+  // arranca recién en ese mes (ver CobrosService). `null` = comportamiento
+  // de siempre (deuda calculada desde el inicio del contrato).
+  alDiaDesde DateTime?
 
   createdAt DateTime @default(now())
 
@@ -873,12 +904,19 @@ model EventoAgenda {
   propiedadId String?
   propiedad   Propiedad? @relation(fields: [propiedadId], references: [id], onDelete: SetNull)
 
+  // Dueño del evento — null = global/sin dueño (todo lo existente hoy, y lo
+  // que un ADMIN cree sin asignarlo a nadie). Un usuario con rol EQUIPO solo
+  // ve/edita los eventos donde usuarioId sea el suyo (ver agenda.service.ts).
+  usuarioId String?
+  usuario   Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([fecha])
   @@index([clienteId])
   @@index([propiedadId])
+  @@index([usuarioId])
   @@map("eventos_agenda")
 }
 

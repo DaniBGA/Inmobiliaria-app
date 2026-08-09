@@ -9,12 +9,20 @@ import { mesStringAFecha } from '../common/fecha.util';
 export interface CrearGastoDesdeIncidenciaInput {
   incidenciaId: string;
   propiedadId: string;
+  propiedadNombre: string;
   mes: Date;
   descripcion: string;
   monto: number;
   fecha: Date;
   categoria: string;
   destino: DestinoGasto;
+  // Cuando la incidencia no tiene proveedor asignado, nunca va a existir un
+  // "pago a proveedor" que genere el egreso más adelante — si además la
+  // paga la inmobiliaria (no el propietario ni el inquilino), la plata salió
+  // igual, así que este gasto tiene que generar su propio egreso en Caja
+  // ahora mismo (§ pedido: incidencias sin proveedor pagadas por la
+  // inmobiliaria deben verse en Caja).
+  generarEgresoCaja?: boolean;
 }
 
 @Injectable()
@@ -84,12 +92,32 @@ export class GastosService {
   }
 
   // §3.3: gasto generado automáticamente al marcar RESUELTA una incidencia
-  // con costo. NO genera egreso propio en Caja — la única salida de caja de
-  // ese trabajo es el pago al proveedor (evita duplicar el egreso).
+  // con costo. Por defecto NO genera egreso propio en Caja — cuando hay
+  // proveedor asignado, la única salida de caja de ese trabajo es el pago al
+  // proveedor (evita duplicar el egreso). Cuando no hay proveedor y la paga
+  // la inmobiliaria (`generarEgresoCaja`), no hay ningún otro paso que vaya
+  // a registrar esa salida de plata, así que se genera acá.
   async crearDesdeIncidencia(
     input: CrearGastoDesdeIncidenciaInput,
     tx: Prisma.TransactionClient | PrismaService = this.prisma,
   ) {
+    let movimientoCajaId: string | undefined;
+    if (input.generarEgresoCaja) {
+      const movimiento = await this.cajaService.registrarMovimiento(
+        {
+          fecha: input.fecha,
+          tipo: TipoMovimientoCaja.EGRESO,
+          moneda: Moneda.ARS,
+          monto: input.monto,
+          concepto: `Gasto — ${input.propiedadNombre} — ${input.descripcion}`,
+          categoria: input.categoria,
+          origen: OrigenMovimientoCaja.GASTO_PROPIEDAD,
+        },
+        tx,
+      );
+      movimientoCajaId = movimiento.id;
+    }
+
     return tx.gasto.create({
       data: {
         propiedadId: input.propiedadId,
@@ -100,6 +128,7 @@ export class GastosService {
         categoria: input.categoria,
         destino: input.destino,
         incidenciaId: input.incidenciaId,
+        movimientoCajaId,
       },
     });
   }

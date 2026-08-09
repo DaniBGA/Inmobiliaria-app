@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError, BASE_URL } from '../api/client';
 import { PageHeader } from '../components/PageHeader';
+import { Modal } from '../components/Modal';
 import { formatMoney, formatDate, mesActualStr, sumarMesesStr, mesLabel } from '../lib/format';
 import { descargarCsv } from '../lib/csv';
 
@@ -22,18 +23,21 @@ interface Configuracion {
   publicoDireccion: string;
   publicoMatricula: string;
   publicoFotoNosotrosUrl: string;
+  facturaWhatsappMensaje: string;
   proximoNumeroFactura: number;
   proximoNumeroRecibo: number;
   proximoNumeroLiquidacion: number;
   diaVencimientoAlquiler: number;
   diasAnticipacionAumento: number;
   diasAnticipacionVencimiento: number;
+  diasMostrarDespuesVentaAlquiler: number;
   saldoInicialCaja: string | number;
 }
 
 interface IntegranteEquipo {
   id: string;
   nombre: string;
+  usuario: { id: string; email: string; activo: boolean } | null;
 }
 
 export function ConfiguracionPage() {
@@ -73,6 +77,7 @@ function ConfiguracionForm({ data, integrantes }: { data: Configuracion; integra
   const [publicoInstagramUrl, setPublicoInstagramUrl] = useState(data.publicoInstagramUrl);
   const [publicoDireccion, setPublicoDireccion] = useState(data.publicoDireccion);
   const [publicoMatricula, setPublicoMatricula] = useState(data.publicoMatricula);
+  const [facturaWhatsappMensaje, setFacturaWhatsappMensaje] = useState(data.facturaWhatsappMensaje);
   const [ipc, setIpc] = useState(String(data.ipc));
   const [icl, setIcl] = useState(String(data.icl));
   const [dolarReferencia, setDolarReferencia] = useState(String(data.dolarReferencia));
@@ -81,8 +86,12 @@ function ConfiguracionForm({ data, integrantes }: { data: Configuracion; integra
   const [diaVencimientoAlquiler, setDiaVencimientoAlquiler] = useState(String(data.diaVencimientoAlquiler));
   const [diasAnticipacionAumento, setDiasAnticipacionAumento] = useState(String(data.diasAnticipacionAumento));
   const [diasAnticipacionVencimiento, setDiasAnticipacionVencimiento] = useState(String(data.diasAnticipacionVencimiento));
+  const [diasMostrarDespuesVentaAlquiler, setDiasMostrarDespuesVentaAlquiler] = useState(
+    String(data.diasMostrarDespuesVentaAlquiler),
+  );
   const [saldoInicialCaja, setSaldoInicialCaja] = useState(String(data.saldoInicialCaja));
   const [nuevoIntegrante, setNuevoIntegrante] = useState('');
+  const [modalIntegrante, setModalIntegrante] = useState<IntegranteEquipo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [guardadoOk, setGuardadoOk] = useState(false);
   const [cotizacionInfo, setCotizacionInfo] = useState<string | null>(null);
@@ -90,7 +99,7 @@ function ConfiguracionForm({ data, integrantes }: { data: Configuracion; integra
   const actualizarCotizacion = useMutation({
     mutationFn: () => api.get<{ compra: number; venta: number; fechaActualizacion: string }>('/configuracion/dolar'),
     onSuccess: (r) => {
-      setDolarReferencia(String(Math.round(r.venta)));
+      setDolarReferencia(String(Math.round(r.venta * 100) / 100));
       setCotizacionInfo(`Dólar oficial (venta): ${formatMoney(r.venta)} · actualizado ${new Date(r.fechaActualizacion).toLocaleString('es-AR')}`);
       setError(null);
     },
@@ -118,6 +127,7 @@ function ConfiguracionForm({ data, integrantes }: { data: Configuracion; integra
     setPublicoInstagramUrl(data.publicoInstagramUrl);
     setPublicoDireccion(data.publicoDireccion);
     setPublicoMatricula(data.publicoMatricula);
+    setFacturaWhatsappMensaje(data.facturaWhatsappMensaje);
     setIpc(String(data.ipc));
     setIcl(String(data.icl));
     setDolarReferencia(String(data.dolarReferencia));
@@ -126,6 +136,7 @@ function ConfiguracionForm({ data, integrantes }: { data: Configuracion; integra
     setDiaVencimientoAlquiler(String(data.diaVencimientoAlquiler));
     setDiasAnticipacionAumento(String(data.diasAnticipacionAumento));
     setDiasAnticipacionVencimiento(String(data.diasAnticipacionVencimiento));
+    setDiasMostrarDespuesVentaAlquiler(String(data.diasMostrarDespuesVentaAlquiler));
     setSaldoInicialCaja(String(data.saldoInicialCaja));
     setError(null);
   }
@@ -143,6 +154,7 @@ function ConfiguracionForm({ data, integrantes }: { data: Configuracion; integra
         publicoInstagramUrl,
         publicoDireccion,
         publicoMatricula,
+        facturaWhatsappMensaje,
         ipc: Number(ipc),
         icl: Number(icl),
         dolarReferencia: Number(dolarReferencia),
@@ -151,6 +163,7 @@ function ConfiguracionForm({ data, integrantes }: { data: Configuracion; integra
         diaVencimientoAlquiler: Math.round(Number(diaVencimientoAlquiler)),
         diasAnticipacionAumento: Math.round(Number(diasAnticipacionAumento)),
         diasAnticipacionVencimiento: Math.round(Number(diasAnticipacionVencimiento)),
+        diasMostrarDespuesVentaAlquiler: Math.round(Number(diasMostrarDespuesVentaAlquiler)),
         saldoInicialCaja: Number(saldoInicialCaja),
       }),
     onSuccess: () => {
@@ -221,14 +234,30 @@ function ConfiguracionForm({ data, integrantes }: { data: Configuracion; integra
             {integrantes.length ? (
               integrantes.map((i) => (
                 <div className="eqrow" key={i.id}>
-                  <span>▪ {i.nombre}</span>
-                  <button
-                    className="del"
-                    title="Quitar del equipo"
-                    onClick={() => quitarIntegrante.mutate(i.id)}
-                  >
-                    ✕
-                  </button>
+                  <span>
+                    ▪ {i.nombre}{' '}
+                    <span
+                      style={{
+                        fontSize: 11.5,
+                        fontWeight: 600,
+                        color: i.usuario ? (i.usuario.activo ? 'var(--green)' : 'var(--red)') : 'var(--muted)',
+                      }}
+                    >
+                      {i.usuario ? (i.usuario.activo ? '· acceso activo' : '· acceso revocado') : '· sin acceso'}
+                    </span>
+                  </span>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button className="del" title="Editar acceso" onClick={() => setModalIntegrante(i)}>
+                      ✎
+                    </button>
+                    <button
+                      className="del"
+                      title="Quitar del equipo"
+                      onClick={() => quitarIntegrante.mutate(i.id)}
+                    >
+                      ✕
+                    </button>
+                  </div>
                 </div>
               ))
             ) : (
@@ -290,6 +319,22 @@ function ConfiguracionForm({ data, integrantes }: { data: Configuracion; integra
             <div className="fg">
               <label>Matrícula</label>
               <input value={publicoMatricula} onChange={(e) => setPublicoMatricula(e.target.value)} />
+            </div>
+            <div className="fg">
+              <label>Mostrar propiedades luego de venta/alquiler</label>
+              <div className="suffix">
+                <input
+                  type="number"
+                  min={0}
+                  value={diasMostrarDespuesVentaAlquiler}
+                  onChange={(e) => setDiasMostrarDespuesVentaAlquiler(e.target.value)}
+                />
+                <span>días</span>
+              </div>
+              <div className="hint" style={{ marginTop: 6 }}>
+                Cuántos días después de alquilarse o venderse una propiedad sigue apareciendo en la web pública. 0 =
+                desaparece apenas se alquila o se vende.
+              </div>
             </div>
             <div className="fg full">
               <label>Foto de "Nosotros"</label>
@@ -362,7 +407,7 @@ function ConfiguracionForm({ data, integrantes }: { data: Configuracion; integra
             <div className="fg full">
               <label>Dólar de referencia</label>
               <div className="suffix">
-                <input type="number" min={1} step="1" value={dolarReferencia} onChange={(e) => setDolarReferencia(e.target.value)} />
+                <input type="number" min={0} step="0.01" value={dolarReferencia} onChange={(e) => setDolarReferencia(e.target.value)} />
                 <span>$</span>
               </div>
             </div>
@@ -501,6 +546,25 @@ function ConfiguracionForm({ data, integrantes }: { data: Configuracion; integra
         </div>
 
         <div className="cfgcard">
+          <h3>MENSAJE DE WHATSAPP — FACTURAS</h3>
+          <div className="hint">
+            El texto que arma el botón "Enviar por WhatsApp" al emitir una factura. Podés usar los placeholders{' '}
+            <b>{'{nombre}'}</b>, <b>{'{numero}'}</b>, <b>{'{propiedad}'}</b> y <b>{'{mes}'}</b> — se reemplazan solos
+            por los datos de cada factura.
+          </div>
+          <div className="cfgfields">
+            <div className="fg full">
+              <label>Mensaje</label>
+              <textarea
+                rows={4}
+                value={facturaWhatsappMensaje}
+                onChange={(e) => setFacturaWhatsappMensaje(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="cfgcard">
           <h3>SALDO INICIAL DE CAJA</h3>
           <div className="hint">El dinero que había en caja antes de empezar a usar el sistema. Todos los movimientos se suman a partir de este número.</div>
           <div className="cfgfields">
@@ -530,7 +594,96 @@ function ConfiguracionForm({ data, integrantes }: { data: Configuracion; integra
           Guardar configuración
         </button>
       </div>
+
+      {modalIntegrante && (
+        <IntegranteAccesoModal integrante={modalIntegrante} onClose={() => setModalIntegrante(null)} />
+      )}
     </>
+  );
+}
+
+function IntegranteAccesoModal({ integrante, onClose }: { integrante: IntegranteEquipo; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [nombre, setNombre] = useState(integrante.nombre);
+  const [email, setEmail] = useState(integrante.usuario?.email ?? '');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const tieneAcceso = !!integrante.usuario;
+
+  const guardar = useMutation({
+    mutationFn: () =>
+      api.patch(`/integrantes-equipo/${integrante.id}`, {
+        nombre,
+        email: email.trim() || undefined,
+        password: password.trim() || undefined,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['integrantes-equipo'] });
+      onClose();
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo guardar.'),
+  });
+
+  const toggleAcceso = useMutation({
+    mutationFn: () => api.patch(`/integrantes-equipo/${integrante.id}/acceso-activo`, { activo: !integrante.usuario!.activo }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['integrantes-equipo'] });
+      onClose();
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo actualizar el acceso.'),
+  });
+
+  const puedeGuardar = !!nombre.trim() && (tieneAcceso || (!!email.trim() && !!password.trim()));
+
+  return (
+    <Modal open onClose={onClose} title={`Editar — ${integrante.nombre}`} width={440}>
+      {error && <div className="errstate" style={{ marginBottom: 14 }}>{error}</div>}
+      <div className="formgrid">
+        <div className="fg full">
+          <label>Nombre</label>
+          <input value={nombre} onChange={(e) => setNombre(e.target.value)} />
+        </div>
+        <div className="fg full">
+          <label>Email</label>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="para dar acceso al panel" />
+        </div>
+        <div className="fg full">
+          <label>Contraseña</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder={tieneAcceso ? 'Dejar en blanco para no cambiarla' : 'Mínimo 8 caracteres'}
+          />
+        </div>
+      </div>
+      <div className="cfgnote" style={{ marginTop: 4 }}>
+        <i>◈</i>
+        <span>
+          Con email y contraseña, {integrante.nombre} puede entrar al panel — solo ve "Ventas y Carteles" y "Agenda"
+          (con su propia agenda, separada de la del resto del equipo).
+        </span>
+      </div>
+      <div className="btnrow">
+        {tieneAcceso && (
+          <button
+            className="btn-ghost"
+            style={{ marginRight: 'auto', color: integrante.usuario!.activo ? 'var(--red)' : 'var(--green)' }}
+            disabled={toggleAcceso.isPending}
+            onClick={() => toggleAcceso.mutate()}
+          >
+            {integrante.usuario!.activo ? 'Revocar acceso' : 'Reactivar acceso'}
+          </button>
+        )}
+        <button className="btn-ghost" onClick={onClose}>
+          Cancelar
+        </button>
+        <button className="btn-dark" disabled={!puedeGuardar || guardar.isPending} onClick={() => guardar.mutate()}>
+          Guardar
+        </button>
+      </div>
+    </Modal>
   );
 }
 

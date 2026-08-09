@@ -87,14 +87,6 @@ function PropertyDetailModal({
     propiedad.modalidad === 'VENTA' ? formatPrecio(propiedad.precio, propiedad.moneda) : formatMoney(propiedad.montoAlquilerVigente);
   const mensaje = `Hola! Me interesa la propiedad "${propiedad.nombre}" (${propiedad.direccion}).`;
 
-  // Tipo/Modalidad ya están en el kicker de arriba, y Amb./Dorm./Baños/Sup.
-  // ya salen en la tira de `specsDe` — acá solo va lo que no se muestra en
-  // ningún otro lado todavía.
-  const rows = [
-    { k: 'Cochera', v: propiedad.cochera ? 'Sí' : 'No' },
-    propiedad.superficieCubierta != null ? { k: 'Superficie cubierta', v: `${propiedad.superficieCubierta} m²` } : null,
-  ].filter(Boolean) as { k: string; v: string }[];
-
   return (
     <div className="property-modal-overlay" onClick={onClose}>
       <div className="property-modal-card" onClick={(e) => e.stopPropagation()}>
@@ -149,7 +141,14 @@ function PropertyDetailModal({
         </div>
         <div className="property-modal-body">
           <div className="property-kicker">
-            {TIPO_LABEL[propiedad.tipo] ?? propiedad.tipo} · {propiedad.modalidad === 'VENTA' ? 'En venta' : 'Alquiler'}
+            {TIPO_LABEL[propiedad.tipo] ?? propiedad.tipo} ·{' '}
+            {propiedad.estadoPublico === 'VENDIDA'
+              ? 'Vendida'
+              : propiedad.estadoPublico === 'ALQUILADA'
+                ? 'Alquilada'
+                : propiedad.modalidad === 'VENTA'
+                  ? 'En venta'
+                  : 'Alquiler'}
           </div>
           <h3 className="property-title">{propiedad.direccion}</h3>
           {specsDe(propiedad).length > 0 && (
@@ -162,14 +161,6 @@ function PropertyDetailModal({
               ))}
             </div>
           )}
-          <div className="property-modal-rows">
-            {rows.map((r) => (
-              <div className="property-modal-row" key={r.k}>
-                <div className="property-modal-row-v">{r.v}</div>
-                <div className="property-modal-row-k">{r.k}</div>
-              </div>
-            ))}
-          </div>
           {propiedad.descripcion && <p className="property-modal-desc">{propiedad.descripcion}</p>}
           {whatsapp && (
             <a className="property-modal-cta" href={waLink(whatsapp, mensaje)} target="_blank" rel="noopener noreferrer">
@@ -220,9 +211,19 @@ export function PropertyCard({ propiedad }: { propiedad: PropiedadPublica }) {
     <article className="property-card">
       <div style={{ position: 'relative' }}>
         <PropertyPhotoCarousel propiedad={propiedad} indice={indice} setIndice={irAFoto} />
-        <span className="property-badge">
-          <span className={`property-badge-dot${propiedad.modalidad === 'VENTA' ? ' venta' : ''}`} />
-          {propiedad.modalidad === 'VENTA' ? 'En venta' : 'Alquiler'}
+        <span className={`property-badge${propiedad.estadoPublico !== 'DISPONIBLE' ? ' cerrada' : ''}`}>
+          <span
+            className={`property-badge-dot${propiedad.modalidad === 'VENTA' ? ' venta' : ''}${
+              propiedad.estadoPublico !== 'DISPONIBLE' ? ' cerrada' : ''
+            }`}
+          />
+          {propiedad.estadoPublico === 'VENDIDA'
+            ? 'Vendida'
+            : propiedad.estadoPublico === 'ALQUILADA'
+              ? 'Alquilada'
+              : propiedad.modalidad === 'VENTA'
+                ? 'En venta'
+                : 'Alquiler'}
         </span>
         <span className="property-price-pill">{precio}</span>
       </div>

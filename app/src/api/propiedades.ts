@@ -26,6 +26,7 @@ export interface PropiedadPublica {
   direccion: string;
   tipo: TipoPropiedad;
   modalidad: ModalidadPropiedad;
+  estadoPublico: 'DISPONIBLE' | 'ALQUILADA' | 'VENDIDA';
   montoAlquilerVigente: number | null;
   precio: number | null;
   moneda: 'ARS' | 'USD' | null;

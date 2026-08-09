@@ -1,0 +1,25 @@
+/* ===== Botón flotante de WhatsApp ===== */
+.whatsapp-float {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 190;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: var(--color-whatsapp);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-label);
+  font-weight: 700;
+  font-size: 15px;
+  box-shadow: 0 12px 30px rgba(37, 211, 102, 0.4);
+  transition: transform 0.15s;
+}
+
+.whatsapp-float:hover {
+  transform: scale(1.08);
+}
+

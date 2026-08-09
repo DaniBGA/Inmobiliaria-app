@@ -26,7 +26,6 @@ interface Movimiento {
   gasto?: { id: string } | null;
   liquidacion?: { id: string; propietarioId: string; mes: string } | null;
   pagoProveedor?: { id: string } | null;
-  ventaSena?: { id: string } | null;
   ventaComision?: { id: string } | null;
 }
 
@@ -73,7 +72,6 @@ const ORIGEN_LABEL: Record<string, string> = {
   GASTO_PROPIEDAD: 'Gasto de propiedad',
   LIQUIDACION_PROPIETARIO: 'Liquidación a propietario',
   PAGO_PROVEEDOR: 'Pago a proveedor',
-  SENA_VENTA: 'Seña de venta',
   COMISION_VENTA: 'Comisión de venta',
 };
 
@@ -810,8 +808,6 @@ function EditarMovimientoAutomaticoModal({
       return <EditarGastoModal movimiento={movimiento} onClose={onClose} onSaved={onSaved} />;
     case 'PAGO_PROVEEDOR':
       return <EditarPagoProveedorModal movimiento={movimiento} onClose={onClose} onSaved={onSaved} />;
-    case 'SENA_VENTA':
-      return <EditarSenaModal movimiento={movimiento} onClose={onClose} onSaved={onSaved} />;
     case 'COMISION_VENTA':
       return <EditarComisionModal movimiento={movimiento} onClose={onClose} onSaved={onSaved} />;
     case 'LIQUIDACION_PROPIETARIO':
@@ -1080,69 +1076,6 @@ function EditarPagoProveedorModal({
   );
 }
 
-function EditarSenaModal({
-  movimiento,
-  onClose,
-  onSaved,
-}: {
-  movimiento: Movimiento;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const ventaId = movimiento.ventaSena!.id;
-  const [monto, setMonto] = useState(String(movimiento.monto));
-  const [fecha, setFecha] = useState(movimiento.fecha.slice(0, 10));
-  const [error, setError] = useState<string | null>(null);
-
-  const guardar = useMutation({
-    mutationFn: () => api.post(`/ventas/${ventaId}/sena`, { monto: Number(monto), fecha }),
-    onSuccess: onSaved,
-    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo corregir la seña.'),
-  });
-  const quitar = useMutation({
-    mutationFn: () => api.delete(`/ventas/${ventaId}/sena`),
-    onSuccess: onSaved,
-    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo quitar la seña.'),
-  });
-
-  function confirmarQuitar() {
-    if (window.confirm('¿Quitar esta seña? La propiedad vuelve a "Publicada" y se borra el ingreso en Caja.')) {
-      quitar.mutate();
-    }
-  }
-
-  return (
-    <Modal open onClose={onClose} title="Editar Seña de Venta" width={380}>
-      {error && <div className="errstate" style={{ marginBottom: 14 }}>{error}</div>}
-      <div className="formgrid">
-        <div className="fg full">
-          <label>Concepto</label>
-          <div style={{ fontWeight: 600 }}>{movimiento.concepto}</div>
-        </div>
-        <div className="fg">
-          <label>Monto (USD)</label>
-          <input type="number" min={0.01} step="0.01" value={monto} onChange={(e) => setMonto(e.target.value)} />
-        </div>
-        <div className="fg">
-          <label>Fecha</label>
-          <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
-        </div>
-      </div>
-      <div className="btnrow">
-        <button className="btn-sm ghostred" style={{ marginRight: 'auto' }} disabled={quitar.isPending} onClick={confirmarQuitar}>
-          Quitar seña
-        </button>
-        <button className="btn-ghost" onClick={onClose}>
-          Cancelar
-        </button>
-        <button className="btn-dark" disabled={guardar.isPending || !monto} onClick={() => guardar.mutate()}>
-          Guardar
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
 function EditarComisionModal({
   movimiento,
   onClose,
@@ -1218,6 +1151,7 @@ function RegenerarLiquidacionModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const liquidacionId = movimiento.liquidacion!.id;
   const propietarioId = movimiento.liquidacion!.propietarioId;
   const mesStr = movimiento.liquidacion!.mes.slice(0, 7);
   const [error, setError] = useState<string | null>(null);
@@ -1227,6 +1161,22 @@ function RegenerarLiquidacionModal({
     onSuccess: onSaved,
     onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo recalcular la liquidación.'),
   });
+
+  const eliminar = useMutation({
+    mutationFn: () => api.delete(`/liquidaciones/${liquidacionId}`),
+    onSuccess: onSaved,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo eliminar la liquidación.'),
+  });
+
+  function confirmarEliminar() {
+    if (
+      window.confirm(
+        '¿Eliminar esta liquidación? Se borra el ingreso de honorarios de administración que generó en Caja. Los cobros y gastos que se usaron para calcularla no se tocan — podés volver a liquidar este mes de nuevo.',
+      )
+    ) {
+      eliminar.mutate();
+    }
+  }
 
   return (
     <Modal open onClose={onClose} title="Liquidación a Propietario" width={420}>
@@ -1238,12 +1188,15 @@ function RegenerarLiquidacionModal({
       <div className="cfgnote" style={{ marginTop: 14 }}>
         <i>△</i>
         <span>
-          Este egreso no es un monto suelto: se calcula automáticamente a partir de lo cobrado, los gastos absorbidos y
-          los honorarios de ese mes para este propietario. Si corregiste algún cobro o gasto, recalculá la liquidación
-          para que este movimiento en Caja quede al día — no se edita un número a mano acá.
+          Este ingreso no es un monto suelto: es el honorario de administración que retiene la inmobiliaria, calculado
+          automáticamente a partir de lo cobrado ese mes para este propietario. Si corregiste algún cobro o gasto,
+          recalculá la liquidación para que este movimiento en Caja quede al día — no se edita un número a mano acá.
         </span>
       </div>
       <div className="btnrow">
+        <button className="btn-sm ghostred" style={{ marginRight: 'auto' }} disabled={eliminar.isPending} onClick={confirmarEliminar}>
+          Eliminar liquidación
+        </button>
         <button className="btn-ghost" onClick={onClose}>
           Cerrar
         </button>

@@ -3,10 +3,13 @@ import { CajaService } from './caja.service';
 import { CreateMovimientoDto } from './dto/create-movimiento.dto';
 import { UpdateMovimientoDto } from './dto/update-movimiento.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { Moneda } from '@prisma/client';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { Moneda, RolUsuario } from '@prisma/client';
 
 @Controller('caja')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(RolUsuario.ADMIN)
 export class CajaController {
   constructor(private readonly cajaService: CajaService) {}
 

@@ -1,0 +1,406 @@
+/* ===== Property card ===== */
+.property-card {
+  background: var(--color-offwhite);
+  color: var(--color-navy);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 20px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  transition: transform 0.25s, box-shadow 0.25s;
+}
+
+.property-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 26px 50px rgba(18, 39, 58, 0.18);
+}
+
+.property-photo {
+  position: relative;
+  aspect-ratio: 4 / 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-navy);
+}
+
+.property-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.property-photo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent, rgba(18, 39, 58, 0.32));
+  pointer-events: none;
+}
+
+.property-photo-caption {
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: rgba(237, 236, 234, 0.75);
+}
+
+.property-photo-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(237, 236, 234, 0.86);
+  color: var(--color-navy);
+  font-size: 18px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  z-index: 3;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.property-photo:hover .property-photo-nav {
+  opacity: 1;
+}
+
+.property-photo-nav:hover {
+  background: #fff;
+}
+
+.property-photo-nav.prev {
+  left: 10px;
+}
+
+.property-photo-nav.next {
+  right: 10px;
+}
+
+.property-photo-dots {
+  position: absolute;
+  bottom: 12px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  z-index: 3;
+}
+
+.property-photo-dots button {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  transition: all 0.25s;
+}
+
+.property-photo-dots button.active {
+  width: 16px;
+  background: #fff;
+}
+
+.property-badge {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: var(--color-navy);
+  background: var(--color-cream);
+  padding: 7px 13px;
+  border-radius: 100px;
+}
+
+.property-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+}
+
+.property-badge-dot.venta {
+  background: #5b9c7a;
+}
+
+.property-badge.cerrada {
+  color: #fff;
+  background: #8a3b3b;
+}
+
+.property-badge-dot.cerrada {
+  background: #fff;
+}
+
+.property-price-pill {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 14px;
+  color: #fff;
+  background: rgba(18, 39, 58, 0.55);
+  backdrop-filter: blur(4px);
+  padding: 8px 14px;
+  border-radius: 100px;
+}
+
+.property-body {
+  padding: 22px 22px 24px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.property-kicker {
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--color-accent-dark);
+}
+
+.property-title {
+  font-size: 21px;
+  letter-spacing: -0.5px;
+  margin-top: 8px;
+  line-height: 1.2;
+}
+
+.property-specs {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 12px;
+  column-gap: 20px;
+  padding: 18px 0;
+  margin-top: 18px;
+  border-top: 1px solid var(--color-border-soft);
+}
+
+.property-spec-v {
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 17px;
+}
+
+.property-spec-k {
+  font-family: var(--font-label);
+  font-weight: 500;
+  font-size: 10.5px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--color-text-muted2);
+  margin-top: 2px;
+}
+
+.property-actions {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.property-detail-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: transparent;
+  border: 1px solid var(--color-border-2);
+  color: var(--color-navy);
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 12.5px;
+  padding: 13px;
+  border-radius: 12px;
+  transition: border-color 0.15s;
+}
+
+.property-detail-btn:hover {
+  border-color: var(--color-navy);
+}
+
+.property-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--color-input-bg);
+  color: var(--color-navy);
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 13.5px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.property-cta:hover {
+  background: var(--color-navy);
+  color: var(--color-cream);
+}
+
+/* ===== Modal de detalle de propiedad ===== */
+.property-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(18, 39, 58, 0.5);
+  backdrop-filter: blur(9px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fpModalIn 0.26s ease;
+}
+
+.property-modal-card {
+  width: 100%;
+  max-width: 560px;
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--color-offwhite);
+  color: var(--color-navy);
+  border-radius: 24px;
+  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.5);
+  animation: fpCardIn 0.32s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.property-modal-photo {
+  position: relative;
+  /* Altura acotada (no un 4:5 completo — eso dejaba la foto ocupando casi
+     toda la pantalla y el resto de la ficha abajo del todo, escondido tras
+     mucho scroll). `object-fit: contain` de abajo ya garantiza que la foto
+     se vea entera sin recortarse, sea cual sea su relación de aspecto —
+     esta altura es solo el tamaño de la caja, no un recorte. */
+  height: clamp(280px, 46vh, 420px);
+  background: var(--color-navy);
+  overflow: hidden;
+}
+
+/* Relleno de los márgenes que deja `object-fit: contain` cuando la foto no
+   tiene exactamente la relación de aspecto de la caja — antes quedaban
+   lisos en navy, ahora es la misma foto de fondo, agrandada y desenfocada
+   (mismo criterio que Spotify/Instagram para letterboxing). `scale(1.15)`
+   evita que se note el borde nítido del blur en las orillas. */
+.property-modal-photo-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  filter: blur(28px) brightness(0.65) saturate(1.1);
+  transform: scale(1.15);
+}
+
+.property-modal-photo-img {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  /* `contain`, no `cover`: acá se quiere la foto completa sin recortar
+     (a diferencia de la miniatura de la card, donde recortar a la grilla
+     es lo esperado) — pedido explícito del usuario. */
+  object-fit: contain;
+}
+
+.property-modal-photo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(18, 39, 58, 0.12), rgba(18, 39, 58, 0.5));
+}
+
+.property-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 3;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--color-navy);
+  font-size: 22px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.property-modal-price {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  z-index: 2;
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 16px;
+  color: #fff;
+  background: rgba(18, 39, 58, 0.55);
+  backdrop-filter: blur(4px);
+  padding: 9px 16px;
+  border-radius: 100px;
+}
+
+.property-modal-body {
+  padding: clamp(20px, 3vw, 28px);
+}
+
+.property-modal-body .property-title {
+  font-size: clamp(22px, 2.6vw, 27px);
+  margin-top: 6px;
+}
+
+.property-modal-body .property-specs {
+  border-bottom: 1px solid var(--color-border-soft);
+  padding: 15px 0;
+}
+
+.property-modal-desc {
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-muted2);
+  margin: 0 0 18px;
+  white-space: pre-line;
+}
+
+.property-modal-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: var(--color-accent);
+  color: var(--color-navy);
+  font-family: var(--font-label);
+  font-weight: 700;
+  font-size: 15px;
+  padding: 16px;
+  border-radius: 14px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.property-modal-cta:hover {
+  background: var(--color-navy);
+  color: var(--color-cream);
+}
+

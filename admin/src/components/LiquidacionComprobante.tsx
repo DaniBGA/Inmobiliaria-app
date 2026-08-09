@@ -94,13 +94,6 @@ export function LiquidacionComprobanteBody({
         ))}
         {L.detalle.length > 0 && (
           <>
-            <div className="liqline neg">
-              <span className="ld">
-                Honorarios profesionales
-                <small>según el % de cada propiedad</small>
-              </span>
-              <span className="lv">− {formatMoney(L.detalle.reduce((s, d) => s + Number(d.honorarios), 0))}</span>
-            </div>
             {L.detalle.some((d) => Number(d.honorariosAdministracion) > 0) && (
               <div className="liqline neg">
                 <span className="ld">

@@ -6,7 +6,6 @@ import { PropertyCard } from '../propiedades/PropertyCard';
 import { PropertyFilterChips, serializarTipo } from '../propiedades/PropertyFilterChips';
 import { useRevealOnScroll } from '../../hooks/useRevealOnScroll';
 
-const AUTOPLAY_MS = 4000;
 const GAP = 24;
 
 // Ancho de cada columna del track. En mobile (perPage 1) se deja un poco
@@ -55,14 +54,6 @@ export function PropiedadesCarousel() {
   useEffect(() => {
     setSlide(0);
   }, [filtro, perPage]);
-
-  useEffect(() => {
-    if (maxSlide === 0) return;
-    const id = setInterval(() => {
-      setSlide((s) => (s >= maxSlide ? 0 : s + 1));
-    }, AUTOPLAY_MS);
-    return () => clearInterval(id);
-  }, [maxSlide]);
 
   return (
     <section id="propiedades" className="section dark propiedades-section">

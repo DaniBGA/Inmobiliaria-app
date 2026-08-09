@@ -28,10 +28,25 @@ import { EmailModule } from './email/email.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    // Límite por defecto generoso (100 req/min/IP) para toda la API —
-    // el único endpoint con un límite más estricto es POST /public/contacto
-    // (@Throttle a nivel de método, la única escritura sin autenticación).
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    // Límite por defecto generoso (100 req/min/IP) para toda la API — los
+    // únicos endpoints con un límite más estricto son POST /auth/login y
+    // POST /public/contacto (@Throttle a nivel de método). El tracker suma
+    // el email del body (si lo hay) a la IP: así dos personas detrás de la
+    // misma red (ej. la oficina) no comparten el mismo cupo de intentos —
+    // cada cuenta/remitente tiene el suyo propio. No afecta al resto de la
+    // API (esas rutas no mandan "email" en el body, el tracker queda
+    // efectivamente igual a solo la IP).
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60_000,
+        limit: 100,
+        getTracker: (req: Record<string, unknown>) => {
+          const body = req.body as Record<string, unknown> | undefined;
+          const email = typeof body?.email === 'string' ? body.email.toLowerCase().trim() : '';
+          return `${req.ip}-${email}`;
+        },
+      },
+    ]),
     EmailModule,
     PrismaModule,
     AuthModule,
