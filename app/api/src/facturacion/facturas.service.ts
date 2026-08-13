@@ -52,6 +52,35 @@ export class FacturasService {
     ServicioFacturable.SISTEMA_BIODIGESTOR,
   ];
 
+  // Datos fijos de cuenta (ver comentario en schema.prisma) para los
+  // servicios que los tienen — se agregan a la descripción del ítem
+  // predeterminado para que queden reflejados en la factura sin tener que
+  // volver a tipearlos cada mes. Obras Sanitarias lleva usuario + N° de
+  // cuenta; Camuzzi y Retributivas de Servicios solo N° de cuenta.
+  private static datosCuentaSuffix(
+    servicio: ServicioFacturable,
+    propiedad: {
+      obrasSanitariasUsuario: string | null;
+      obrasSanitariasNumeroCuenta: string | null;
+      camuzziNumeroCuenta: string | null;
+      retributivasNumeroCuenta: string | null;
+    },
+  ): string {
+    if (servicio === ServicioFacturable.OBRAS_SANITARIAS) {
+      const partes: string[] = [];
+      if (propiedad.obrasSanitariasUsuario) partes.push(`Usuario ${propiedad.obrasSanitariasUsuario}`);
+      if (propiedad.obrasSanitariasNumeroCuenta) partes.push(`N° cuenta ${propiedad.obrasSanitariasNumeroCuenta}`);
+      return partes.length ? ` (${partes.join(' - ')})` : '';
+    }
+    if (servicio === ServicioFacturable.CAMUZZI && propiedad.camuzziNumeroCuenta) {
+      return ` (N° cuenta ${propiedad.camuzziNumeroCuenta})`;
+    }
+    if (servicio === ServicioFacturable.RETRIBUTIVAS && propiedad.retributivasNumeroCuenta) {
+      return ` (N° cuenta ${propiedad.retributivasNumeroCuenta})`;
+    }
+    return '';
+  }
+
   // §3.5: ítems predeterminados con los que se abre la factura (o la
   // liquidación, ver §3.4) — reusado también por Recibo cuando no hay
   // factura previa del período. Única implementación: nadie más arma este
@@ -65,6 +94,10 @@ export class FacturasService {
         punitorioFrecuencia: true,
         punitorioTipo: true,
         punitorioValor: true,
+        obrasSanitariasUsuario: true,
+        obrasSanitariasNumeroCuenta: true,
+        camuzziNumeroCuenta: true,
+        retributivasNumeroCuenta: true,
       },
     });
     const rentaVigenteRaw = await this.propiedadesService.rentaVigente(propiedadId, finDeMes(mes));
@@ -91,7 +124,8 @@ export class FacturasService {
     ];
     const serviciosOrdenados = FacturasService.SERVICIO_ORDEN.filter((s) => propiedad.serviciosHabilitados.includes(s));
     serviciosOrdenados.forEach((servicio, i) => {
-      const descripcion = FacturasService.SERVICIO_DESCRIPCION[servicio];
+      const descripcion =
+        FacturasService.SERVICIO_DESCRIPCION[servicio] + FacturasService.datosCuentaSuffix(servicio, propiedad);
       items.push({
         descripcion,
         monto: montoAnteriorPorDescripcion.get(descripcion) ?? 0,

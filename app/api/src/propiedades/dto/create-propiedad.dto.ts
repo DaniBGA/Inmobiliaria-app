@@ -136,6 +136,24 @@ export class CreatePropiedadDto {
   @IsEnum(ServicioFacturable, { each: true })
   serviciosHabilitados?: ServicioFacturable[];
 
+  // Datos fijos de cuenta de algunos servicios trasladables (ver comentario
+  // en schema.prisma) — se reflejan automáticamente en la factura.
+  @IsOptional()
+  @IsString()
+  obrasSanitariasUsuario?: string;
+
+  @IsOptional()
+  @IsString()
+  obrasSanitariasNumeroCuenta?: string;
+
+  @IsOptional()
+  @IsString()
+  camuzziNumeroCuenta?: string;
+
+  @IsOptional()
+  @IsString()
+  retributivasNumeroCuenta?: string;
+
   // Publicación en la landing (solo aplica a ALQUILER vacante — ver
   // PublicPropiedadesService). Default true en el schema.
   @IsOptional()

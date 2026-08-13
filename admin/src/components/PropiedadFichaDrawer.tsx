@@ -74,6 +74,10 @@ interface PropiedadFicha {
   descripcion: string | null;
   caracterEspecial: boolean;
   serviciosHabilitados: ServicioFacturable[];
+  obrasSanitariasUsuario: string | null;
+  obrasSanitariasNumeroCuenta: string | null;
+  camuzziNumeroCuenta: string | null;
+  retributivasNumeroCuenta: string | null;
   fotos: FotoPropiedadItem[];
   montoAlquilerVigente: string | number | null;
   alquilerPublicado: boolean;
@@ -166,6 +170,73 @@ const SERVICIOS_OPCIONES: { key: ServicioFacturable; label: string }[] = [
   { key: 'GAS_ENVASADO', label: 'Gas envasado' },
   { key: 'SISTEMA_BIODIGESTOR', label: 'Sistema biodigestor' },
 ];
+
+// Datos fijos de cuenta de algunos servicios, reflejados automáticamente en
+// la factura (ver comentario en schema.prisma) — solo se muestran cuando el
+// checkbox del servicio correspondiente está tildado.
+function ServiciosCuentaInputs({
+  servicios,
+  obrasSanitariasUsuario,
+  setObrasSanitariasUsuario,
+  obrasSanitariasNumeroCuenta,
+  setObrasSanitariasNumeroCuenta,
+  camuzziNumeroCuenta,
+  setCamuzziNumeroCuenta,
+  retributivasNumeroCuenta,
+  setRetributivasNumeroCuenta,
+}: {
+  servicios: ServicioFacturable[];
+  obrasSanitariasUsuario: string;
+  setObrasSanitariasUsuario: (v: string) => void;
+  obrasSanitariasNumeroCuenta: string;
+  setObrasSanitariasNumeroCuenta: (v: string) => void;
+  camuzziNumeroCuenta: string;
+  setCamuzziNumeroCuenta: (v: string) => void;
+  retributivasNumeroCuenta: string;
+  setRetributivasNumeroCuenta: (v: string) => void;
+}) {
+  const muestraAgua = servicios.includes('OBRAS_SANITARIAS');
+  const muestraGas = servicios.includes('CAMUZZI');
+  const muestraRetributivas = servicios.includes('RETRIBUTIVAS');
+  if (!muestraAgua && !muestraGas && !muestraRetributivas) return null;
+  return (
+    <div className="formgrid" style={{ marginBottom: 4 }}>
+      {muestraAgua && (
+        <>
+          <div className="fg" style={{ minWidth: 0 }}>
+            <label>Agua — Usuario</label>
+            <input value={obrasSanitariasUsuario} onChange={(e) => setObrasSanitariasUsuario(e.target.value)} placeholder="Opcional" />
+          </div>
+          <div className="fg" style={{ minWidth: 0 }}>
+            <label>Agua — N° de cuenta</label>
+            <input
+              value={obrasSanitariasNumeroCuenta}
+              onChange={(e) => setObrasSanitariasNumeroCuenta(e.target.value)}
+              placeholder="Opcional"
+            />
+          </div>
+        </>
+      )}
+      {muestraGas && (
+        <div className="fg" style={{ minWidth: 0 }}>
+          <label>Gas — N° de cuenta</label>
+          <input value={camuzziNumeroCuenta} onChange={(e) => setCamuzziNumeroCuenta(e.target.value)} placeholder="Opcional" />
+        </div>
+      )}
+      {muestraRetributivas && (
+        <div className="fg" style={{ minWidth: 0 }}>
+          <label>Retributivas — N° de cuenta</label>
+          <input
+            value={retributivasNumeroCuenta}
+            onChange={(e) => setRetributivasNumeroCuenta(e.target.value)}
+            placeholder="Opcional"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 const TIPO_LABEL: Record<string, string> = {
   CASA: 'Casa',
   DEPARTAMENTO: 'Departamento',
@@ -922,6 +993,10 @@ function EditarDatosGeneralesModal({
   const [superficieCubierta, setSuperficieCubierta] = useState(String(propiedad.superficieCubierta ?? ''));
   const [descripcion, setDescripcion] = useState(propiedad.descripcion ?? '');
   const [servicios, setServicios] = useState<ServicioFacturable[]>(propiedad.serviciosHabilitados ?? []);
+  const [obrasSanitariasUsuario, setObrasSanitariasUsuario] = useState(propiedad.obrasSanitariasUsuario ?? '');
+  const [obrasSanitariasNumeroCuenta, setObrasSanitariasNumeroCuenta] = useState(propiedad.obrasSanitariasNumeroCuenta ?? '');
+  const [camuzziNumeroCuenta, setCamuzziNumeroCuenta] = useState(propiedad.camuzziNumeroCuenta ?? '');
+  const [retributivasNumeroCuenta, setRetributivasNumeroCuenta] = useState(propiedad.retributivasNumeroCuenta ?? '');
   const [punitorioTipo, setPunitorioTipo] = useState<'' | 'MONTO_FIJO' | 'PORCENTAJE'>(propiedad.punitorioTipo ?? '');
   const [punitorioValor, setPunitorioValor] = useState(propiedad.punitorioValor != null ? String(propiedad.punitorioValor) : '');
   const [punitorioFrecuencia, setPunitorioFrecuencia] = useState<'DIA' | 'SEMANA' | 'MES' | 'UNICO'>(
@@ -948,6 +1023,20 @@ function EditarDatosGeneralesModal({
         descripcion: descripcion.trim() || undefined,
         caracterEspecial,
         serviciosHabilitados: propiedad.modalidad === 'ALQUILER' ? servicios : undefined,
+        obrasSanitariasUsuario:
+          propiedad.modalidad === 'ALQUILER' && servicios.includes('OBRAS_SANITARIAS')
+            ? obrasSanitariasUsuario.trim() || null
+            : undefined,
+        obrasSanitariasNumeroCuenta:
+          propiedad.modalidad === 'ALQUILER' && servicios.includes('OBRAS_SANITARIAS')
+            ? obrasSanitariasNumeroCuenta.trim() || null
+            : undefined,
+        camuzziNumeroCuenta:
+          propiedad.modalidad === 'ALQUILER' && servicios.includes('CAMUZZI') ? camuzziNumeroCuenta.trim() || null : undefined,
+        retributivasNumeroCuenta:
+          propiedad.modalidad === 'ALQUILER' && servicios.includes('RETRIBUTIVAS')
+            ? retributivasNumeroCuenta.trim() || null
+            : undefined,
         punitorioTipo: propiedad.modalidad === 'ALQUILER' ? punitorioTipo || null : undefined,
         punitorioValor: propiedad.modalidad === 'ALQUILER' && punitorioTipo && punitorioValor ? Number(punitorioValor) : null,
         punitorioFrecuencia: propiedad.modalidad === 'ALQUILER' && punitorioTipo ? punitorioFrecuencia : null,
@@ -1040,6 +1129,17 @@ function EditarDatosGeneralesModal({
               </div>
             ))}
           </div>
+          <ServiciosCuentaInputs
+            servicios={servicios}
+            obrasSanitariasUsuario={obrasSanitariasUsuario}
+            setObrasSanitariasUsuario={setObrasSanitariasUsuario}
+            obrasSanitariasNumeroCuenta={obrasSanitariasNumeroCuenta}
+            setObrasSanitariasNumeroCuenta={setObrasSanitariasNumeroCuenta}
+            camuzziNumeroCuenta={camuzziNumeroCuenta}
+            setCamuzziNumeroCuenta={setCamuzziNumeroCuenta}
+            retributivasNumeroCuenta={retributivasNumeroCuenta}
+            setRetributivasNumeroCuenta={setRetributivasNumeroCuenta}
+          />
 
           <div className="secttl">MORA POR ATRASO</div>
           <div className="formgrid" style={{ marginBottom: 4 }}>

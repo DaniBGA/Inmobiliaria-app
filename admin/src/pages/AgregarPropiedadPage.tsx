@@ -29,6 +29,73 @@ const SERVICIOS_OPCIONES: { key: ServicioFacturable; label: string }[] = [
   { key: 'SISTEMA_BIODIGESTOR', label: 'Sistema biodigestor' },
 ];
 
+// Datos fijos de cuenta de algunos servicios (§ "agregar propiedad" / "editar
+// datos"), reflejados automáticamente en la factura — ver comentario en
+// schema.prisma. Solo se muestran cuando el checkbox del servicio
+// correspondiente está tildado.
+function ServiciosCuentaInputs({
+  servicios,
+  obrasSanitariasUsuario,
+  setObrasSanitariasUsuario,
+  obrasSanitariasNumeroCuenta,
+  setObrasSanitariasNumeroCuenta,
+  camuzziNumeroCuenta,
+  setCamuzziNumeroCuenta,
+  retributivasNumeroCuenta,
+  setRetributivasNumeroCuenta,
+}: {
+  servicios: ServicioFacturable[];
+  obrasSanitariasUsuario: string;
+  setObrasSanitariasUsuario: (v: string) => void;
+  obrasSanitariasNumeroCuenta: string;
+  setObrasSanitariasNumeroCuenta: (v: string) => void;
+  camuzziNumeroCuenta: string;
+  setCamuzziNumeroCuenta: (v: string) => void;
+  retributivasNumeroCuenta: string;
+  setRetributivasNumeroCuenta: (v: string) => void;
+}) {
+  const muestraAgua = servicios.includes('OBRAS_SANITARIAS');
+  const muestraGas = servicios.includes('CAMUZZI');
+  const muestraRetributivas = servicios.includes('RETRIBUTIVAS');
+  if (!muestraAgua && !muestraGas && !muestraRetributivas) return null;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 18px', marginTop: 10 }}>
+      {muestraAgua && (
+        <>
+          <div className="fg" style={{ minWidth: 160 }}>
+            <label>Agua — Usuario</label>
+            <input value={obrasSanitariasUsuario} onChange={(e) => setObrasSanitariasUsuario(e.target.value)} placeholder="Opcional" />
+          </div>
+          <div className="fg" style={{ minWidth: 160 }}>
+            <label>Agua — N° de cuenta</label>
+            <input
+              value={obrasSanitariasNumeroCuenta}
+              onChange={(e) => setObrasSanitariasNumeroCuenta(e.target.value)}
+              placeholder="Opcional"
+            />
+          </div>
+        </>
+      )}
+      {muestraGas && (
+        <div className="fg" style={{ minWidth: 160 }}>
+          <label>Gas — N° de cuenta</label>
+          <input value={camuzziNumeroCuenta} onChange={(e) => setCamuzziNumeroCuenta(e.target.value)} placeholder="Opcional" />
+        </div>
+      )}
+      {muestraRetributivas && (
+        <div className="fg" style={{ minWidth: 160 }}>
+          <label>Retributivas — N° de cuenta</label>
+          <input
+            value={retributivasNumeroCuenta}
+            onChange={(e) => setRetributivasNumeroCuenta(e.target.value)}
+            placeholder="Opcional"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 const ORIGEN_LABEL: Record<OrigenCliente, string> = {
   INSTAGRAM: 'Instagram',
   PAGINA_WEB: 'Página web',
@@ -89,6 +156,10 @@ export function AgregarPropiedadPage() {
     'OBRAS_SANITARIAS',
     'RETRIBUTIVAS',
   ]);
+  const [obrasSanitariasUsuario, setObrasSanitariasUsuario] = useState('');
+  const [obrasSanitariasNumeroCuenta, setObrasSanitariasNumeroCuenta] = useState('');
+  const [camuzziNumeroCuenta, setCamuzziNumeroCuenta] = useState('');
+  const [retributivasNumeroCuenta, setRetributivasNumeroCuenta] = useState('');
 
   // Alquiler
   const [indice, setIndice] = useState<IndiceAjuste>('');
@@ -149,6 +220,10 @@ export function AgregarPropiedadPage() {
     setSuperficieCubierta('');
     setDescripcion('');
     setServicios(['EXPENSAS', 'USINA', 'CAMUZZI', 'OBRAS_SANITARIAS', 'RETRIBUTIVAS']);
+    setObrasSanitariasUsuario('');
+    setObrasSanitariasNumeroCuenta('');
+    setCamuzziNumeroCuenta('');
+    setRetributivasNumeroCuenta('');
     setIndice('');
     setFrecuenciaAumentoMeses('');
     setMontoAlquilerInicial('');
@@ -205,6 +280,12 @@ export function AgregarPropiedadPage() {
         // Los servicios (luz, gas, etc.) se cargan para cualquier tipo y
         // modalidad — antes solo se guardaban del lado de alquiler.
         serviciosHabilitados: servicios,
+        obrasSanitariasUsuario: servicios.includes('OBRAS_SANITARIAS') ? obrasSanitariasUsuario.trim() || undefined : undefined,
+        obrasSanitariasNumeroCuenta: servicios.includes('OBRAS_SANITARIAS')
+          ? obrasSanitariasNumeroCuenta.trim() || undefined
+          : undefined,
+        camuzziNumeroCuenta: servicios.includes('CAMUZZI') ? camuzziNumeroCuenta.trim() || undefined : undefined,
+        retributivasNumeroCuenta: servicios.includes('RETRIBUTIVAS') ? retributivasNumeroCuenta.trim() || undefined : undefined,
         indice: modalidad === 'ALQUILER' && indice ? indice : undefined,
         frecuenciaAumentoMeses: modalidad === 'ALQUILER' && frecuenciaAumentoMeses ? Number(frecuenciaAumentoMeses) : undefined,
         montoAlquilerInicial: modalidad === 'ALQUILER' && montoAlquilerInicial ? Number(montoAlquilerInicial) : undefined,
@@ -543,6 +624,17 @@ export function AgregarPropiedadPage() {
                       </label>
                     ))}
                   </div>
+                  <ServiciosCuentaInputs
+                    servicios={servicios}
+                    obrasSanitariasUsuario={obrasSanitariasUsuario}
+                    setObrasSanitariasUsuario={setObrasSanitariasUsuario}
+                    obrasSanitariasNumeroCuenta={obrasSanitariasNumeroCuenta}
+                    setObrasSanitariasNumeroCuenta={setObrasSanitariasNumeroCuenta}
+                    camuzziNumeroCuenta={camuzziNumeroCuenta}
+                    setCamuzziNumeroCuenta={setCamuzziNumeroCuenta}
+                    retributivasNumeroCuenta={retributivasNumeroCuenta}
+                    setRetributivasNumeroCuenta={setRetributivasNumeroCuenta}
+                  />
                 </div>
               </div>
               <div className="cfgnote">
@@ -586,6 +678,17 @@ export function AgregarPropiedadPage() {
                       </label>
                     ))}
                   </div>
+                  <ServiciosCuentaInputs
+                    servicios={servicios}
+                    obrasSanitariasUsuario={obrasSanitariasUsuario}
+                    setObrasSanitariasUsuario={setObrasSanitariasUsuario}
+                    obrasSanitariasNumeroCuenta={obrasSanitariasNumeroCuenta}
+                    setObrasSanitariasNumeroCuenta={setObrasSanitariasNumeroCuenta}
+                    camuzziNumeroCuenta={camuzziNumeroCuenta}
+                    setCamuzziNumeroCuenta={setCamuzziNumeroCuenta}
+                    retributivasNumeroCuenta={retributivasNumeroCuenta}
+                    setRetributivasNumeroCuenta={setRetributivasNumeroCuenta}
+                  />
                 </div>
               </div>
               <div className="cfgnote">

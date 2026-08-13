@@ -223,6 +223,16 @@ model Propiedad {
   // ALQUILER) ni "Deuda arrastrada" (siempre calculada, no es un servicio).
   serviciosHabilitados ServicioFacturable[] @default([EXPENSAS, USINA, CAMUZZI, OBRAS_SANITARIAS, RETRIBUTIVAS])
 
+  // Datos fijos de cuenta de algunos servicios trasladables — se cargan una
+  // sola vez en la propiedad (no en cada factura, a diferencia de
+  // `FacturaItem.numeroLiquidacion`) y se reflejan automáticamente en la
+  // descripción del ítem predeterminado cada vez que se emite una factura
+  // (ver FacturasService::itemsPredeterminados()).
+  obrasSanitariasUsuario      String?
+  obrasSanitariasNumeroCuenta String?
+  camuzziNumeroCuenta         String?
+  retributivasNumeroCuenta    String?
+
   // Control de publicación en la landing para ALQUILER — equivalente a
   // `Venta.publicada`, pero como campo propio acá porque el alquiler no
   // tiene una ficha satélite como la venta. Solo importa cuando la
