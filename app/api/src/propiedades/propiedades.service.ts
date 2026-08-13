@@ -157,7 +157,7 @@ export class PropiedadesService {
   async proximoAumento(propiedadId: string) {
     const propiedad = await this.prisma.propiedad.findUniqueOrThrow({
       where: { id: propiedadId },
-      select: { frecuenciaAumentoMeses: true, contratoInicio: true, inquilino: { select: { id: true } } },
+      select: { frecuenciaAumentoMeses: true, contratoInicio: true, contratoFin: true, inquilino: { select: { id: true } } },
     });
     // Vacante = sin contrato vigente — aunque queden `frecuenciaAumentoMeses`
     // o historial de una tenencia anterior, no corresponde mostrar ningún
@@ -177,7 +177,14 @@ export class PropiedadesService {
 
     const mesParcial = anclaFecha.getUTCDate() === 1 ? 0 : 1;
     const mesesAAgregar = propiedad.frecuenciaAumentoMeses + mesParcial;
-    return new Date(Date.UTC(anclaFecha.getUTCFullYear(), anclaFecha.getUTCMonth() + mesesAAgregar, 1));
+    const proximo = new Date(Date.UTC(anclaFecha.getUTCFullYear(), anclaFecha.getUTCMonth() + mesesAAgregar, 1));
+
+    // Si el contrato ya termina antes de que llegue ese aumento, no
+    // corresponde mostrarlo — el contrato se va a renovar o terminar antes
+    // de esa fecha, así que no hay "próximo aumento" real que anunciar.
+    if (propiedad.contratoFin && proximo.getTime() > propiedad.contratoFin.getTime()) return null;
+
+    return proximo;
   }
 
   async registrarAumento(propiedadId: string, dto: RegistrarAumentoDto) {

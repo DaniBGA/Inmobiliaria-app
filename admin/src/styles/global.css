@@ -660,9 +660,33 @@ textarea.avmsg:focus{outline:2px solid var(--indigo);border-color:transparent;ba
    hay generación de PDF todavía (pendiente de una fase posterior), así que
    "Imprimir" imprime el modal abierto y oculta el resto de la app. */
 @media print{
-  body *{visibility:hidden}
-  .modalcard,.modalcard *{visibility:visible}
-  .modalcard{position:fixed;inset:0;box-shadow:none;border:0;width:100%!important;max-width:100%!important;max-height:none!important;padding:26px 34px 34px}
+  /* `@page` reserva el margen de CADA hoja física (no solo la última) —
+     acá abajo, 100px para que el pie (`.comp-pie`, fixed, bottom:24px)
+     nunca quede tapado por contenido que sigue fluyendo. Reemplaza el
+     padding que antes tenía `.modalcard`: un `padding-bottom` en una caja
+     que se parte en varias hojas solo se aplica en la ÚLTIMA (comportamiento
+     estándar de fragmentación CSS), así que en la hoja 1 de un comprobante
+     largo no protegía nada — el margen de página sí se repite siempre. */
+  @page{size:A4;margin:26px 34px 100px}
+
+  /* El modal se porta a <body> (ver Modal.tsx) — acá se oculta el resto de
+     la app entero (#root) y el modal queda en flujo NORMAL (no fixed), que
+     es lo que le permite al navegador partirlo en varias hojas de verdad.
+     Antes `.modalcard` era `position:fixed;inset:0` para "escapar" del
+     layout de la página que lo abría — pero un elemento fixed nunca se
+     fragmenta en varias hojas al imprimir (limitación real del motor de
+     impresión, no algo que se pueda ajustar con CSS): un comprobante largo
+     se cortaba entero en la primera hoja, sin generar una segunda, y lo
+     que no entraba se perdía. */
+  /* `html,body{height:100%}` (regla base, para que el layout de pantalla
+     use el alto del viewport) confunde la paginación real: con altura fija
+     al 100%, el documento nunca "crece" para un comprobante de varias
+     hojas, aunque el contenido desborde visualmente. `auto` deja que crezca
+     con el contenido real. */
+  html,body{height:auto}
+  #root{display:none}
+  .modal{position:static;display:block;padding:0;background:none}
+  .modalcard{position:static;box-shadow:none;border:0;width:100%!important;max-width:100%!important;max-height:none!important;padding:0;margin:0}
   .overlay{display:none}
   /* Los botones de acción (Imprimir/Cerrar/Cancelar) no son parte del
      comprobante: en el papel solo debe quedar el detalle facturado. */
@@ -677,27 +701,37 @@ textarea.avmsg:focus{outline:2px solid var(--indigo);border-color:transparent;ba
      de @media print se reabre, y cada clase de membrete pisa el `display`
      genérico con el que le corresponde (bloque, o flex para las filas). */
   .printonly{display:block}
-  .comp-membrete{display:flex;align-items:flex-end;gap:18px;border-bottom:2px solid var(--ink);padding-bottom:10px;margin-bottom:18px}
+  /* Colores tomados directo del membrete oficial (PDF de liquidación) —
+     el azul marino de la marca ("Facundo París", pie, matrícula, líneas)
+     no es ninguno de los grises/tintas que ya usa el resto del panel, así
+     que va aparte en vez de reusar `--ink`/`--muted`. */
+  .comp-membrete{display:flex;align-items:flex-end;gap:18px;border-bottom:1.5px solid #1C4066;padding-bottom:10px;margin-bottom:18px}
   .comp-logo{height:52px;width:auto}
-  .comp-datos{font-size:10.5px;line-height:1.7}
-  .comp-direccion{color:var(--ink);font-weight:700}
-  .comp-contacto{color:var(--orange)}
+  .comp-datos{font-size:10.5px;line-height:1.7;color:#767676}
+  .comp-direccion{color:#767676;font-weight:400}
+  .comp-contacto{color:#767676}
 
   /* Marca de agua (§2.10): el isotipo solo, bien grande y casi invisible,
      detrás del contenido — nunca a suficiente opacidad como para competir
      con el texto facturado. */
-  .comp-marcaagua{position:fixed;left:-140px;top:50%;transform:translateY(-50%);width:600px;opacity:.05;z-index:0}
+  .comp-marcaagua{position:fixed;left:-140px;top:50%;transform:translateY(-50%);width:600px;opacity:.045;z-index:0}
   .comp-membrete,.liqcard{position:relative;z-index:1}
 
   /* Matrícula: franja vertical fija sobre el margen derecho de la hoja. */
-  .comp-matricula{position:fixed;right:10px;top:50%;transform:translateY(-50%) rotate(180deg);writing-mode:vertical-rl;font-size:9px;letter-spacing:.5px;color:var(--muted)}
+  .comp-matricula{position:fixed;right:10px;top:50%;transform:translateY(-50%) rotate(180deg);writing-mode:vertical-rl;font-size:9px;letter-spacing:.5px;color:#1C4066}
 
   /* `position:fixed` (no `margin-top` fluyendo con el contenido): en la
      hoja de referencia el pie queda pegado al borde inferior de la página
      con el resto en blanco, no inmediatamente debajo del último ítem
-     facturado — mismo criterio ya usado para `.comp-matricula`. */
-  .comp-pie{position:fixed;left:34px;right:34px;bottom:24px;display:flex;align-items:center;gap:14px;border-top:2px solid var(--ink);padding-top:10px;font-size:9.5px}
+     facturado — mismo criterio ya usado para `.comp-matricula`. Dos líneas
+     (arriba y abajo del renglón), igual que el membrete original. */
+  .comp-pie{position:fixed;left:34px;right:34px;bottom:24px;display:flex;align-items:center;gap:14px;border-top:1.5px solid #1C4066;border-bottom:1.5px solid #1C4066;padding:10px 0;font-size:9.5px;break-inside:avoid;page-break-inside:avoid}
   .comp-pielogo{height:26px;width:auto}
-  .comp-piedireccion{flex:1;text-align:center;font-weight:700;color:var(--ink)}
-  .comp-piecontacto{color:var(--orange);text-align:right}
+  .comp-piedireccion{flex:1;text-align:center;font-weight:700;color:#1C4066}
+  .comp-piecontacto{color:#1C4066;text-align:right;font-weight:700}
+
+  /* Comprobantes largos (muchas propiedades en una liquidación, muchos
+     ítems en una factura) pueden partirse en varias hojas — que la hoja
+     corte ENTRE renglones, nunca a la mitad de uno solo. */
+  .liqline,.liqhead,.itemrow{break-inside:avoid;page-break-inside:avoid}
 }

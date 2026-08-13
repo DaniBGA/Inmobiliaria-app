@@ -83,27 +83,19 @@ export class FacturasService {
       (facturaAnterior?.items ?? []).map((it) => [it.descripcion, Number(it.monto)]),
     );
 
-    // "Retributivas de Servicios" es un ítem fijo de toda factura de
-    // alquiler (a diferencia del resto, no depende de que la propiedad la
-    // tenga tildada en `serviciosHabilitados`) — por eso va aparte del
-    // filtro de servicios de abajo, igual que "Alquiler".
+    // "Alquiler" es el único ítem realmente fijo de toda factura — el resto
+    // de los servicios (incluida "Retributivas de Servicios") solo se
+    // ofrece cuando la propiedad lo tiene tildado en `serviciosHabilitados`.
     const items: ItemPredeterminado[] = [
       { descripcion: 'Alquiler', monto: rentaVigenteRaw != null ? Number(rentaVigenteRaw) : 0, orden: 0 },
-      {
-        descripcion: FacturasService.SERVICIO_DESCRIPCION.RETRIBUTIVAS,
-        monto: montoAnteriorPorDescripcion.get(FacturasService.SERVICIO_DESCRIPCION.RETRIBUTIVAS) ?? 0,
-        orden: 1,
-      },
     ];
-    const serviciosOrdenados = FacturasService.SERVICIO_ORDEN.filter(
-      (s) => s !== ServicioFacturable.RETRIBUTIVAS && propiedad.serviciosHabilitados.includes(s),
-    );
+    const serviciosOrdenados = FacturasService.SERVICIO_ORDEN.filter((s) => propiedad.serviciosHabilitados.includes(s));
     serviciosOrdenados.forEach((servicio, i) => {
       const descripcion = FacturasService.SERVICIO_DESCRIPCION[servicio];
       items.push({
         descripcion,
         monto: montoAnteriorPorDescripcion.get(descripcion) ?? 0,
-        orden: 2 + i,
+        orden: 1 + i,
       });
     });
 

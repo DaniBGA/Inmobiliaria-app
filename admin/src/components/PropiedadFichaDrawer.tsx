@@ -1588,6 +1588,14 @@ function ReciboModal({
   onEmitido: () => void;
 }) {
   const mes = mesActualStr();
+  // Mismo queryKey que ya usa el drawer padre: React Query dedupea y sirve
+  // del caché, no dispara un segundo pedido de red.
+  const configuracion = useQuery({
+    queryKey: ['configuracion'],
+    queryFn: () => api.get<Configuracion>('/configuracion'),
+  });
+  const cfg = configuracion.data;
+
   const generar = useMutation({
     mutationFn: () => api.post<Recibo>(`/facturacion/propiedades/${propiedadId}/recibos`, { mes }),
     onSuccess: onEmitido,
@@ -1609,27 +1617,29 @@ function ReciboModal({
       )}
       {R && (
         <>
-          <div className="liqcard" style={{ boxShadow: 'none' }}>
-            <div className="liqhead">
-              <div>
-                <h4>Recibo N° {R.numero}</h4>
-                <div className="lsub">{mesLabel(mes)}</div>
-              </div>
-              <span className="spacer"></span>
-              <div className="lnet">
-                <b>COBRADO</b>
-                <span>{formatMoney(R.montoCobrado)}</span>
-              </div>
-            </div>
-            <div className="liqbody">
-              {R.items.map((it) => (
-                <div className="liqline" key={it.id}>
-                  <span className="ld">{it.descripcion}</span>
-                  <span className="lv">{formatMoney(it.monto)}</span>
+          <ComprobanteImpreso cfg={cfg}>
+            <div className="liqcard" style={{ boxShadow: 'none' }}>
+              <div className="liqhead">
+                <div>
+                  <h4>Recibo N° {R.numero}</h4>
+                  <div className="lsub">{mesLabel(mes)}</div>
                 </div>
-              ))}
+                <span className="spacer"></span>
+                <div className="lnet">
+                  <b>COBRADO</b>
+                  <span>{formatMoney(R.montoCobrado)}</span>
+                </div>
+              </div>
+              <div className="liqbody">
+                {R.items.map((it) => (
+                  <div className="liqline" key={it.id}>
+                    <span className="ld">{it.descripcion}</span>
+                    <span className="lv">{formatMoney(it.monto)}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          </ComprobanteImpreso>
           <div className="btnrow noprint">
             <button className="btn-ghost" onClick={onClose}>
               Cerrar
