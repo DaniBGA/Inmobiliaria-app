@@ -2599,6 +2599,491 @@ independientes:
       el pedido explícito de "si no se puede optimizar, no intentes nada
       arriesgado" (2026-07-30).
 
+## Email de notificación por el formulario de contacto + carrusel destacado curado
+
+- [x] **`EmailModule` nuevo (`api/src/email/`) — notificación por SMTP al
+      recibir una consulta desde el formulario público.**
+      `EmailService.enviar()` usa `nodemailer`; si faltan las variables
+      `SMTP_HOST/PORT/USER/PASS` el envío se salta en silencio con un
+      warning en el log (nunca tira abajo el endpoint que lo llama — un
+      email que no sale no debe impedir que el `Cliente` quede guardado).
+      `PublicController::contacto()` llama a `emailService.enviar()`
+      **sin awaitear el resultado en el flujo de respuesta** (fire-and-forget,
+      ya que `EmailService` absorbe sus propios errores) después de crear
+      el `Cliente` — el destinatario sale de `Configuración → Datos
+      públicos` (dato de negocio editable desde el admin), no de una env
+      var. Nota técnica: resuelve el host SMTP a una IPv4 a mano
+      (`dns.resolve4`) antes de pasarlo a `nodemailer` — en redes sin
+      salida IPv6 (frecuente en Windows/varios ISP), dejar que
+      `nodemailer` eligiera al azar entre IPv4/IPv6 fallaba de forma
+      intermitente con `ECONNREFUSED` (2026-07-30).
+- [x] **`Propiedad.caracterEspecial`** — flag booleano tildado a mano
+      desde el admin para curar manualmente qué propiedades aparecen en
+      el carrusel destacado del Hero de la landing; deliberadamente no se
+      deriva de nada (precio, fotos, antigüedad) — es 100% curación
+      manual. `GET /public/propiedades` acepta `?especial=true` para
+      filtrar por esto (2026-07-30).
+
+## Honorarios de administración, split de tipos, borrado blando de clientes y más (correcciones 3/8)
+
+Tanda de features independientes del mismo día, cada una con su propia
+migración:
+
+- [x] **Honorarios de administración por propiedad.** `Propiedad` gana
+      `honorariosAdministracion` (boolean, checkbox opt-in) y
+      `honorariosAdministracionPorcentaje` (migración
+      `20260803225449_split_tipo_y_honorarios_administracion`) — a
+      diferencia de los honorarios profesionales, es 100% opt-in: sin el
+      checkbox tildado no se cobra nada, no hay % por defecto de
+      Configuración para este cargo
+      (`resolverPorcentajeHonorariosAdministracion()` en
+      `api/src/common/honorarios.util.ts`).
+      `LiquidacionesService::calcularDetalle()` lo descuenta también del
+      neto a girar al propietario, persistido en el nuevo campo
+      `LiquidacionPropiedad.honorariosAdministracion`.
+      `CajaService.kpisDelMes()` y `ReportesService.resumenAnual()` lo
+      suman a los honorarios del mes junto con los profesionales. UI en
+      `VentasPage.tsx` (`SaleModal`) y `PropiedadFichaDrawer.tsx`.
+- [x] **Tipo de propiedad "Departamento/Dúplex" separado en dos valores +
+      filtro múltiple.** El enum `TipoPropiedad` deja de tener
+      `DEPARTAMENTO_DUPLEX` y pasa a `DEPARTAMENTO` + `DUPLEX`
+      independientes (misma migración de arriba, con
+      `USING CASE WHEN` para reclasificar en bloque las filas existentes
+      de `propiedades` y `clientes.busquedaTipoPropiedad` a
+      `DEPARTAMENTO` por defecto). Para no romper el chip "Deptos" de la
+      landing pública (que sigue mostrando ambos como un solo grupo),
+      `GET /public/propiedades` pasa a aceptar `tipo` como lista separada
+      por coma (`tipo: { in: [...] }` en vez de un único valor) —
+      `PropertyFilterChips.tsx`/`TipoStatsBand.tsx` en la landing y los
+      selectores de tipo en `VentasPage.tsx`/`ClientesPage.tsx`/
+      `PropiedadFichaDrawer.tsx` en el admin se actualizan para trabajar
+      con listas.
+- [x] **Borrado blando de clientes + historial de eliminados.** `Cliente`
+      gana `eliminadoEn` (nullable, migración
+      `20260803213815_cliente_eliminado_en`, con índice).
+      `ClientesService.remove()` deja de hacer `delete` y ahora solo
+      marca `eliminadoEn = now()`; `findAll()` y `statsPorOrigen()`
+      filtran `eliminadoEn: null` (igual que
+      `AvisosService.clientesSinContactar()`). Nuevos endpoints
+      `GET /clientes/eliminados` (historial), `PATCH /clientes/:id/restaurar`
+      y `DELETE /clientes/:id/definitivo` (el único borrado real e
+      irreversible). En el admin, `ClientesPage.tsx` suma el botón
+      "Historial de eliminados" → `HistorialEliminadosModal`, con
+      confirmación explícita antes del borrado definitivo.
+- [x] **Foto de portada por propiedad para el carrusel destacado del
+      Hero.** `FotoPropiedad` gana `esPortada` (boolean, migración
+      `20260803220446_foto_portada_y_nosotros`) — a lo sumo una en `true`
+      por propiedad, garantizado por
+      `PropiedadesService.marcarFotoPortada()` en una transacción
+      (desmarca cualquier otra antes de marcar la elegida). Solo tiene
+      sentido para propiedades de "carácter especial" con más de una
+      foto. `PublicPropiedadesService.mapear()` antepone la foto marcada
+      al array `fotos` para que el frontend público siga usando
+      `fotos[0]` sin conocer `esPortada`; sin ninguna marcada, se usa la
+      primera por `orden` (comportamiento de siempre). Nuevo endpoint
+      `PATCH /propiedades/:id/fotos/:fotoId/portada`.
+- [x] **Recorte/recompresión server-side de fotos + foto institucional
+      "Nosotros" en la landing.** Nueva dependencia `sharp`.
+      `procesarFotoParaTarjeta()` (`api/src/common/imagen.util.ts`)
+      recorta toda foto a 1080x1350 (`cover`, respetando orientación
+      EXIF) y la recomprime a JPEG calidad 85 — evita el recorte raro que
+      se veía forzando la relación de aspecto solo por CSS con fotos
+      verticales de celular, y fotos sin comprimir hacían tardar la carga
+      de la landing. Se aplica tanto a fotos de propiedad
+      (`PropiedadesService.agregarFoto()`) como a una nueva foto
+      institucional de Facundo/oficina para la sección "Nosotros":
+      `Configuracion.publicoFotoNosotrosUrl` (misma migración de foto
+      portada), endpoint `POST /configuracion/foto-nosotros` (solo
+      ADMIN), UI en `ConfiguracionPage.tsx` y consumo en `Nosotros.tsx`
+      (placeholder "Foto próximamente" sin foto cargada). Multer pasa de
+      `diskStorage` a `memoryStorage` en ambos casos (el archivo crudo ya
+      no se escribe a disco, solo el resultado procesado) y el límite de
+      tamaño sube de 8MB a 20MB. Nuevo `MulterExceptionFilter` traduce al
+      español los mensajes en inglés que Multer/Nest generan para errores
+      de archivo.
+- [x] **Nuevos servicios facturables: Cloacas, Gas envasado, Sistema
+      biodigestor.** `ServicioFacturable` suma estos tres valores
+      (migración `20260803231720_servicios_cloacas_gas_biodigestor`,
+      aditiva) — se agregan al orden canónico de la factura y a los
+      checkboxes de habilitación por propiedad en `VentasPage.tsx`/
+      `PropiedadFichaDrawer.tsx`.
+- [x] **Cierre de sesión automático en el admin ante un 401.**
+      `admin/src/api/client.ts` detecta cuando una request que sí mandó
+      token vuelve con 401 (token expirado o rechazado) y dispara el
+      evento global `auth:sesion-expirada`; `AuthContext.tsx` lo escucha,
+      limpia el usuario y `LoginPage.tsx` muestra "Tu sesión expiró —
+      iniciá sesión de nuevo." en vez de mostrar el error crudo
+      ("Unauthorized") en la pantalla donde agarraba al usuario. Un 401
+      en el propio `/auth/login` (contraseña incorrecta) no dispara esto
+      porque esa request no manda token (2026-08-03).
+
+## Seguridad reforzada
+
+- [x] **Rate-limit específico para `POST /auth/login`** — 5 intentos/min
+      (vs. el límite genérico de 100/min/IP de toda la API), vía
+      `@Throttle` a nivel de método — es el único endpoint donde alguien
+      de afuera puede probar credenciales a la fuerza.
+      `api/src/auth/auth.controller.ts`.
+- [x] **CORS restringido en producción vía `ALLOWED_ORIGINS`** — sin la
+      variable definida (dev local) se sigue reflejando cualquier origen
+      (no cambia el flujo de desarrollo); en producción se define con el
+      dominio real y solo ese puede leer las respuestas de la API.
+      `api/src/main.ts`.
+- [x] **`Strict-Transport-Security` en el Caddyfile** — header HSTS
+      agregado a la config de producción (`deploy/Caddyfile`).
+- [x] **Precarga diferida de fotos en `PropertyCard` (landing)** — no es
+      seguridad, viajó en el mismo commit: una propiedad con varias fotos
+      tardaba perceptiblemente en cambiar de foto (el `<img>` recién
+      pedía la imagen al mostrarla). Ahora se precarga el resto de la
+      galería de ESA propiedad recién en la primera interacción real con
+      sus fotos (no todas las propiedades del listado de entrada, para no
+      gastar ancho de banda en las que el usuario ni mira) — desde ahí,
+      cambiar de foto es instantáneo. `app/src/components/propiedades/PropertyCard.tsx`
+      (2026-08-03).
+
+## Ventas: "Lote" sin specs de construcción + servicios para cualquier tipo/modalidad
+
+- [x] **Un lote (terreno sin construir) ya no pide ambientes,
+      dormitorios, baños, superficie cubierta ni cochera** al cargarlo en
+      "Agregar Propiedad" — esos campos no tienen sentido para un
+      terreno, sea alquiler o venta (`esLote = tipo === 'LOTE'` en
+      `AgregarPropiedadPage.tsx`). Primera versión solo aplicaba esto del
+      lado de venta y ofrecía "Servicios en la zona" como reemplazo
+      exclusivo del lote; se corrigió el mismo día para que valga para
+      cualquier modalidad.
+- [x] **Los servicios que se facturan (luz, gas, etc.) pasaron a
+      preguntarse para cualquier tipo de propiedad y modalidad**, no solo
+      para alquiler — antes `serviciosHabilitados` solo se guardaba desde
+      el lado de alquiler; ahora "Datos de Venta" también tiene su propio
+      checklist de servicios (útil, por ejemplo, para informar qué tiene
+      disponible un lote en venta) (2026-08-06).
+
+## Eliminar propietario desde Propietarios y Liquidaciones
+
+- [x] **Botón "Eliminar" por propietario**, con confirmación que avisa
+      cuántas propiedades suyas van a quedar sin propietario asignado.
+      `DELETE /propietarios/:id` → `Propietario.delete()` — por las
+      relaciones del schema, esto **cascadea el borrado de todo el
+      historial de liquidaciones emitidas** de ese propietario
+      (`Liquidacion.propietario` es `onDelete: Cascade`) y **desasigna**
+      (no borra) sus propiedades (`Propiedad.propietario` es
+      `onDelete: SetNull`) — ambos efectos están explicitados en el texto
+      del `window.confirm()` antes de ejecutar. `PropietariosPage.tsx`
+      (2026-07-30).
+
+## Botón de cerrar sesión en el sidebar
+
+- [x] Antes no había forma de cerrar sesión desde la UI salvo borrar el
+      token a mano. Botón fijo al final del nav del sidebar, usa
+      `useAuth().logout()` (ya existía en `AuthContext`, sin ningún botón
+      que lo llamara). `admin/src/components/Sidebar.tsx` (2026-08-06).
+
+## Rol "Designado" (EQUIPO) con login propio, acotado a Ventas y Carteles + Agenda
+
+- [x] **`IntegranteEquipo` (el roster de "designados para mostrar") puede
+      vincularse a un `Usuario` real** (`IntegranteEquipo.usuarioId`,
+      `@unique`, `onDelete: SetNull`) — un integrante del equipo pasa a
+      poder loguearse con su propio email/contraseña, con
+      `rol: RolUsuario.EQUIPO`, sin dejar de ser el mismo "designado para
+      mostrar"/"delegado" que ya se usaba en Propiedades y Clientes.
+      `IntegrantesEquipoService.update()` crea el `Usuario` la primera vez
+      que se le da acceso a alguien y reutiliza el mismo en ediciones
+      posteriores; `setAccesoActivo()` revoca/reactiva sin borrar el
+      registro. `ConfiguracionPage.tsx` suma el modal
+      `IntegranteAccesoModal` para asignar email/contraseña, con el
+      estado de cada integrante a la vista ("· acceso activo" / "· acceso
+      revocado" / "· sin acceso").
+- [x] **Gating de dos capas para el rol EQUIPO**:
+      - Frontend (`admin/src/App.tsx`): el sidebar y las rutas se acotan a
+        `/ventas` y `/agenda` — cualquier otra ruta redirige a `/ventas`.
+        Dentro de la propia Ventas y Carteles, `VentasPage.tsx` además le
+        oculta a EQUIPO "Editar ficha", "+ Publicar propiedad en venta" y
+        la gestión de carteles — queda limitado al pipeline de
+        interesados/seña/cierre/venta por terceros.
+      - Backend (defensa en profundidad — un JWT de designado robado no
+        alcanza aunque se le pegue directo a la API): la mayoría de los
+        controllers tienen `@Roles(RolUsuario.ADMIN)` a nivel de clase o
+        método (`propietarios`, `clientes`, `caja`, `incidencias`,
+        `avisos`, `gastos`, `proveedores`, `cobros`, `facturacion`,
+        `liquidaciones`, `reportes`, `usuarios`, `carteles`,
+        `configuracion`, `ventas`, `propiedades` — según el endpoint,
+        algunos dejan pasar lectura pública/compartida, como
+        `GET /propiedades`/`GET /clientes`/`GET /propietarios`/
+        `GET /integrantes-equipo` que alimentan los desplegables de
+        Ventas/Agenda, y bloquean solo escritura). `RolesGuard` +
+        `@Roles()` (`api/src/auth/`).
+- [x] **`EventoAgenda.usuarioId`** (nullable, `onDelete: SetNull`) — dueño
+      del evento; `null` = evento global/automático (vencimientos de
+      contrato, alertas de aumento — siguen siendo de todos).
+      `AgendaService.crear()` toma el dueño siempre del JWT (nunca del
+      body): un EQUIPO solo puede crearse eventos a sí mismo, un ADMIN
+      crea eventos globales. `eventosDelMes()` filtra distinto según el
+      rol — un `EQUIPO` ve solo sus propios eventos manuales; un `ADMIN`
+      ve solo los globales (no hay, hoy, una vista que mezcle "todos los
+      designados" para un ADMIN). `update()`/`marcarHecho()`/`remove()`
+      verifican propiedad del evento (`assertPropietario()`) antes de
+      tocar nada, incluso si el id ya se conoce de antes — protege contra
+      un JWT robado usado directo contra la API.
+      Migración `20260808231500_designados_login_y_agenda_por_usuario`,
+      puramente aditiva.
+
+## Mora automática, número de factura manual, "al día" desde la carga y honorarios de administración en Liquidaciones
+
+Tanda grande de features del mismo día ("producto prácticamente
+terminado"), cada punto independiente entre sí:
+
+- [x] **Cálculo automático de mora/punitorios en la factura.**
+      `FacturasService.itemsPredeterminados()` sugiere un ítem "Mora"
+      cuando el contrato tiene punitorio configurado (`punitorioTipo`/
+      `punitorioValor`/`punitorioFrecuencia` — ya modelados antes, sin
+      lógica de cálculo) y el mes anterior se terminó pagando fuera de
+      término. Se calcula sobre el último pago del mes cerrado
+      inmediatamente anterior, comparando su fecha contra
+      `diaVencimientoAlquiler` de Configuración; la frecuencia (día/
+      semana/mes/único) determina cómo escala el monto base con los días
+      de atraso. Si el mes anterior todavía tiene saldo pendiente, no
+      calcula nada (se recalcula solo cuando se termine de pagar).
+      Respeta `Inquilino.alDiaDesde` (ver abajo): no calcula mora para
+      meses anteriores al alta del inquilino en el sistema. Es un ítem
+      editable, no se fuerza — `api/src/facturacion/facturas.service.ts::calcularMora()`.
+- [x] **Inquilino "al día" al cargarlo (`alDiaDesde`).** Checkbox en
+      `AlquilarPropiedadModal` para cuando un inquilino ya alquilaba
+      desde antes de entrar al sistema y pagaba por fuera: tildarlo
+      guarda `Inquilino.alDiaDesde` (el mes actual, calculado del lado
+      del servidor) y anula el cómputo de deuda/mora para los meses
+      anteriores — la obligación de pago arranca recién ahí. Afecta
+      `CobrosService.deudaAcumulada()`, `mesesPendientes()` y
+      `FacturasService.calcularMora()`. Una edición posterior del
+      inquilino (`EditarInquilinoModal`) no manda el campo, así que no
+      pisa el valor ya guardado — `api/src/propiedades/propiedades.service.ts::upsertInquilino()`.
+- [x] **Número de factura manual.** `EmitirFacturaDto` acepta un `numero`
+      opcional; si se manda, `FacturasService.emitir()` lo usa en vez del
+      correlativo automático de Configuración y el contador no avanza —
+      para cuando la numeración ya la lleva la inmobiliaria por fuera del
+      sistema (ej. talonario físico) y necesita que coincida. De paso,
+      tanto la emisión de facturas como la generación de liquidaciones
+      capturan el error de índice único (`P2002`, colisión de dos
+      personas operando casi al mismo tiempo sobre la misma
+      propiedad+mes) y devuelven un `ConflictException` con mensaje claro
+      en vez de un 500.
+- [x] **Número correlativo de inquilino.** `Inquilino.numero`
+      (autoincremental, solo lectura) para identificar rápido de qué
+      inquilino se trata al lado del número de factura, sin exponer el
+      UUID interno.
+- [x] **Ventana de gracia post-venta/alquiler en la landing pública.**
+      Nueva `Configuracion.diasMostrarDespuesVentaAlquiler` (0 =
+      comportamiento de siempre, desaparece al instante): una propiedad
+      recién alquilada o vendida sigue listada en la web ese número de
+      días, anclado en `contratoInicio` (alquiler) o `venta.cierreReal`
+      (venta, cubre vendida por la inmobiliaria y por terceros).
+      `PublicPropiedadesService` suma un campo `estadoPublico`
+      ("DISPONIBLE"/"ALQUILADA"/"VENDIDA") para que el frontend público
+      distinga una propiedad realmente disponible de una que solo sigue
+      visible por la ventana de gracia. Configurable desde
+      `ConfiguracionPage`.
+- [x] **Honorarios profesionales 4%.** Nueva opción `CUATRO_POR_CIENTO`
+      en el enum `TipoHonorarios`, junto a Libre/3%/6%/Otro.
+- [x] **Rediseño del retenido en Liquidaciones.** Antes,
+      `LiquidacionesService.generar()` descontaba "honorarios
+      profesionales" (comisión, % por propiedad) del neto a girar al
+      propietario y generaba un EGRESO en Caja por ese neto. Ahora esos
+      honorarios profesionales quedan en 0 explícitamente para
+      alquileres (esa comisión solo corresponde a modalidad VENTA — un
+      alquiler nunca la cobra), y lo único que la inmobiliaria retiene es
+      el honorario de administración (si está habilitado), que ahora
+      genera un INGRESO en Caja — antes el movimiento completo era un
+      egreso por el neto girado, que era plata del propietario y no
+      tenía sentido registrar como movimiento propio de la inmobiliaria.
+      Se agrega `DELETE /liquidaciones/:id` para deshacer una liquidación
+      emitida por error: borra la liquidación (cascada sobre detalle/
+      ítems/gastos) junto con el movimiento de Caja que haya generado,
+      sin tocar los cobros/gastos reales usados para calcularla.
+- [x] **Seña de venta deja de generar movimiento de Caja** (primera
+      versión de este cambio — ver también la limpieza final del
+      2026-08-13 más abajo). `VentasService.registrarSena()` ya no crea
+      un INGRESO en USD al registrar la seña (etapa reserva) — de una
+      venta lo único que se refleja en Caja es el honorario/comisión al
+      cerrarla, la seña queda solo en la ficha de la venta. Se conserva
+      la limpieza de señas cargadas antes de este cambio (que sí habían
+      generado movimiento). De paso, `registrarSena`, `eliminarSena`,
+      `cerrar` y `deshacerCierre` toman un lock de fila
+      (`SELECT ... FOR UPDATE`) sobre la venta dentro de la transacción
+      antes de leer su estado — dos acciones concurrentes sobre la misma
+      venta (ej. dos "Cerrar venta" casi simultáneos) ya no pueden leer
+      el mismo estado viejo y terminar duplicando un movimiento de Caja
+      (`VentasService::lockVenta()`).
+- [x] **Egreso en Caja para gastos de incidencias sin proveedor.**
+      `GastosService.crearDesdeIncidencia()` no generaba egreso propio en
+      Caja por defecto (esa salida la cubre el pago al proveedor) — pero
+      cuando la incidencia no tiene proveedor asignado y la paga la
+      inmobiliaria, nunca existía ningún pago que registrara esa salida
+      de plata, dejando un agujero contable. Ahora, si no hay proveedor y
+      `quienPagaCosto === INMOBILIARIA`, el gasto genera su propio egreso
+      (guardado en `Gasto.movimientoCajaId`). `IncidenciasService.remove()`
+      ahora también borra ese movimiento de Caja asociado al borrar la
+      incidencia (antes solo desvinculaba el gasto, dejando el egreso
+      huérfano).
+- [x] **Corrección de "próximo aumento".**
+      `PropiedadesService.proximoAumento()` devuelve `null` si la
+      propiedad está vacante (sin inquilino), aunque conserve
+      `frecuenciaAumentoMeses` o historial de una tenencia anterior. Y el
+      ancla para calcular la fecha deja de ser el último
+      `HistorialAumento` de la propiedad sin más filtro — pasa a ser el
+      último aumento registrado *desde que arrancó el contrato vigente*
+      (`fecha >= contratoInicio`), o el propio `contratoInicio` si
+      todavía no hubo ninguno — así un aumento que haya quedado de un
+      inquilino anterior no se cuela en el cálculo del inquilino actual.
+- [x] **Throttling de login también por email, no solo por IP.** El
+      tracker del `ThrottlerModule` (ver "Seguridad reforzada" arriba)
+      suma el email del body a la IP, tanto para `POST /auth/login` como
+      para `POST /public/contacto` — dos personas detrás de la misma red
+      (ej. la oficina) ya no comparten el mismo cupo de intentos, cada
+      cuenta/remitente tiene el suyo.
+- [x] **Plantilla configurable del mensaje de WhatsApp al emitir
+      factura.** Nueva `Configuracion.facturaWhatsappMensaje`, editable
+      desde `ConfiguracionPage`, con placeholders `{nombre}` `{numero}`
+      `{propiedad}` `{mes}` reemplazados al armar el botón "Enviar por
+      WhatsApp".
+- [x] **`VentasPage` pasa a listar estrictamente `modalidad === 'VENTA'`**
+      — antes también mezclaba alquileres vacantes publicados desde ahí
+      (con una tarjeta simplificada aparte) y propiedades que habían
+      pasado de venta a alquiler. Los alquileres (ocupados o vacantes) se
+      gestionan enteramente desde Inquilinos y Cobros;
+      `AlquilarPropiedadModal` en simetría deja de listar propiedades en
+      venta como opción para alquilar.
+- [x] **Ítem "Retributivas de Servicios" pasó a ser fijo en toda factura
+      de alquiler** (igual que "Alquiler", sin depender de
+      `serviciosHabilitados`) — **revertido después, el 2026-08-12**, ver
+      "Cuatro pedidos..." más abajo: pedido explícito del usuario de que
+      vuelva a depender del checkbox (2026-08-08).
+
+## Cuatro pedidos sobre contratos, facturación y paginación de impresión
+
+Pedido explícito del usuario, cuatro partes independientes sobre la misma
+sesión de trabajo:
+
+- [x] **"Próximo aumento" no se muestra si cae después del fin de
+      contrato.** `PropiedadesService.proximoAumento()` ahora también
+      selecciona `contratoFin`; si la fecha calculada del próximo aumento
+      es posterior al fin de contrato, devuelve `null` en vez de una
+      fecha que nunca va a llegar a aplicarse (el contrato se renueva o
+      termina antes) (2026-08-12).
+- [x] **Sacar "Retributivas de Servicios" de la lista fija de ítems de la
+      factura.** Antes era el único servicio, además de "Alquiler", que
+      se agregaba siempre sin importar `serviciosHabilitados` — quedó
+      igualado al resto: solo aparece si la propiedad lo tiene tildado.
+      `FacturasService::itemsPredeterminados()` (2026-08-12).
+- [x] **Bug de paginación al imprimir/exportar comprobantes largos —
+      causa raíz real, no cosmética.** El contenido imprimible
+      (`.modalcard`, dentro de `.modal`) era `position:fixed;inset:0` —
+      un elemento fixed **no se fragmenta en varias hojas al imprimir**
+      (limitación real del motor de impresión de cualquier navegador, no
+      un bug de CSS ajustable): un comprobante largo (muchas propiedades
+      en una liquidación, muchos ítems en una factura) se cortaba entero
+      en la primera hoja, y lo que no entraba se perdía — no se generaba
+      una segunda hoja. Un primer intento (agregar `padding-bottom` al
+      `.modalcard`) resultó insuficiente: por fragmentación CSS estándar,
+      el `padding-bottom` de una caja partida en varias hojas solo se
+      aplica en la ÚLTIMA, no protege las anteriores.
+      **Fix real, en dos partes**:
+      1. `Modal.tsx` ahora portala su contenido a `document.body`
+         (`createPortal`) — queda hermano de `#root` en vez de anidado en
+         el layout normal de la página que lo abrió, lo que permite que
+         `@media print` oculte `#root` entero y deje que `.modalcard`
+         fluya como contenido NORMAL (no fixed) de la hoja impresa, capaz
+         de paginar de verdad.
+      2. `global.css`: `@page{size:A4;margin:26px 34px 100px}` reserva el
+         margen inferior en CADA hoja física (a diferencia del padding de
+         antes) para que el pie (`.comp-pie`, sigue siendo `fixed` a
+         propósito — es un elemento decorativo que sí debe repetirse en
+         cada hoja) nunca tape contenido. También se corrigió
+         `html,body{height:auto}` dentro de `@media print` — la regla
+         base `height:100%` (para el layout normal en pantalla) le
+         impedía al documento crecer más allá de un viewport en modo
+         impresión, aunque el contenido desbordara visualmente.
+      3. Efecto colateral aprovechado: `ReciboModal` ahora también se
+         envuelve en `<ComprobanteImpreso>` (antes solo Factura y
+         Liquidación tenían membrete — el Recibo se imprimía sin logo ni
+         pie).
+      Verificado con una liquidación de prueba de 16 propiedades:
+      contenido completo, sin recorte. No se pudo confirmar con una
+      captura literal paginada a varias hojas por una limitación del
+      entorno de pruebas (Puppeteer `page.pdf()` colgaba en esta máquina)
+      — la corrección está fundamentada en el comportamiento estándar y
+      documentado de CSS Paged Media, no solo en la prueba visual
+      (2026-08-12/13).
+      **Nota de higiene de datos**: durante las pruebas de este punto, un
+      script de verificación con una búsqueda de botón sin acotar
+      (`document.querySelectorAll('button')` global en vez de acotado a
+      la tarjeta de la propiedad de prueba) disparó por error la emisión
+      de una liquidación **real** más de una vez — el contenido quedó
+      correcto en todos los casos (nunca se mezclaron datos de prueba con
+      datos reales), pero el número de comprobante avanzó de más
+      innecesariamente. Ver la advertencia sobre correlativos globales y
+      acotar búsquedas del DOM en `CLAUDE.md`.
+
+## Limpieza final de "seña de venta" fuera de Caja
+
+- [x] Pedido explícito del usuario: **"de una venta lo único que se tiene
+      que ver reflejado en la caja es el honorario"** — confirmando y
+      terminando de limpiar el cambio del 2026-08-08 (ver arriba,
+      "Seña de venta deja de generar movimiento de Caja"). Quedaba un
+      movimiento de Caja real de una seña cargada ANTES de ese cambio
+      (propiedad "depto 20", USD 20.000) — se eliminó a mano junto con su
+      referencia en `Venta.movimientoCajaSenaId`. Se sacó también el
+      campo `fecha` de `RegistrarSenaDto` (ya no tenía sentido, no genera
+      movimiento) y todo el código ya muerto que quedaba colgando de la
+      época en que sí generaba movimiento: `EditarSenaModal`,
+      `ORIGEN_LABEL['SENA_VENTA']` en `CajaPage.tsx` y el input "Fecha"
+      del modal de seña en `VentasPage.tsx` (2026-08-13).
+
+## N° de cuenta por servicio en la factura + panel "Estado de cobros" en la ficha
+
+Pedido explícito del usuario, dos partes:
+
+- [x] **Agua/Gas/Luz/Retributivas: usuario y N° de cuenta fijos por
+      propiedad, reflejados en la factura.** `Propiedad` ganó 5 columnas
+      nullable (`obrasSanitariasUsuario`, `obrasSanitariasNumeroCuenta`,
+      `camuzziNumeroCuenta`, `retributivasNumeroCuenta`,
+      `usinaNumeroCuenta` — migraciones
+      `20260813172514_propiedad_datos_cuenta_servicios` y
+      `20260814021805_propiedad_usina_numero_cuenta`, puramente aditivas).
+      Se cargan una sola vez desde "Agregar Propiedad" o "Editar Datos"
+      (checkbox del servicio tildado → aparecen los inputs correspondientes
+      — Obras Sanitarias lleva usuario + cuenta, el resto solo cuenta) y
+      `FacturasService::itemsPredeterminados()` los agrega automáticamente
+      a la descripción del ítem (`datosCuentaSuffix()`) sin tener que
+      volver a tipearlos cada mes. Liquidación y Recibo heredan esto gratis
+      porque reusan la misma función.
+      **Bug encontrado y corregido en la misma sesión**: el "recordar el
+      monto del mes anterior" (`montoAnteriorPorDescripcion`) buscaba por
+      el texto *completo* de la descripción — al incluir ahora el N° de
+      cuenta, el primer mes que se cargaba/cambiaba una cuenta el texto
+      dejaba de coincidir y el monto volvía a $0 en silencio. Se corrigió
+      buscando primero por texto exacto y, si no hay match, por la
+      descripción base sin el sufijo de cuenta. Verificado con curl:
+      Camuzzi en $7500 sin cuenta → se carga la cuenta → sigue en $7500 el
+      mes siguiente → se cambia la cuenta a otra → sigue en $7500 (2026-08-13).
+- [x] **Panel "Estado de cobros" en la ficha de cada propiedad, eliminando
+      la sección "Fichas de inquilinos" de Inquilinos y Cobros** (mismos
+      datos en dos pantallas). `PropiedadFichaDrawer.tsx` ahora muestra
+      Alquiler vigente / Vence el / Deuda acumulada / Último pago (mismo
+      diseño `.tstate`/`.tf` que tenían las tarjetas de inquilino) en el
+      espacio vacío de la columna derecha, junto a Historial de Aumentos —
+      reusa `GET /cobros/propiedades/:id/deuda` (ya existía) y
+      `configuracion.diaVencimientoAlquiler`. `InquilinosPage.tsx` perdió
+      la grilla de tarjetas duplicada; el buscador y "+ Agregar propiedad
+      de alquiler" se reubicaron arriba de "Propiedades en alquiler", y el
+      buscador ahora filtra esa grilla en vez de la que se sacó (2026-08-13).
+
+Se aprovechó para deduplicar: `ServiciosCuentaInputs` (componente + tipo
+`ServicioFacturable` + `SERVICIOS_OPCIONES`) vivía repetido en
+`AgregarPropiedadPage.tsx` y `PropiedadFichaDrawer.tsx` — se extrajo a
+`admin/src/components/ServiciosCuentaInputs.tsx`, con
+`wrapperClassName`/`wrapperStyle`/`fieldStyle` opcionales para que cada
+pantalla mantenga su propio layout sin cambiar el diseño visual (verificado
+con capturas antes/después, pixel a pixel igual) (2026-08-13).
+
 ## Cómo actualizar este archivo
 
 Cada vez que se implemente una conexión: marcarla `[x]`, agregar la fecha y
