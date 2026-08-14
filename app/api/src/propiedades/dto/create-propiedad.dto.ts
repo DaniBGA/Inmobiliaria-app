@@ -154,6 +154,10 @@ export class CreatePropiedadDto {
   @IsString()
   retributivasNumeroCuenta?: string;
 
+  @IsOptional()
+  @IsString()
+  usinaNumeroCuenta?: string;
+
   // Publicación en la landing (solo aplica a ALQUILER vacante — ver
   // PublicPropiedadesService). Default true en el schema.
   @IsOptional()

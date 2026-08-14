@@ -8,7 +8,7 @@ import { BASE_URL } from '../../api/client';
 const STATS = [
   { target: 12, sufijo: '+', label: 'Años de experiencia' },
   { target: 400, sufijo: '+', label: 'Operaciones cerradas' },
-  { target: 98, sufijo: '%', label: 'Clientes conformes' },
+  { target: 100, sufijo: '%', label: 'Clientes conformes' },
 ];
 
 const BADGES = ['Corredor matriculado', 'Especialista en Tandil', 'Asesoramiento sin presiones'];

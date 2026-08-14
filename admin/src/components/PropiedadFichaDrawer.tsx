@@ -8,17 +8,9 @@ import { resolverPorcentajeHonorariosAdministracion, type TipoHonorarios } from 
 import { FotosPropiedad, type FotoPropiedadItem } from './FotosPropiedad';
 import { ComprobanteImpreso } from './ComprobanteImpreso';
 import { descargarPdfComprobante } from '../lib/pdfComprobante';
+import { ServiciosCuentaInputs, SERVICIOS_OPCIONES, type ServicioFacturable } from './ServiciosCuentaInputs';
 
 type Modalidad = 'ALQUILER' | 'VENTA';
-type ServicioFacturable =
-  | 'EXPENSAS'
-  | 'USINA'
-  | 'CAMUZZI'
-  | 'OBRAS_SANITARIAS'
-  | 'RETRIBUTIVAS'
-  | 'CLOACAS'
-  | 'GAS_ENVASADO'
-  | 'SISTEMA_BIODIGESTOR';
 type IndiceAjuste = 'IPC' | 'ICL' | null;
 type PunitorioFrecuencia = 'DIA' | 'SEMANA' | 'MES' | 'UNICO' | null;
 type PunitorioTipo = 'PORCENTAJE' | 'MONTO_FIJO' | null;
@@ -78,6 +70,7 @@ interface PropiedadFicha {
   obrasSanitariasNumeroCuenta: string | null;
   camuzziNumeroCuenta: string | null;
   retributivasNumeroCuenta: string | null;
+  usinaNumeroCuenta: string | null;
   fotos: FotoPropiedadItem[];
   montoAlquilerVigente: string | number | null;
   alquilerPublicado: boolean;
@@ -106,6 +99,7 @@ interface RentaVigente {
 interface Pago {
   id: string;
   mes: string;
+  fecha: string;
   monto: string | number;
   medio: string;
 }
@@ -135,6 +129,7 @@ interface Configuracion {
   honorariosDefaultPorcentaje: string;
   dolarReferencia: string;
   diasAnticipacionAumento: number;
+  diaVencimientoAlquiler: number;
   empresaNombre: string;
   empresaDireccion: string;
   empresaContacto: string;
@@ -158,83 +153,6 @@ interface Recibo {
   montoCobrado: string | number;
   ajusteSobreFacturado: string | number | null;
   items: FacturaItem[];
-}
-
-const SERVICIOS_OPCIONES: { key: ServicioFacturable; label: string }[] = [
-  { key: 'EXPENSAS', label: 'Expensas' },
-  { key: 'USINA', label: 'Luz (Usina)' },
-  { key: 'CAMUZZI', label: 'Gas (Camuzzi)' },
-  { key: 'OBRAS_SANITARIAS', label: 'Agua (Obras Sanitarias)' },
-  { key: 'RETRIBUTIVAS', label: 'Retributivas de Servicios' },
-  { key: 'CLOACAS', label: 'Cloacas' },
-  { key: 'GAS_ENVASADO', label: 'Gas envasado' },
-  { key: 'SISTEMA_BIODIGESTOR', label: 'Sistema biodigestor' },
-];
-
-// Datos fijos de cuenta de algunos servicios, reflejados automáticamente en
-// la factura (ver comentario en schema.prisma) — solo se muestran cuando el
-// checkbox del servicio correspondiente está tildado.
-function ServiciosCuentaInputs({
-  servicios,
-  obrasSanitariasUsuario,
-  setObrasSanitariasUsuario,
-  obrasSanitariasNumeroCuenta,
-  setObrasSanitariasNumeroCuenta,
-  camuzziNumeroCuenta,
-  setCamuzziNumeroCuenta,
-  retributivasNumeroCuenta,
-  setRetributivasNumeroCuenta,
-}: {
-  servicios: ServicioFacturable[];
-  obrasSanitariasUsuario: string;
-  setObrasSanitariasUsuario: (v: string) => void;
-  obrasSanitariasNumeroCuenta: string;
-  setObrasSanitariasNumeroCuenta: (v: string) => void;
-  camuzziNumeroCuenta: string;
-  setCamuzziNumeroCuenta: (v: string) => void;
-  retributivasNumeroCuenta: string;
-  setRetributivasNumeroCuenta: (v: string) => void;
-}) {
-  const muestraAgua = servicios.includes('OBRAS_SANITARIAS');
-  const muestraGas = servicios.includes('CAMUZZI');
-  const muestraRetributivas = servicios.includes('RETRIBUTIVAS');
-  if (!muestraAgua && !muestraGas && !muestraRetributivas) return null;
-  return (
-    <div className="formgrid" style={{ marginBottom: 4 }}>
-      {muestraAgua && (
-        <>
-          <div className="fg" style={{ minWidth: 0 }}>
-            <label>Agua — Usuario</label>
-            <input value={obrasSanitariasUsuario} onChange={(e) => setObrasSanitariasUsuario(e.target.value)} placeholder="Opcional" />
-          </div>
-          <div className="fg" style={{ minWidth: 0 }}>
-            <label>Agua — N° de cuenta</label>
-            <input
-              value={obrasSanitariasNumeroCuenta}
-              onChange={(e) => setObrasSanitariasNumeroCuenta(e.target.value)}
-              placeholder="Opcional"
-            />
-          </div>
-        </>
-      )}
-      {muestraGas && (
-        <div className="fg" style={{ minWidth: 0 }}>
-          <label>Gas — N° de cuenta</label>
-          <input value={camuzziNumeroCuenta} onChange={(e) => setCamuzziNumeroCuenta(e.target.value)} placeholder="Opcional" />
-        </div>
-      )}
-      {muestraRetributivas && (
-        <div className="fg" style={{ minWidth: 0 }}>
-          <label>Retributivas — N° de cuenta</label>
-          <input
-            value={retributivasNumeroCuenta}
-            onChange={(e) => setRetributivasNumeroCuenta(e.target.value)}
-            placeholder="Opcional"
-          />
-        </div>
-      )}
-    </div>
-  );
 }
 
 const TIPO_LABEL: Record<string, string> = {
@@ -308,6 +226,13 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
     queryKey: ['cobros', 'pagos', propiedadId],
     queryFn: () => api.get<Pago[]>(`/cobros/propiedades/${propiedadId}/pagos`),
     enabled: esAlquiler,
+  });
+  // Mismos datos que antes se veían en "Fichas de inquilinos" (Inquilinos y
+  // Cobros) — se movieron acá para no duplicarlos en dos pantallas.
+  const deuda = useQuery({
+    queryKey: ['cobros', 'deuda', propiedadId],
+    queryFn: () => api.get<{ deuda: number; mesesImpagos: number }>(`/cobros/propiedades/${propiedadId}/deuda`),
+    enabled: esAlquiler && !!p?.inquilino,
   });
   const gastos = useQuery({
     queryKey: ['gastos', propiedadId],
@@ -891,6 +816,37 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
                     </Link>
                   </div>
                 </div>
+
+                {esAlquiler && p.inquilino && (
+                  <div className="dsec" style={{ marginTop: 22 }}>
+                    <h5>ESTADO DE COBROS</h5>
+                    <div className="tstate">
+                      <div className="tf">
+                        <b>Alquiler vigente</b>
+                        <span>{montoVigente ? formatMoney(montoVigente) : '—'}</span>
+                      </div>
+                      <div className="tf">
+                        <b>Vence el</b>
+                        <span>{cfg ? `${cfg.diaVencimientoAlquiler} de cada mes` : '—'}</span>
+                      </div>
+                      <div className="tf">
+                        <b>Deuda acumulada</b>
+                        <span className={deuda.data?.deuda ? 'deuda' : 'ok'}>
+                          {deuda.data?.deuda ? formatMoney(deuda.data.deuda) : 'Sin deuda'}
+                        </span>
+                      </div>
+                      <div className="tf">
+                        <b>Último pago</b>
+                        <span style={{ fontSize: 13 }}>{pagos.data?.[0] ? formatDate(pagos.data[0].fecha) : '—'}</span>
+                      </div>
+                    </div>
+                    {(deuda.data?.mesesImpagos ?? 0) > 0 && (
+                      <div style={{ fontSize: 11.5, color: 'var(--red)', marginTop: 10, fontWeight: 600 }}>
+                        {deuda.data!.mesesImpagos} mes(es) impago(s)
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             <div className="dfoot">
@@ -997,6 +953,7 @@ function EditarDatosGeneralesModal({
   const [obrasSanitariasNumeroCuenta, setObrasSanitariasNumeroCuenta] = useState(propiedad.obrasSanitariasNumeroCuenta ?? '');
   const [camuzziNumeroCuenta, setCamuzziNumeroCuenta] = useState(propiedad.camuzziNumeroCuenta ?? '');
   const [retributivasNumeroCuenta, setRetributivasNumeroCuenta] = useState(propiedad.retributivasNumeroCuenta ?? '');
+  const [usinaNumeroCuenta, setUsinaNumeroCuenta] = useState(propiedad.usinaNumeroCuenta ?? '');
   const [punitorioTipo, setPunitorioTipo] = useState<'' | 'MONTO_FIJO' | 'PORCENTAJE'>(propiedad.punitorioTipo ?? '');
   const [punitorioValor, setPunitorioValor] = useState(propiedad.punitorioValor != null ? String(propiedad.punitorioValor) : '');
   const [punitorioFrecuencia, setPunitorioFrecuencia] = useState<'DIA' | 'SEMANA' | 'MES' | 'UNICO'>(
@@ -1037,6 +994,8 @@ function EditarDatosGeneralesModal({
           propiedad.modalidad === 'ALQUILER' && servicios.includes('RETRIBUTIVAS')
             ? retributivasNumeroCuenta.trim() || null
             : undefined,
+        usinaNumeroCuenta:
+          propiedad.modalidad === 'ALQUILER' && servicios.includes('USINA') ? usinaNumeroCuenta.trim() || null : undefined,
         punitorioTipo: propiedad.modalidad === 'ALQUILER' ? punitorioTipo || null : undefined,
         punitorioValor: propiedad.modalidad === 'ALQUILER' && punitorioTipo && punitorioValor ? Number(punitorioValor) : null,
         punitorioFrecuencia: propiedad.modalidad === 'ALQUILER' && punitorioTipo ? punitorioFrecuencia : null,
@@ -1139,6 +1098,11 @@ function EditarDatosGeneralesModal({
             setCamuzziNumeroCuenta={setCamuzziNumeroCuenta}
             retributivasNumeroCuenta={retributivasNumeroCuenta}
             setRetributivasNumeroCuenta={setRetributivasNumeroCuenta}
+            usinaNumeroCuenta={usinaNumeroCuenta}
+            setUsinaNumeroCuenta={setUsinaNumeroCuenta}
+            wrapperClassName="formgrid"
+            wrapperStyle={{ marginBottom: 4 }}
+            fieldStyle={{ minWidth: 0 }}
           />
 
           <div className="secttl">MORA POR ATRASO</div>

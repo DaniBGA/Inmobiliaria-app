@@ -44,17 +44,6 @@ interface KpisInquilinos {
   deudaTotalAcumulada: number;
 }
 
-interface FichaInquilino {
-  propiedadId: string;
-  propiedadNombre: string;
-  inquilino: Inquilino | null;
-  rentaVigente: number | null;
-  diaVencimiento: number;
-  deudaAcumulada: number;
-  mesesImpagos: number;
-  ultimoPago: Pago | null;
-}
-
 const ESTADO_LABEL: Record<FilaCobro['estado'], { texto: string; clase: string }> = {
   PAGADO: { texto: 'Pagado', clase: 'pagado' },
   PENDIENTE: { texto: 'Pendiente', clase: 'pendiente' },
@@ -108,10 +97,6 @@ export function InquilinosPage() {
     queryKey: ['cobros', 'mes', mes],
     queryFn: () => api.get<ResumenMes>(`/cobros/mes/${mes}`),
   });
-  const fichas = useQuery({
-    queryKey: ['cobros', 'inquilinos'],
-    queryFn: () => api.get<FichaInquilino[]>('/cobros/inquilinos'),
-  });
   const propiedades = useQuery({
     queryKey: ['propiedades'],
     queryFn: () => api.get<PropiedadDb[]>('/propiedades'),
@@ -135,9 +120,9 @@ export function InquilinosPage() {
     : 0;
 
   const q = busqueda.toLowerCase();
-  const fichasVisibles = (fichas.data ?? []).filter((f) => {
+  const alquileresVisibles = alquileres.filter((p) => {
     if (!q) return true;
-    return [f.inquilino?.nombre, f.inquilino?.email, f.propiedadNombre]
+    return [p.nombre, p.direccion, p.inquilino?.nombre, p.inquilino?.email, p.propietario?.nombre]
       .filter(Boolean)
       .join(' ')
       .toLowerCase()
@@ -264,12 +249,12 @@ export function InquilinosPage() {
           </table>
         </div>
 
-        <div className="secttl">FICHAS DE INQUILINOS</div>
+        <div className="secttl" style={{ marginTop: 26 }}>PROPIEDADES EN ALQUILER</div>
         <div className="tablewrap" style={{ marginBottom: 22 }}>
           <div className="searchbar" style={{ justifyContent: 'space-between' }}>
             <input
               type="text"
-              placeholder="Buscar inquilino por nombre, propiedad o email…"
+              placeholder="Buscar por propiedad, inquilino, propietario o email…"
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
             />
@@ -278,77 +263,13 @@ export function InquilinosPage() {
             </button>
           </div>
         </div>
-        <div className="tenants">
-          {fichasVisibles.map((f) => (
-            <div
-              key={f.propiedadId}
-              className={`tcard${f.deudaAcumulada > 0 ? ' debe' : ''}`}
-              style={{ cursor: 'pointer' }}
-              title="Clic para ver la ficha de la propiedad"
-              onClick={() => setFichaId(f.propiedadId)}
-            >
-              <div className="thead">
-                <div className="avatar">
-                  {(f.inquilino?.nombre ?? '')
-                    .split(' ')
-                    .filter(Boolean)
-                    .map((w) => w[0])
-                    .slice(0, 2)
-                    .join('')
-                    .toUpperCase()}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <h4>{f.inquilino?.nombre}</h4>
-                  <div className="tprop">{f.propiedadNombre}</div>
-                  <div className="tcontact">
-                    ☎ {f.inquilino?.telefono ?? <span className="nodata">—</span>}
-                    <br />
-                    ✉ {f.inquilino?.email ?? <span className="nodata">—</span>}
-                  </div>
-                </div>
-              </div>
-              <div className="tbody">
-                <div className="tstate">
-                  <div className="tf">
-                    <b>Alquiler vigente</b>
-                    <span>{formatMoney(f.rentaVigente)}</span>
-                  </div>
-                  <div className="tf">
-                    <b>Vence el</b>
-                    <span>{f.diaVencimiento} de cada mes</span>
-                  </div>
-                  <div className="tf">
-                    <b>Deuda acumulada</b>
-                    <span className={f.deudaAcumulada ? 'deuda' : 'ok'}>
-                      {f.deudaAcumulada ? formatMoney(f.deudaAcumulada) : 'Sin deuda'}
-                    </span>
-                  </div>
-                  <div className="tf">
-                    <b>Último pago</b>
-                    <span style={{ fontSize: 13 }}>{f.ultimoPago ? formatDate(f.ultimoPago.fecha) : '—'}</span>
-                  </div>
-                </div>
-                {f.mesesImpagos > 0 && (
-                  <div style={{ fontSize: 11.5, color: 'var(--red)', marginTop: 10, fontWeight: 600 }}>
-                    {f.mesesImpagos} mes(es) impago(s)
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-          {fichasVisibles.length === 0 && !fichas.isLoading && (
-            <div className="empty">Sin inquilinos que coincidan con la búsqueda.</div>
-          )}
-        </div>
-
-        <div className="secttl" style={{ marginTop: 26 }}>PROPIEDADES EN ALQUILER</div>
         <div className="salegrid">
-          {alquileres.length === 0 && (
+          {alquileresVisibles.length === 0 && (
             <div className="empty" style={{ gridColumn: '1/-1' }}>
-              No hay propiedades de alquiler cargadas.
+              {alquileres.length === 0 ? 'No hay propiedades de alquiler cargadas.' : 'Sin propiedades que coincidan con la búsqueda.'}
             </div>
           )}
-          {alquileres.map((p) => {
+          {alquileresVisibles.map((p) => {
             const ocupada = !!p.inquilino;
             return (
               <div

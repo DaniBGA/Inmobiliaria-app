@@ -232,6 +232,7 @@ model Propiedad {
   obrasSanitariasNumeroCuenta String?
   camuzziNumeroCuenta         String?
   retributivasNumeroCuenta    String?
+  usinaNumeroCuenta           String?
 
   // Control de publicación en la landing para ALQUILER — equivalente a
   // `Venta.publicada`, pero como campo propio acá porque el alquiler no

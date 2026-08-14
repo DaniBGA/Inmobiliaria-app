@@ -56,7 +56,7 @@ export class FacturasService {
   // servicios que los tienen — se agregan a la descripción del ítem
   // predeterminado para que queden reflejados en la factura sin tener que
   // volver a tipearlos cada mes. Obras Sanitarias lleva usuario + N° de
-  // cuenta; Camuzzi y Retributivas de Servicios solo N° de cuenta.
+  // cuenta; Usina, Camuzzi y Retributivas de Servicios solo N° de cuenta.
   private static datosCuentaSuffix(
     servicio: ServicioFacturable,
     propiedad: {
@@ -64,6 +64,7 @@ export class FacturasService {
       obrasSanitariasNumeroCuenta: string | null;
       camuzziNumeroCuenta: string | null;
       retributivasNumeroCuenta: string | null;
+      usinaNumeroCuenta: string | null;
     },
   ): string {
     if (servicio === ServicioFacturable.OBRAS_SANITARIAS) {
@@ -77,6 +78,9 @@ export class FacturasService {
     }
     if (servicio === ServicioFacturable.RETRIBUTIVAS && propiedad.retributivasNumeroCuenta) {
       return ` (N° cuenta ${propiedad.retributivasNumeroCuenta})`;
+    }
+    if (servicio === ServicioFacturable.USINA && propiedad.usinaNumeroCuenta) {
+      return ` (N° cuenta ${propiedad.usinaNumeroCuenta})`;
     }
     return '';
   }
@@ -98,6 +102,7 @@ export class FacturasService {
         obrasSanitariasNumeroCuenta: true,
         camuzziNumeroCuenta: true,
         retributivasNumeroCuenta: true,
+        usinaNumeroCuenta: true,
       },
     });
     const rentaVigenteRaw = await this.propiedadesService.rentaVigente(propiedadId, finDeMes(mes));
@@ -124,11 +129,20 @@ export class FacturasService {
     ];
     const serviciosOrdenados = FacturasService.SERVICIO_ORDEN.filter((s) => propiedad.serviciosHabilitados.includes(s));
     serviciosOrdenados.forEach((servicio, i) => {
-      const descripcion =
-        FacturasService.SERVICIO_DESCRIPCION[servicio] + FacturasService.datosCuentaSuffix(servicio, propiedad);
+      const base = FacturasService.SERVICIO_DESCRIPCION[servicio];
+      const descripcion = base + FacturasService.datosCuentaSuffix(servicio, propiedad);
+      // Coincidencia exacta primero (el caso normal: la cuenta no cambió de
+      // un mes a otro); si no hay, se busca por la descripción base sin el
+      // sufijo de cuenta — cubre el mes en que se carga o cambia el N° de
+      // cuenta, para no perder el monto recordado solo porque el texto de
+      // la descripción varió.
+      const montoAnterior =
+        montoAnteriorPorDescripcion.get(descripcion) ??
+        (facturaAnterior?.items ?? []).find((it) => it.descripcion === base || it.descripcion.startsWith(`${base} (`))
+          ?.monto;
       items.push({
         descripcion,
-        monto: montoAnteriorPorDescripcion.get(descripcion) ?? 0,
+        monto: montoAnterior != null ? Number(montoAnterior) : 0,
         orden: 1 + i,
       });
     });

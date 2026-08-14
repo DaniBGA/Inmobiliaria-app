@@ -3,98 +3,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { PageHeader } from '../components/PageHeader';
+import { ServiciosCuentaInputs, SERVICIOS_OPCIONES, type ServicioFacturable } from '../components/ServiciosCuentaInputs';
 
 type Modalidad = 'ALQUILER' | 'VENTA';
 type IndiceAjuste = '' | 'IPC' | 'ICL';
 type Moneda = 'ARS' | 'USD';
-type ServicioFacturable =
-  | 'EXPENSAS'
-  | 'USINA'
-  | 'CAMUZZI'
-  | 'OBRAS_SANITARIAS'
-  | 'RETRIBUTIVAS'
-  | 'CLOACAS'
-  | 'GAS_ENVASADO'
-  | 'SISTEMA_BIODIGESTOR';
 type OrigenCliente = 'INSTAGRAM' | 'PAGINA_WEB' | 'EN_PERSONA' | 'FACEBOOK' | 'CONTACTOS';
-
-const SERVICIOS_OPCIONES: { key: ServicioFacturable; label: string }[] = [
-  { key: 'EXPENSAS', label: 'Expensas' },
-  { key: 'USINA', label: 'Luz (Usina)' },
-  { key: 'CAMUZZI', label: 'Gas (Camuzzi)' },
-  { key: 'OBRAS_SANITARIAS', label: 'Agua (Obras Sanitarias)' },
-  { key: 'RETRIBUTIVAS', label: 'Retributivas de Servicios' },
-  { key: 'CLOACAS', label: 'Cloacas' },
-  { key: 'GAS_ENVASADO', label: 'Gas envasado' },
-  { key: 'SISTEMA_BIODIGESTOR', label: 'Sistema biodigestor' },
-];
-
-// Datos fijos de cuenta de algunos servicios (§ "agregar propiedad" / "editar
-// datos"), reflejados automáticamente en la factura — ver comentario en
-// schema.prisma. Solo se muestran cuando el checkbox del servicio
-// correspondiente está tildado.
-function ServiciosCuentaInputs({
-  servicios,
-  obrasSanitariasUsuario,
-  setObrasSanitariasUsuario,
-  obrasSanitariasNumeroCuenta,
-  setObrasSanitariasNumeroCuenta,
-  camuzziNumeroCuenta,
-  setCamuzziNumeroCuenta,
-  retributivasNumeroCuenta,
-  setRetributivasNumeroCuenta,
-}: {
-  servicios: ServicioFacturable[];
-  obrasSanitariasUsuario: string;
-  setObrasSanitariasUsuario: (v: string) => void;
-  obrasSanitariasNumeroCuenta: string;
-  setObrasSanitariasNumeroCuenta: (v: string) => void;
-  camuzziNumeroCuenta: string;
-  setCamuzziNumeroCuenta: (v: string) => void;
-  retributivasNumeroCuenta: string;
-  setRetributivasNumeroCuenta: (v: string) => void;
-}) {
-  const muestraAgua = servicios.includes('OBRAS_SANITARIAS');
-  const muestraGas = servicios.includes('CAMUZZI');
-  const muestraRetributivas = servicios.includes('RETRIBUTIVAS');
-  if (!muestraAgua && !muestraGas && !muestraRetributivas) return null;
-  return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 18px', marginTop: 10 }}>
-      {muestraAgua && (
-        <>
-          <div className="fg" style={{ minWidth: 160 }}>
-            <label>Agua — Usuario</label>
-            <input value={obrasSanitariasUsuario} onChange={(e) => setObrasSanitariasUsuario(e.target.value)} placeholder="Opcional" />
-          </div>
-          <div className="fg" style={{ minWidth: 160 }}>
-            <label>Agua — N° de cuenta</label>
-            <input
-              value={obrasSanitariasNumeroCuenta}
-              onChange={(e) => setObrasSanitariasNumeroCuenta(e.target.value)}
-              placeholder="Opcional"
-            />
-          </div>
-        </>
-      )}
-      {muestraGas && (
-        <div className="fg" style={{ minWidth: 160 }}>
-          <label>Gas — N° de cuenta</label>
-          <input value={camuzziNumeroCuenta} onChange={(e) => setCamuzziNumeroCuenta(e.target.value)} placeholder="Opcional" />
-        </div>
-      )}
-      {muestraRetributivas && (
-        <div className="fg" style={{ minWidth: 160 }}>
-          <label>Retributivas — N° de cuenta</label>
-          <input
-            value={retributivasNumeroCuenta}
-            onChange={(e) => setRetributivasNumeroCuenta(e.target.value)}
-            placeholder="Opcional"
-          />
-        </div>
-      )}
-    </div>
-  );
-}
 
 const ORIGEN_LABEL: Record<OrigenCliente, string> = {
   INSTAGRAM: 'Instagram',
@@ -160,6 +74,7 @@ export function AgregarPropiedadPage() {
   const [obrasSanitariasNumeroCuenta, setObrasSanitariasNumeroCuenta] = useState('');
   const [camuzziNumeroCuenta, setCamuzziNumeroCuenta] = useState('');
   const [retributivasNumeroCuenta, setRetributivasNumeroCuenta] = useState('');
+  const [usinaNumeroCuenta, setUsinaNumeroCuenta] = useState('');
 
   // Alquiler
   const [indice, setIndice] = useState<IndiceAjuste>('');
@@ -224,6 +139,7 @@ export function AgregarPropiedadPage() {
     setObrasSanitariasNumeroCuenta('');
     setCamuzziNumeroCuenta('');
     setRetributivasNumeroCuenta('');
+    setUsinaNumeroCuenta('');
     setIndice('');
     setFrecuenciaAumentoMeses('');
     setMontoAlquilerInicial('');
@@ -286,6 +202,7 @@ export function AgregarPropiedadPage() {
           : undefined,
         camuzziNumeroCuenta: servicios.includes('CAMUZZI') ? camuzziNumeroCuenta.trim() || undefined : undefined,
         retributivasNumeroCuenta: servicios.includes('RETRIBUTIVAS') ? retributivasNumeroCuenta.trim() || undefined : undefined,
+        usinaNumeroCuenta: servicios.includes('USINA') ? usinaNumeroCuenta.trim() || undefined : undefined,
         indice: modalidad === 'ALQUILER' && indice ? indice : undefined,
         frecuenciaAumentoMeses: modalidad === 'ALQUILER' && frecuenciaAumentoMeses ? Number(frecuenciaAumentoMeses) : undefined,
         montoAlquilerInicial: modalidad === 'ALQUILER' && montoAlquilerInicial ? Number(montoAlquilerInicial) : undefined,
@@ -634,6 +551,10 @@ export function AgregarPropiedadPage() {
                     setCamuzziNumeroCuenta={setCamuzziNumeroCuenta}
                     retributivasNumeroCuenta={retributivasNumeroCuenta}
                     setRetributivasNumeroCuenta={setRetributivasNumeroCuenta}
+                    usinaNumeroCuenta={usinaNumeroCuenta}
+                    setUsinaNumeroCuenta={setUsinaNumeroCuenta}
+                    wrapperStyle={{ display: 'flex', flexWrap: 'wrap', gap: '10px 18px', marginTop: 10 }}
+                    fieldStyle={{ minWidth: 160 }}
                   />
                 </div>
               </div>
@@ -688,6 +609,10 @@ export function AgregarPropiedadPage() {
                     setCamuzziNumeroCuenta={setCamuzziNumeroCuenta}
                     retributivasNumeroCuenta={retributivasNumeroCuenta}
                     setRetributivasNumeroCuenta={setRetributivasNumeroCuenta}
+                    usinaNumeroCuenta={usinaNumeroCuenta}
+                    setUsinaNumeroCuenta={setUsinaNumeroCuenta}
+                    wrapperStyle={{ display: 'flex', flexWrap: 'wrap', gap: '10px 18px', marginTop: 10 }}
+                    fieldStyle={{ minWidth: 160 }}
                   />
                 </div>
               </div>
