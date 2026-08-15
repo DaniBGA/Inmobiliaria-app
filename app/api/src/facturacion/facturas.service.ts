@@ -55,32 +55,34 @@ export class FacturasService {
   // Datos fijos de cuenta (ver comentario en schema.prisma) para los
   // servicios que los tienen — se agregan a la descripción del ítem
   // predeterminado para que queden reflejados en la factura sin tener que
-  // volver a tipearlos cada mes. Obras Sanitarias lleva usuario + N° de
-  // cuenta; Usina, Camuzzi y Retributivas de Servicios solo N° de cuenta.
+  // volver a tipearlos cada mes. Usina lleva usuario + N° de control;
+  // Obras Sanitarias, Camuzzi y Retributivas de Servicios solo N° de cuenta
+  // (pedido del usuario 2026-08-15: antes era al revés, Obras Sanitarias
+  // llevaba usuario y Usina solo N° de cuenta).
   private static datosCuentaSuffix(
     servicio: ServicioFacturable,
     propiedad: {
-      obrasSanitariasUsuario: string | null;
       obrasSanitariasNumeroCuenta: string | null;
       camuzziNumeroCuenta: string | null;
       retributivasNumeroCuenta: string | null;
       usinaNumeroCuenta: string | null;
+      usinaUsuario: string | null;
     },
   ): string {
-    if (servicio === ServicioFacturable.OBRAS_SANITARIAS) {
+    if (servicio === ServicioFacturable.USINA) {
       const partes: string[] = [];
-      if (propiedad.obrasSanitariasUsuario) partes.push(`Usuario ${propiedad.obrasSanitariasUsuario}`);
-      if (propiedad.obrasSanitariasNumeroCuenta) partes.push(`N° cuenta ${propiedad.obrasSanitariasNumeroCuenta}`);
+      if (propiedad.usinaUsuario) partes.push(`Usuario ${propiedad.usinaUsuario}`);
+      if (propiedad.usinaNumeroCuenta) partes.push(`N° de control ${propiedad.usinaNumeroCuenta}`);
       return partes.length ? ` (${partes.join(' - ')})` : '';
+    }
+    if (servicio === ServicioFacturable.OBRAS_SANITARIAS && propiedad.obrasSanitariasNumeroCuenta) {
+      return ` (N° cuenta ${propiedad.obrasSanitariasNumeroCuenta})`;
     }
     if (servicio === ServicioFacturable.CAMUZZI && propiedad.camuzziNumeroCuenta) {
       return ` (N° cuenta ${propiedad.camuzziNumeroCuenta})`;
     }
     if (servicio === ServicioFacturable.RETRIBUTIVAS && propiedad.retributivasNumeroCuenta) {
       return ` (N° cuenta ${propiedad.retributivasNumeroCuenta})`;
-    }
-    if (servicio === ServicioFacturable.USINA && propiedad.usinaNumeroCuenta) {
-      return ` (N° cuenta ${propiedad.usinaNumeroCuenta})`;
     }
     return '';
   }
@@ -98,11 +100,11 @@ export class FacturasService {
         punitorioFrecuencia: true,
         punitorioTipo: true,
         punitorioValor: true,
-        obrasSanitariasUsuario: true,
         obrasSanitariasNumeroCuenta: true,
         camuzziNumeroCuenta: true,
         retributivasNumeroCuenta: true,
         usinaNumeroCuenta: true,
+        usinaUsuario: true,
       },
     });
     const rentaVigenteRaw = await this.propiedadesService.rentaVigente(propiedadId, finDeMes(mes));

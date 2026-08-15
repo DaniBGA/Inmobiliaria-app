@@ -246,33 +246,37 @@ export function ClientesPage() {
                   </div>
                   <span className={`clitipo ${TIPO_CLASE[c.tipoOperacion]}`}>{TIPO_LABEL[c.tipoOperacion]}</span>
                 </div>
-                {(busca.length > 0 || c.detalle) && (
-                  <div className="contact" style={{ marginTop: 10 }}>
-                    <b>Busca:</b> {[...busca, c.detalle].filter(Boolean).join(' · ')}
-                  </div>
-                )}
-                {c.visitaOtraInmobiliariaConQuien && (
-                  <div className="contact" style={{ marginTop: 6, color: 'var(--orange)' }}>
-                    <b>⚠ Visita con otra inmobiliaria:</b> {c.visitaOtraInmobiliariaConQuien}
-                  </div>
-                )}
-                {c.notas && <div className="contact" style={{ marginTop: 6 }}>{c.notas}</div>}
-                <div className="props">
-                  <div className="oprop" style={{ cursor: 'default' }}>
-                    <span className="nm">Estado</span>
-                    <span className={`badge ${ESTADO_CLASE[c.estado]}`}>{ESTADO_LABEL[c.estado]}</span>
-                  </div>
-                  <div className="oprop" style={{ cursor: 'default' }}>
-                    <span className="nm">Origen</span>
-                    <span className="pdate">{c.origen ? ORIGEN_LABEL[c.origen] : '—'}</span>
-                  </div>
-                  {c.delegado && (
-                    <div className="oprop" style={{ cursor: 'default' }}>
-                      <span className="nm">Delegado / designado</span>
-                      <span className="pdate">{c.delegado.nombre}</span>
+                {c.tipoOperacion !== 'VENDER' && (
+                  <>
+                    {(busca.length > 0 || c.detalle) && (
+                      <div className="contact" style={{ marginTop: 10 }}>
+                        <b>Busca:</b> {[...busca, c.detalle].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
+                    {c.visitaOtraInmobiliariaConQuien && (
+                      <div className="contact" style={{ marginTop: 6, color: 'var(--orange)' }}>
+                        <b>⚠ Visita con otra inmobiliaria:</b> {c.visitaOtraInmobiliariaConQuien}
+                      </div>
+                    )}
+                    {c.notas && <div className="contact" style={{ marginTop: 6 }}>{c.notas}</div>}
+                    <div className="props">
+                      <div className="oprop" style={{ cursor: 'default' }}>
+                        <span className="nm">Estado</span>
+                        <span className={`badge ${ESTADO_CLASE[c.estado]}`}>{ESTADO_LABEL[c.estado]}</span>
+                      </div>
+                      <div className="oprop" style={{ cursor: 'default' }}>
+                        <span className="nm">Origen</span>
+                        <span className="pdate">{c.origen ? ORIGEN_LABEL[c.origen] : '—'}</span>
+                      </div>
+                      {c.delegado && (
+                        <div className="oprop" style={{ cursor: 'default' }}>
+                          <span className="nm">Delegado / designado</span>
+                          <span className="pdate">{c.delegado.nombre}</span>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
+                  </>
+                )}
                 <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border2)', display: 'flex', gap: 8 }}>
                   {c.telefono && (
                     <a className="btn-sm" href={`https://wa.me/${c.telefono.replace(/\D/g, '')}`} target="_blank" rel="noopener">
@@ -490,82 +494,86 @@ function ClienteModal({
             <option value="VENDER">Propietario / quiere vender</option>
           </select>
         </div>
-        <div className="fg">
-          <label>Estado</label>
-          <select value={estado} onChange={(e) => setEstado(e.target.value as EstadoCliente)}>
-            <option value="SIN_CONTACTAR">Sin contactar</option>
-            <option value="EN_SEGUIMIENTO">En seguimiento</option>
-            <option value="CERRADO">Cerrado</option>
-          </select>
-        </div>
-        <div className="fg">
-          <label>Origen</label>
-          <select value={origen} onChange={(e) => setOrigen(e.target.value as OrigenCliente | '')}>
-            <option value="">— Sin especificar —</option>
-            {Object.entries(ORIGEN_LABEL).map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="fg">
-          <label>Tipo de propiedad que busca</label>
-          <select value={busquedaTipoPropiedad} onChange={(e) => setBusquedaTipoPropiedad(e.target.value)}>
-            <option value="">— Indistinto —</option>
-            {Object.entries(TIPO_PROPIEDAD_LABEL).map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="fg">
-          <label>Zona</label>
-          <select value={zona} onChange={(e) => setZona(e.target.value as ZonaCliente | '')}>
-            <option value="">— Sin especificar —</option>
-            {Object.entries(ZONA_LABEL).map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="fg">
-          <label>Presupuesto desde</label>
-          <input type="number" min={0} step="0.01" value={montoDesde} onChange={(e) => setMontoDesde(e.target.value)} placeholder="Opcional" />
-        </div>
-        <div className="fg">
-          <label>Presupuesto hasta</label>
-          <input type="number" min={0} step="0.01" value={montoHasta} onChange={(e) => setMontoHasta(e.target.value)} placeholder="Opcional" />
-        </div>
-        <div className="fg">
-          <label>Delegado / designado</label>
-          <select value={delegadoId} onChange={(e) => setDelegadoId(e.target.value)}>
-            <option value="">— Sin asignar —</option>
-            {delegados.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.nombre}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="fg full">
-          <label>Detalle de lo que busca</label>
-          <input value={detalle} onChange={(e) => setDetalle(e.target.value)} placeholder="Opcional" />
-        </div>
-        <div className="fg full">
-          <label>Visita con otra inmobiliaria (con quién)</label>
-          <input
-            value={visitaOtraInmobiliariaConQuien}
-            onChange={(e) => setVisitaOtraInmobiliariaConQuien(e.target.value)}
-            placeholder="Opcional"
-          />
-        </div>
-        <div className="fg full">
-          <label>Notas</label>
-          <input value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Opcional" />
-        </div>
+        {tipoOperacion !== 'VENDER' && (
+          <>
+            <div className="fg">
+              <label>Estado</label>
+              <select value={estado} onChange={(e) => setEstado(e.target.value as EstadoCliente)}>
+                <option value="SIN_CONTACTAR">Sin contactar</option>
+                <option value="EN_SEGUIMIENTO">En seguimiento</option>
+                <option value="CERRADO">Cerrado</option>
+              </select>
+            </div>
+            <div className="fg">
+              <label>Origen</label>
+              <select value={origen} onChange={(e) => setOrigen(e.target.value as OrigenCliente | '')}>
+                <option value="">— Sin especificar —</option>
+                {Object.entries(ORIGEN_LABEL).map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="fg">
+              <label>Tipo de propiedad que busca</label>
+              <select value={busquedaTipoPropiedad} onChange={(e) => setBusquedaTipoPropiedad(e.target.value)}>
+                <option value="">— Indistinto —</option>
+                {Object.entries(TIPO_PROPIEDAD_LABEL).map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="fg">
+              <label>Zona</label>
+              <select value={zona} onChange={(e) => setZona(e.target.value as ZonaCliente | '')}>
+                <option value="">— Sin especificar —</option>
+                {Object.entries(ZONA_LABEL).map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="fg">
+              <label>Presupuesto desde</label>
+              <input type="number" min={0} step="0.01" value={montoDesde} onChange={(e) => setMontoDesde(e.target.value)} placeholder="Opcional" />
+            </div>
+            <div className="fg">
+              <label>Presupuesto hasta</label>
+              <input type="number" min={0} step="0.01" value={montoHasta} onChange={(e) => setMontoHasta(e.target.value)} placeholder="Opcional" />
+            </div>
+            <div className="fg">
+              <label>Delegado / designado</label>
+              <select value={delegadoId} onChange={(e) => setDelegadoId(e.target.value)}>
+                <option value="">— Sin asignar —</option>
+                {delegados.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="fg full">
+              <label>Detalle de lo que busca</label>
+              <input value={detalle} onChange={(e) => setDetalle(e.target.value)} placeholder="Opcional" />
+            </div>
+            <div className="fg full">
+              <label>Visita con otra inmobiliaria (con quién)</label>
+              <input
+                value={visitaOtraInmobiliariaConQuien}
+                onChange={(e) => setVisitaOtraInmobiliariaConQuien(e.target.value)}
+                placeholder="Opcional"
+              />
+            </div>
+            <div className="fg full">
+              <label>Notas</label>
+              <input value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Opcional" />
+            </div>
+          </>
+        )}
       </div>
       <div className="btnrow">
         {!esNuevo && (

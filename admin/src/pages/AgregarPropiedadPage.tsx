@@ -70,11 +70,11 @@ export function AgregarPropiedadPage() {
     'OBRAS_SANITARIAS',
     'RETRIBUTIVAS',
   ]);
-  const [obrasSanitariasUsuario, setObrasSanitariasUsuario] = useState('');
   const [obrasSanitariasNumeroCuenta, setObrasSanitariasNumeroCuenta] = useState('');
   const [camuzziNumeroCuenta, setCamuzziNumeroCuenta] = useState('');
   const [retributivasNumeroCuenta, setRetributivasNumeroCuenta] = useState('');
   const [usinaNumeroCuenta, setUsinaNumeroCuenta] = useState('');
+  const [usinaUsuario, setUsinaUsuario] = useState('');
 
   // Alquiler
   const [indice, setIndice] = useState<IndiceAjuste>('');
@@ -135,11 +135,11 @@ export function AgregarPropiedadPage() {
     setSuperficieCubierta('');
     setDescripcion('');
     setServicios(['EXPENSAS', 'USINA', 'CAMUZZI', 'OBRAS_SANITARIAS', 'RETRIBUTIVAS']);
-    setObrasSanitariasUsuario('');
     setObrasSanitariasNumeroCuenta('');
     setCamuzziNumeroCuenta('');
     setRetributivasNumeroCuenta('');
     setUsinaNumeroCuenta('');
+    setUsinaUsuario('');
     setIndice('');
     setFrecuenciaAumentoMeses('');
     setMontoAlquilerInicial('');
@@ -196,13 +196,13 @@ export function AgregarPropiedadPage() {
         // Los servicios (luz, gas, etc.) se cargan para cualquier tipo y
         // modalidad — antes solo se guardaban del lado de alquiler.
         serviciosHabilitados: servicios,
-        obrasSanitariasUsuario: servicios.includes('OBRAS_SANITARIAS') ? obrasSanitariasUsuario.trim() || undefined : undefined,
         obrasSanitariasNumeroCuenta: servicios.includes('OBRAS_SANITARIAS')
           ? obrasSanitariasNumeroCuenta.trim() || undefined
           : undefined,
         camuzziNumeroCuenta: servicios.includes('CAMUZZI') ? camuzziNumeroCuenta.trim() || undefined : undefined,
         retributivasNumeroCuenta: servicios.includes('RETRIBUTIVAS') ? retributivasNumeroCuenta.trim() || undefined : undefined,
         usinaNumeroCuenta: servicios.includes('USINA') ? usinaNumeroCuenta.trim() || undefined : undefined,
+        usinaUsuario: servicios.includes('USINA') ? usinaUsuario.trim() || undefined : undefined,
         indice: modalidad === 'ALQUILER' && indice ? indice : undefined,
         frecuenciaAumentoMeses: modalidad === 'ALQUILER' && frecuenciaAumentoMeses ? Number(frecuenciaAumentoMeses) : undefined,
         montoAlquilerInicial: modalidad === 'ALQUILER' && montoAlquilerInicial ? Number(montoAlquilerInicial) : undefined,
@@ -543,8 +543,8 @@ export function AgregarPropiedadPage() {
                   </div>
                   <ServiciosCuentaInputs
                     servicios={servicios}
-                    obrasSanitariasUsuario={obrasSanitariasUsuario}
-                    setObrasSanitariasUsuario={setObrasSanitariasUsuario}
+                    usinaUsuario={usinaUsuario}
+                    setUsinaUsuario={setUsinaUsuario}
                     obrasSanitariasNumeroCuenta={obrasSanitariasNumeroCuenta}
                     setObrasSanitariasNumeroCuenta={setObrasSanitariasNumeroCuenta}
                     camuzziNumeroCuenta={camuzziNumeroCuenta}
@@ -601,8 +601,8 @@ export function AgregarPropiedadPage() {
                   </div>
                   <ServiciosCuentaInputs
                     servicios={servicios}
-                    obrasSanitariasUsuario={obrasSanitariasUsuario}
-                    setObrasSanitariasUsuario={setObrasSanitariasUsuario}
+                    usinaUsuario={usinaUsuario}
+                    setUsinaUsuario={setUsinaUsuario}
                     obrasSanitariasNumeroCuenta={obrasSanitariasNumeroCuenta}
                     setObrasSanitariasNumeroCuenta={setObrasSanitariasNumeroCuenta}
                     camuzziNumeroCuenta={camuzziNumeroCuenta}

@@ -496,6 +496,23 @@ Se actualiza a medida que se implementa cada sección. Convención:
       100000/108000 generó ajuste -8000)
 - [x] Recibo deshabilitado si no hay pagos registrados para ese período —
       probado: devuelve 400 sin pagos (2026-07-22)
+- [x] **2026-08-15, pedido del usuario: qué "datos de cuenta" se piden por
+      servicio, invertido.** Antes Obras Sanitarias pedía Usuario + N° de
+      cuenta y Usina (Luz) solo N° de cuenta; el usuario pidió que sea al
+      revés — Luz con Usuario + N° de control, Obras Sanitarias solo N° de
+      cuenta. Se agregó el campo nuevo `Propiedad.usinaUsuario` (migración
+      aditiva `20260815174319_propiedad_usina_usuario`) y se dejó de usar
+      `Propiedad.obrasSanitariasUsuario` en código (DTO, servicio de
+      facturación, ambos formularios del admin) — la columna sigue en la
+      base sin borrarse para no perder datos ya cargados en propiedades
+      reales, pero no se lee ni se escribe más. `ServiciosCuentaInputs.tsx`
+      (componente compartido por `PropiedadFichaDrawer.tsx` y
+      `AgregarPropiedadPage.tsx`) ahora muestra "Luz — Usuario" + "Luz — N°
+      de control" cuando el servicio USINA está tildado, y solo "Agua — N°
+      de cuenta" para OBRAS_SANITARIAS. `FacturasService::datosCuentaSuffix()`
+      (`facturas.service.ts`) refleja el mismo cambio en la descripción del
+      ítem de factura. `tsc --noEmit` limpio en `app/api/` y `admin/` tras
+      el cambio.
 
 ## 3.6 Ventas → Caja en dólares
 
@@ -612,6 +629,38 @@ Se actualiza a medida que se implementa cada sección. Convención:
       `origen: EN_PERSONA` — confirmado con el usuario, no inventado) para
       que quede igual de completo que si se hubiera creado con la
       funcionalidad nueva desde el principio (2026-07-30).
+- [x] **2026-08-15, pedido del usuario: modal de edición de Cliente
+      simplificado cuando el tipo es "Propietario / quiere vender".** No
+      existe un enum `PROPIETARIO` — es la etiqueta de UI para
+      `tipoOperacion === 'VENDER'` (`TIPO_LABEL` en `ClientesPage.tsx`). En
+      `ClienteModal` (`admin/src/pages/ClientesPage.tsx`), cuando
+      `tipoOperacion === 'VENDER'` el formulario ahora solo muestra Nombre,
+      Teléfono, Email y el selector de Tipo (para poder recategorizarlo) —
+      se ocultan Estado, Origen, Tipo de propiedad que busca, Zona,
+      Presupuesto desde/hasta, Delegado, Detalle, Visita con otra
+      inmobiliaria y Notas (siguen teniendo sus campos internos con el
+      valor que ya tenían, solo se les deja de mostrar el input; no se
+      limpian al ocultarlos). `tsc --noEmit` limpio en `admin/` tras el
+      cambio.
+      **Extendido el mismo día (seguimiento inmediato del usuario, que
+      mandó una captura de una ficha real de "Lucas" con "Busca: zona
+      indiferente")**: la simplificación no alcanzaba solo al modal de
+      edición — la tarjeta (`.ownercard`) de la grilla de Clientes también
+      mostraba "Busca: ...", Estado, Origen y Delegado para un Propietario.
+      Mismo criterio (`c.tipoOperacion !== 'VENDER'`) envuelve ahora esos
+      bloques en la tarjeta: para un Propietario solo quedan visibles
+      nombre, teléfono, email, el badge de tipo y los botones de acción
+      (WhatsApp/Email/Editar) — igual que para el modal.
+      **Segundo seguimiento el mismo día**: el gráfico de torta "ORIGEN DE
+      LOS CLIENTES" (`ClientesService.statsPorOrigen()`) contaba también a
+      los Propietarios (`tipoOperacion: VENDER`) — el usuario pidió que el
+      gráfico refleje solo clientes reales (buscan alquilar/comprar), no
+      propietarios que cargan una propiedad. Se agregó
+      `tipoOperacion: { not: VENDER }` al `where` del `groupBy`. Probado
+      con curl: conteo de "Página web" en 1 antes y después de crear un
+      Cliente TEST con `tipoOperacion: VENDER` (no varió); dato de prueba
+      borrado en forma definitiva al terminar. `tsc --noEmit` limpio en
+      `app/api/`.
 
 ## 2.7 Agenda
 

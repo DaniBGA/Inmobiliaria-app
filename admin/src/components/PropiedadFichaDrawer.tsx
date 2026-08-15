@@ -66,11 +66,11 @@ interface PropiedadFicha {
   descripcion: string | null;
   caracterEspecial: boolean;
   serviciosHabilitados: ServicioFacturable[];
-  obrasSanitariasUsuario: string | null;
   obrasSanitariasNumeroCuenta: string | null;
   camuzziNumeroCuenta: string | null;
   retributivasNumeroCuenta: string | null;
   usinaNumeroCuenta: string | null;
+  usinaUsuario: string | null;
   fotos: FotoPropiedadItem[];
   montoAlquilerVigente: string | number | null;
   alquilerPublicado: boolean;
@@ -949,11 +949,11 @@ function EditarDatosGeneralesModal({
   const [superficieCubierta, setSuperficieCubierta] = useState(String(propiedad.superficieCubierta ?? ''));
   const [descripcion, setDescripcion] = useState(propiedad.descripcion ?? '');
   const [servicios, setServicios] = useState<ServicioFacturable[]>(propiedad.serviciosHabilitados ?? []);
-  const [obrasSanitariasUsuario, setObrasSanitariasUsuario] = useState(propiedad.obrasSanitariasUsuario ?? '');
   const [obrasSanitariasNumeroCuenta, setObrasSanitariasNumeroCuenta] = useState(propiedad.obrasSanitariasNumeroCuenta ?? '');
   const [camuzziNumeroCuenta, setCamuzziNumeroCuenta] = useState(propiedad.camuzziNumeroCuenta ?? '');
   const [retributivasNumeroCuenta, setRetributivasNumeroCuenta] = useState(propiedad.retributivasNumeroCuenta ?? '');
   const [usinaNumeroCuenta, setUsinaNumeroCuenta] = useState(propiedad.usinaNumeroCuenta ?? '');
+  const [usinaUsuario, setUsinaUsuario] = useState(propiedad.usinaUsuario ?? '');
   const [punitorioTipo, setPunitorioTipo] = useState<'' | 'MONTO_FIJO' | 'PORCENTAJE'>(propiedad.punitorioTipo ?? '');
   const [punitorioValor, setPunitorioValor] = useState(propiedad.punitorioValor != null ? String(propiedad.punitorioValor) : '');
   const [punitorioFrecuencia, setPunitorioFrecuencia] = useState<'DIA' | 'SEMANA' | 'MES' | 'UNICO'>(
@@ -980,10 +980,6 @@ function EditarDatosGeneralesModal({
         descripcion: descripcion.trim() || undefined,
         caracterEspecial,
         serviciosHabilitados: propiedad.modalidad === 'ALQUILER' ? servicios : undefined,
-        obrasSanitariasUsuario:
-          propiedad.modalidad === 'ALQUILER' && servicios.includes('OBRAS_SANITARIAS')
-            ? obrasSanitariasUsuario.trim() || null
-            : undefined,
         obrasSanitariasNumeroCuenta:
           propiedad.modalidad === 'ALQUILER' && servicios.includes('OBRAS_SANITARIAS')
             ? obrasSanitariasNumeroCuenta.trim() || null
@@ -996,6 +992,8 @@ function EditarDatosGeneralesModal({
             : undefined,
         usinaNumeroCuenta:
           propiedad.modalidad === 'ALQUILER' && servicios.includes('USINA') ? usinaNumeroCuenta.trim() || null : undefined,
+        usinaUsuario:
+          propiedad.modalidad === 'ALQUILER' && servicios.includes('USINA') ? usinaUsuario.trim() || null : undefined,
         punitorioTipo: propiedad.modalidad === 'ALQUILER' ? punitorioTipo || null : undefined,
         punitorioValor: propiedad.modalidad === 'ALQUILER' && punitorioTipo && punitorioValor ? Number(punitorioValor) : null,
         punitorioFrecuencia: propiedad.modalidad === 'ALQUILER' && punitorioTipo ? punitorioFrecuencia : null,
@@ -1090,8 +1088,8 @@ function EditarDatosGeneralesModal({
           </div>
           <ServiciosCuentaInputs
             servicios={servicios}
-            obrasSanitariasUsuario={obrasSanitariasUsuario}
-            setObrasSanitariasUsuario={setObrasSanitariasUsuario}
+            usinaUsuario={usinaUsuario}
+            setUsinaUsuario={setUsinaUsuario}
             obrasSanitariasNumeroCuenta={obrasSanitariasNumeroCuenta}
             setObrasSanitariasNumeroCuenta={setObrasSanitariasNumeroCuenta}
             camuzziNumeroCuenta={camuzziNumeroCuenta}

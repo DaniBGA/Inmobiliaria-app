@@ -29,8 +29,8 @@ export const SERVICIOS_OPCIONES: { key: ServicioFacturable; label: string }[] = 
 // `fieldStyle` dejan que cada pantalla mantenga su propio layout alrededor.
 export function ServiciosCuentaInputs({
   servicios,
-  obrasSanitariasUsuario,
-  setObrasSanitariasUsuario,
+  usinaUsuario,
+  setUsinaUsuario,
   obrasSanitariasNumeroCuenta,
   setObrasSanitariasNumeroCuenta,
   camuzziNumeroCuenta,
@@ -44,8 +44,8 @@ export function ServiciosCuentaInputs({
   fieldStyle,
 }: {
   servicios: ServicioFacturable[];
-  obrasSanitariasUsuario: string;
-  setObrasSanitariasUsuario: (v: string) => void;
+  usinaUsuario: string;
+  setUsinaUsuario: (v: string) => void;
   obrasSanitariasNumeroCuenta: string;
   setObrasSanitariasNumeroCuenta: (v: string) => void;
   camuzziNumeroCuenta: string;
@@ -66,26 +66,26 @@ export function ServiciosCuentaInputs({
   return (
     <div className={wrapperClassName} style={wrapperStyle}>
       {muestraLuz && (
-        <div className="fg" style={fieldStyle}>
-          <label>Luz — N° de cuenta</label>
-          <input value={usinaNumeroCuenta} onChange={(e) => setUsinaNumeroCuenta(e.target.value)} placeholder="Opcional" />
-        </div>
-      )}
-      {muestraAgua && (
         <>
           <div className="fg" style={fieldStyle}>
-            <label>Agua — Usuario</label>
-            <input value={obrasSanitariasUsuario} onChange={(e) => setObrasSanitariasUsuario(e.target.value)} placeholder="Opcional" />
+            <label>Luz — Usuario</label>
+            <input value={usinaUsuario} onChange={(e) => setUsinaUsuario(e.target.value)} placeholder="Opcional" />
           </div>
           <div className="fg" style={fieldStyle}>
-            <label>Agua — N° de cuenta</label>
-            <input
-              value={obrasSanitariasNumeroCuenta}
-              onChange={(e) => setObrasSanitariasNumeroCuenta(e.target.value)}
-              placeholder="Opcional"
-            />
+            <label>Luz — N° de control</label>
+            <input value={usinaNumeroCuenta} onChange={(e) => setUsinaNumeroCuenta(e.target.value)} placeholder="Opcional" />
           </div>
         </>
+      )}
+      {muestraAgua && (
+        <div className="fg" style={fieldStyle}>
+          <label>Agua — N° de cuenta</label>
+          <input
+            value={obrasSanitariasNumeroCuenta}
+            onChange={(e) => setObrasSanitariasNumeroCuenta(e.target.value)}
+            placeholder="Opcional"
+          />
+        </div>
       )}
       {muestraGas && (
         <div className="fg" style={fieldStyle}>

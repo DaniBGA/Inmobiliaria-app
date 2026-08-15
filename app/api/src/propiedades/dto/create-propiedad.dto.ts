@@ -140,10 +140,6 @@ export class CreatePropiedadDto {
   // en schema.prisma) — se reflejan automáticamente en la factura.
   @IsOptional()
   @IsString()
-  obrasSanitariasUsuario?: string;
-
-  @IsOptional()
-  @IsString()
   obrasSanitariasNumeroCuenta?: string;
 
   @IsOptional()
@@ -157,6 +153,10 @@ export class CreatePropiedadDto {
   @IsOptional()
   @IsString()
   usinaNumeroCuenta?: string;
+
+  @IsOptional()
+  @IsString()
+  usinaUsuario?: string;
 
   // Publicación en la landing (solo aplica a ALQUILER vacante — ver
   // PublicPropiedadesService). Default true en el schema.

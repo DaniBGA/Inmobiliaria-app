@@ -227,12 +227,18 @@ model Propiedad {
   // sola vez en la propiedad (no en cada factura, a diferencia de
   // `FacturaItem.numeroLiquidacion`) y se reflejan automáticamente en la
   // descripción del ítem predeterminado cada vez que se emite una factura
-  // (ver FacturasService::itemsPredeterminados()).
+  // (ver FacturasService::itemsPredeterminados()). Usina lleva usuario + N°
+  // de control; Obras Sanitarias, Camuzzi y Retributivas de Servicios solo
+  // N° de cuenta. `obrasSanitariasUsuario` queda sin uso en el código (antes
+  // Obras Sanitarias también tenía usuario, pedido del usuario 2026-08-15
+  // invirtió qué servicio lleva ese dato) — no se borra la columna para no
+  // perder datos ya cargados de propiedades reales.
   obrasSanitariasUsuario      String?
   obrasSanitariasNumeroCuenta String?
   camuzziNumeroCuenta         String?
   retributivasNumeroCuenta    String?
   usinaNumeroCuenta           String?
+  usinaUsuario                String?
 
   // Control de publicación en la landing para ALQUILER — equivalente a
   // `Venta.publicada`, pero como campo propio acá porque el alquiler no
