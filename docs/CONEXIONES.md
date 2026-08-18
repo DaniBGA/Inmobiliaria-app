@@ -570,6 +570,46 @@ Se actualiza a medida que se implementa cada sección. Convención:
       lo fija al primer día del mes actual → editar teléfono de nuevo sin
       tocar el checkbox lo mantiene sin pisarlo → destildarlo lo vuelve a
       `null`. `tsc --noEmit` limpio en `admin/`. Dato de prueba limpiado.
+- [x] **2026-08-18, bug estructural reportado por el usuario: causa raíz
+      del mismo mecanismo detectado antes en "depto lukens" (más arriba,
+      §3.1) — pero acá reproducible por diseño, no un accidente de carga.**
+      `PropiedadesService.create()` (`propiedades.service.ts:50`), cuando
+      recibía `montoAlquilerInicial` sin `fechaAlquilerInicial` ni
+      `contratoInicio`, creaba igual un `HistorialAumento` con fallback a
+      "hoy". `AgregarPropiedadPage.tsx` (alta de propiedad) nunca manda
+      ninguna de esas dos fechas — ahí "Monto de alquiler inicial" es el
+      precio de publicación de una propiedad todavía vacante, sin contrato
+      real. Resultado: **toda** propiedad cargada con ese campo lleno
+      quedaba con un aumento fantasma fechado el día de carga. Si después
+      se le asignaba un inquilino con un contrato viejo (fecha real vía
+      `AlquilarPropiedadModal`, que registra su propio aumento aparte con
+      `contratoInicio`), el fantasma "de hoy" — por ser más reciente —
+      ganaba como ancla de `proximoAumento()`/`rentaVigente()`
+      (`propiedadesService.rentaVigente()`/`proximoAumento()` siempre
+      anclan en el aumento con `fecha` más reciente) y corría mal el
+      cálculo, exactamente el mismo síntoma que "depto lukens".
+      **Fix**: el `HistorialAumento` inicial ahora solo se crea en
+      `create()` si vino una fecha real (`fechaAlquilerInicial` o
+      `contratoInicio`) — nunca con fallback a la fecha de carga. Una
+      propiedad recién agregada sin contrato queda con
+      `montoAlquilerVigente` seteado (para que la ficha/tarjeta muestre el
+      precio de publicación) pero **sin ningún `HistorialAumento`** — el
+      historial real de esa propiedad recién arranca cuando se le asigna
+      el primer inquilino (`AlquilarPropiedadModal`, que ya registraba su
+      propio aumento correctamente con la fecha real del contrato).
+      Probado con curl reproduciendo el escenario exacto: crear propiedad
+      con monto pero sin fecha → `historialAumentos: []` (antes quedaba
+      con un aumento fantasma) → asignar contrato viejo (01/02/2026,
+      trimestral) vía el mismo flujo que `AlquilarPropiedadModal` → queda
+      un solo aumento real (01/02/2026) → `próximoAumento` da 01/05/2026
+      correcto. `tsc --noEmit` limpio en `app/api/`. Dato de prueba
+      limpiado.
+      **Dato sucio pendiente en propiedades reales** (mismo mecanismo,
+      previo a este fix): `Local1` y `depto santander` (ver §3.1 para
+      `depto lukens`, ya corregida) tienen aumentos fechados el día de
+      carga (29/07) en vez de sus `contratoInicio` reales (30/07 y 24/07)
+      — no se tocaron todavía, el usuario prefiere revisarlas él mismo
+      antes de que se borren/corrijan.
 
 ## 3.6 Ventas → Caja en dólares
 

@@ -65,20 +65,27 @@ export class PropiedadesService {
       },
     });
 
-    if (montoAlquilerInicial != null) {
+    // Solo se crea el primer `HistorialAumento` acá si vino una fecha real
+    // de arranque de contrato (`fechaAlquilerInicial`/`contratoInicio`) —
+    // nunca con un fallback a "hoy". `AgregarPropiedadPage.tsx` no manda
+    // ninguna de las dos (ahí "monto de alquiler inicial" es solo el precio
+    // de publicación de una propiedad todavía vacante, sin contrato real
+    // todavía), así que antes esto fabricaba un aumento fechado el día en
+    // que se cargó la propiedad — no el día en que arrancó el contrato. Si
+    // después se le asignaba un inquilino con un contrato viejo (vía
+    // `AlquilarPropiedadModal`, que registra su propio aumento con la fecha
+    // real de `contratoInicio`), ese aumento fantasma "de hoy" quedaba como
+    // el más reciente (`proximoAumento()`/`rentaVigente()` anclan siempre
+    // en el último) y pisaba el cálculo real de aumentos — bug reportado
+    // por el usuario 2026-08-18, mismo mecanismo que ya se había detectado
+    // como aumento duplicado en una propiedad real (ver CONEXIONES.md).
+    // Ahora el historial de una propiedad recién empieza a existir cuando
+    // se asigna el primer inquilino de verdad.
+    if (montoAlquilerInicial != null && (fechaAlquilerInicial || contratoInicio)) {
       await this.prisma.historialAumento.create({
         data: {
           propiedadId: propiedad.id,
-          // Sin `new Date()` a secas acá: eso incluye la hora actual, y como
-          // el resto de los aumentos siempre se cargan a partir de un
-          // `@IsDateString()` (medianoche UTC), un aumento posterior el
-          // mismo día quedaría ordenado *antes* que este por `fecha desc`
-          // (medianoche < la hora en que se creó la propiedad).
-          fecha: fechaAlquilerInicial
-            ? new Date(fechaAlquilerInicial)
-            : contratoInicio
-              ? new Date(contratoInicio)
-              : new Date(new Date().toISOString().slice(0, 10)),
+          fecha: new Date(fechaAlquilerInicial ?? contratoInicio!),
           monto: montoAlquilerInicial,
         },
       });
