@@ -1,11 +1,16 @@
+// `maximumFractionDigits: 2` sin `minimumFractionDigits` muestra los
+// centavos solo cuando el monto los tiene (nunca ".00" de más en un monto
+// redondo) — antes `maximumFractionDigits: 0` los descartaba siempre,
+// redondeando para arriba o para abajo cualquier monto con centavos en
+// facturas, liquidaciones, cobros, etc. (pedido del usuario 2026-08-18).
 export function formatMoney(n: number | string | null | undefined): string {
   const v = Number(n ?? 0);
-  return `$ ${v.toLocaleString('es-AR', { maximumFractionDigits: 0 })}`;
+  return `$ ${v.toLocaleString('es-AR', { maximumFractionDigits: 2 })}`;
 }
 
 export function formatUsd(n: number | string | null | undefined): string {
   const v = Number(n ?? 0);
-  return `US$ ${v.toLocaleString('es-AR', { maximumFractionDigits: 0 })}`;
+  return `US$ ${v.toLocaleString('es-AR', { maximumFractionDigits: 2 })}`;
 }
 
 export function formatDate(fecha: string | Date | null | undefined): string {

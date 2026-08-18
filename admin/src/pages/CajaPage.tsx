@@ -99,7 +99,7 @@ const MOVS_POR_PAGINA = 15;
 
 function fmtMon(m: Movimiento) {
   if (m.moneda === 'USD') return formatUsd(m.monto);
-  if (m.moneda === 'EUR') return `€ ${Number(m.monto).toLocaleString('es-AR', { maximumFractionDigits: 0 })}`;
+  if (m.moneda === 'EUR') return `€ ${Number(m.monto).toLocaleString('es-AR', { maximumFractionDigits: 2 })}`;
   return formatMoney(m.monto);
 }
 

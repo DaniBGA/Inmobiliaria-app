@@ -513,6 +513,63 @@ Se actualiza a medida que se implementa cada sección. Convención:
       (`facturas.service.ts`) refleja el mismo cambio en la descripción del
       ítem de factura. `tsc --noEmit` limpio en `app/api/` y `admin/` tras
       el cambio.
+- [x] **2026-08-18, pedido del usuario: los centavos no se mostraban en
+      ningún monto del admin (facturas, liquidaciones, cobros, caja...) —
+      se redondeaban para arriba o para abajo.** Causa: `formatMoney()` /
+      `formatUsd()` (`admin/src/lib/format.ts`), la función de formato de
+      moneda compartida por prácticamente toda la UI del admin (factura y
+      recibo en `PropiedadFichaDrawer.tsx`, liquidación en
+      `LiquidacionComprobante.tsx`/`PropietariosPage.tsx`, Cobros, Caja,
+      Ventas, Incidencias, Avisos, Dashboard, Clientes, Configuración),
+      usaba `toLocaleString('es-AR', { maximumFractionDigits: 0 })` — eso
+      descarta cualquier centavo al mostrarlo, redondeando al peso entero
+      más cercano. Se cambió a `maximumFractionDigits: 2` sin
+      `minimumFractionDigits` (no `{ minimumFractionDigits: 2,
+      maximumFractionDigits: 2 }`) para que un monto redondo siga
+      mostrándose limpio ("$ 500.000", sin ",00" de más) y uno con
+      centavos los muestre ("$ 500.000,5", "$ 108.500,25"). Mismo fix en
+      el formateador de EUR de `CajaPage.tsx` (estaba duplicado en vez de
+      usar la función compartida, con el mismo `maximumFractionDigits: 0`).
+      Los `<input type="number">` de montos ya tenían `step="0.01"` en
+      todos los formularios relevantes (ítems de factura, aumento,
+      honorarios, gasto) — el problema era pura visualización, no carga de
+      datos ni cálculo; el backend ya generaba los montos en los textos de
+      Avisos con centavos correctamente (`avisos.service.ts::formatMoney()`
+      interno, sin tocar). Como los comprobantes en PDF
+      (`pdfComprobante.ts::descargarPdfComprobante()`) rasterizan el mismo
+      DOM que se ve en pantalla, el fix se propaga solo a Factura, Recibo y
+      Liquidación en PDF sin tocar ese archivo. **No se tocó**
+      `app/src/lib/format.ts` (formateador de moneda de la landing
+      pública) — ahí sí tiene sentido redondear precios de catálogo, y el
+      pedido era sobre "facturas... liquidación... en todo [el admin]", no
+      sobre los precios públicos de propiedades. `tsc --noEmit` limpio en
+      `admin/`.
+- [x] **2026-08-18, pedido del usuario: "Editar Inquilino" (desde la ficha
+      de una propiedad ya alquilada) no ofrecía el checkbox "Se encuentra
+      al día", solo disponible antes al dar de alta el contrato desde
+      `AlquilarPropiedadModal`.** El backend ya soportaba esto de punta a
+      punta — `UpsertInquilinoDto.alDia` y
+      `PropiedadesService.upsertInquilino()` (`propiedades.service.ts:212`)
+      ya distinguían "`alDia` ausente → no tocar `alDiaDesde`" de
+      "`alDia` presente → fijarlo a hoy o limpiarlo" — pero
+      `EditarInquilinoModal` (`PropiedadFichaDrawer.tsx`) nunca lo
+      exponía. Se agregó el mismo checkbox ("Se encuentra al día — ya
+      alquilaba y pagaba por fuera del sistema") al formulario de edición,
+      con la nota explicativa condicional igual que en el alta. Cuidado
+      importante: el checkbox arranca reflejando `inquilino.alDiaDesde !=
+      null` (no siempre destildado como en el alta) y **solo se manda
+      `alDia` en el PATCH si el usuario lo tocó** (comparado contra ese
+      valor inicial) — mandarlo siempre pisaría la fecha real ya guardada
+      con la de hoy cada vez que alguien edita solo el teléfono o el
+      email, sin querer tocar este campo (el propio comentario del
+      backend ya advertía este riesgo). Se agregó `alDiaDesde` a la
+      interfaz `Inquilino` del frontend (no estaba tipado, aunque el
+      backend ya lo devolvía siempre vía `include: { inquilino: true }`).
+      Probado con curl end-to-end: crear inquilino sin al-día → editar
+      teléfono sin tocar el checkbox mantiene `alDiaDesde: null` → tildar
+      lo fija al primer día del mes actual → editar teléfono de nuevo sin
+      tocar el checkbox lo mantiene sin pisarlo → destildarlo lo vuelve a
+      `null`. `tsc --noEmit` limpio en `admin/`. Dato de prueba limpiado.
 
 ## 3.6 Ventas → Caja en dólares
 

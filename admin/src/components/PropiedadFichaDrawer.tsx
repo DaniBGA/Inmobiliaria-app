@@ -21,6 +21,7 @@ interface Inquilino {
   nombre: string;
   telefono: string | null;
   email: string | null;
+  alDiaDesde: string | null;
 }
 interface Propietario {
   nombre: string;
@@ -1176,17 +1177,27 @@ function EditarInquilinoModal({
   const [nombre, setNombre] = useState(inquilino.nombre);
   const [telefono, setTelefono] = useState(inquilino.telefono ?? '');
   const [email, setEmail] = useState(inquilino.email ?? '');
+  // Estado inicial tomado de si ya tiene `alDiaDesde` cargado — el checkbox
+  // arranca reflejando el valor real, no siempre destildado como en el alta.
+  const alDiaInicial = inquilino.alDiaDesde != null;
+  const [alDia, setAlDia] = useState(alDiaInicial);
   const [error, setError] = useState<string | null>(null);
 
   // Mismo endpoint que usa "+ Agregar inquilino" (upsert por propiedadId) —
   // al ya existir un inquilino para esta propiedad, esto actualiza sus
-  // datos en el lugar sin tocar su `numero` correlativo.
+  // datos en el lugar sin tocar su `numero` correlativo. `alDia` solo se
+  // manda si el usuario lo tocó (comparado contra `alDiaInicial`): el
+  // backend interpreta su ausencia como "no tocar `alDiaDesde`" (ver
+  // comentario en `PropiedadesService.upsertInquilino()`) — mandarlo
+  // siempre pisaría la fecha real ya guardada con la de hoy cada vez que
+  // se edita nombre/teléfono/email sin querer tocar este campo.
   const guardar = useMutation({
     mutationFn: () =>
       api.patch(`/propiedades/${propiedadId}/inquilino`, {
         nombre: nombre.trim(),
         telefono: telefono.trim() || undefined,
         email: email.trim() || undefined,
+        alDia: alDia !== alDiaInicial ? alDia : undefined,
       }),
     onSuccess: onSaved,
     onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo guardar el inquilino.'),
@@ -1208,7 +1219,23 @@ function EditarInquilinoModal({
           <label>Email</label>
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Opcional" />
         </div>
+        <div className="fg full">
+          <label className="chk">
+            <input type="checkbox" checked={alDia} onChange={(e) => setAlDia(e.target.checked)} />
+            <span>Se encuentra al día (ya alquilaba y pagaba por fuera del sistema)</span>
+          </label>
+        </div>
       </div>
+      {alDia !== alDiaInicial && (
+        <div className="cfgnote" style={{ marginTop: 0, marginBottom: 14 }}>
+          <i>△</i>
+          <span>
+            {alDia
+              ? 'No se le va a cobrar deuda de los meses anteriores — el pago empieza a exigirse desde este mes.'
+              : 'Se vuelve a exigir el pago desde el inicio del contrato — puede generar deuda de meses anteriores si corresponde.'}
+          </span>
+        </div>
+      )}
       <div className="btnrow">
         <button className="btn-ghost" onClick={onClose}>
           Cancelar
