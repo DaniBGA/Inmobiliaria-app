@@ -46,7 +46,12 @@ Se actualiza a medida que se implementa cada sección. Convención:
       01-nov (caso real del usuario), 01-ene trimestral (día 1 exacto) →
       01-abr, 31-ene cuatrimestral → 01-jun, 15-jul mensual → 01-sep.
       Avisos y Agenda reusan esta misma función, así que heredan la
-      corrección sin cambios propios.)
+      corrección sin cambios propios. **Regla reemplazada 2026-08-18, ver
+      más abajo (§3.6, antes de "Ventas") — el usuario pidió lo contrario:
+      que el mes de inicio SIEMPRE cuente como completo, sin importar el
+      día.** El ejemplo "27-jul trimestral → 01-nov" de este párrafo ya NO
+      es el comportamiento actual (ahora da 01-oct); se deja el texto
+      original acá para que quede el historial de la decisión previa.)
 - [x] Próximo aumento → evento en Agenda (automático, no persistido) —
       `api/src/agenda/agenda.service.ts::eventosDelMes()` (2026-07-22,
       probado: propiedad con aumento el 2026-07-28 apareció como evento
@@ -610,6 +615,36 @@ Se actualiza a medida que se implementa cada sección. Convención:
       carga (29/07) en vez de sus `contratoInicio` reales (30/07 y 24/07)
       — no se tocaron todavía, el usuario prefiere revisarlas él mismo
       antes de que se borren/corrijan.
+- [x] **2026-08-18, cambio de regla de negocio pedido por el usuario (con
+      confirmación explícita del trade-off): el mes en que arranca un
+      contrato/aumento AHORA SIEMPRE cuenta como el primero de los
+      `frecuenciaAumentoMeses` completos, sin importar qué día del mes
+      haya sido.** Reemplaza la regla de "mes parcial" del 2026-07-30
+      (§3.1 arriba) — con la regla vieja, un contrato desde el 27/07
+      trimestral daba 01/11 (julio no contaba, ago-sep-oct eran los 3
+      meses); el usuario reportó que probando con 03/08 trimestral el
+      sistema daba 01/12 y esperaba 01/11. Se le explicó la contradicción
+      directa con el caso real del 27/07 (que había sido confirmado
+      explícitamente en su momento) y se le preguntó cuál de las dos
+      reglas quería — eligió "siempre cuenta como completo", aceptando
+      que el caso del 27/07 pase a dar 01/10 en vez de 01/11.
+      `PropiedadesService.proximoAumento()` (`propiedades.service.ts:164`)
+      simplificado: se sacó el cálculo de `mesParcial` (que sumaba un mes
+      extra si `anclaFecha.getUTCDate() !== 1`), ahora `mesesAAgregar` es
+      directamente `frecuenciaAumentoMeses`. Sigue usando componentes
+      año/mes vía `Date.UTC` (no `setMonth`) para no sufrir overflow en
+      meses cortos. Avisos y Agenda heredan el cambio sin tocarlos (reusan
+      la misma función). Probado con curl, 4 casos: 03-08 trimestral →
+      01-11 (el caso reportado, ahora correcto), 27-07 trimestral → 01-10
+      (cambio intencional respecto al comportamiento anterior), 01-08
+      trimestral → 01-11 (día 1 exacto, sin cambios), 31-01 cuatrimestral
+      → 01-05 (mes corto, sin overflow). `tsc --noEmit` limpio en
+      `app/api/`. Datos de prueba limpiados.
+      **Nota**: esto no corrige retroactivamente ninguna propiedad ya
+      cargada — el cálculo se hace en el momento de consultar, así que
+      toda propiedad con `frecuenciaAumentoMeses` y `contratoInicio`
+      cargados ya refleja la regla nueva la próxima vez que se consulte su
+      ficha, sin necesidad de tocar datos.
 
 ## 3.6 Ventas → Caja en dólares
 

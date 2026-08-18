@@ -149,18 +149,19 @@ export class PropiedadesService {
 
   // §3.1: el precio se mantiene fijo durante los `frecuenciaAumentoMeses`
   // meses posteriores al último aumento, y el aumento entra en vigencia el
-  // día 1 de un mes — nunca a mitad de mes. Si el último aumento no cayó
-  // justo el día 1 (lo normal: un contrato casi siempre arranca a mitad de
-  // mes), ese mes inicial es parcial y no cuenta como uno de los
-  // `frecuenciaAumentoMeses` completos — por eso hay que redondear hacia
-  // arriba un mes más. P. ej. contrato desde el 27/07 con frecuencia
-  // trimestral: julio es parcial, ago-sep-oct son los 3 meses completos al
-  // precio viejo, y el aumento entra el 01/11 (no el 01/10, que sería a
-  // mitad del 3er mes completo). Si el último aumento hubiese caído el
-  // 01/07 en cambio, los 3 meses completos son jul-ago-sep y el aumento
-  // entra el 01/10. Se calcula con componentes año/mes/día vía `Date.UTC`
-  // (nunca `setMonth` sobre la fecha original) para no depender del día del
-  // mes de origen ni sufrir su overflow en meses cortos.
+  // día 1 de un mes — nunca a mitad de mes. El mes del último aumento
+  // siempre cuenta como el primero de los `frecuenciaAumentoMeses`, sin
+  // importar qué día de ese mes haya arrancado (decisión explícita del
+  // usuario 2026-08-18: un contrato desde el 03/08 con frecuencia
+  // trimestral entra en vigencia el 01/11, contando agosto como el primer
+  // mes). **Reemplaza** la regla anterior (2026-07-30), que hacía contar
+  // como parcial cualquier mes que no arrancara el día 1 y sumaba un mes
+  // extra — con esa regla vieja, un contrato desde el 27/07 trimestral daba
+  // 01/11 (jul parcial, ago-sep-oct completos); con esta, da 01/10 (jul ya
+  // cuenta como el primer mes, jul-ago-sep). Se calcula con componentes
+  // año/mes vía `Date.UTC` (nunca `setMonth` sobre la fecha original) para
+  // no depender del día del mes de origen ni sufrir su overflow en meses
+  // cortos.
   async proximoAumento(propiedadId: string) {
     const propiedad = await this.prisma.propiedad.findUniqueOrThrow({
       where: { id: propiedadId },
@@ -182,9 +183,9 @@ export class PropiedadesService {
     });
     const anclaFecha = ultimoDeEsteContrato ? new Date(ultimoDeEsteContrato.fecha) : new Date(propiedad.contratoInicio);
 
-    const mesParcial = anclaFecha.getUTCDate() === 1 ? 0 : 1;
-    const mesesAAgregar = propiedad.frecuenciaAumentoMeses + mesParcial;
-    const proximo = new Date(Date.UTC(anclaFecha.getUTCFullYear(), anclaFecha.getUTCMonth() + mesesAAgregar, 1));
+    const proximo = new Date(
+      Date.UTC(anclaFecha.getUTCFullYear(), anclaFecha.getUTCMonth() + propiedad.frecuenciaAumentoMeses, 1),
+    );
 
     // Si el contrato ya termina antes de que llegue ese aumento, no
     // corresponde mostrarlo — el contrato se va a renovar o terminar antes
