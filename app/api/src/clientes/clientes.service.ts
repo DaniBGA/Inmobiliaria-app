@@ -77,14 +77,19 @@ export class ClientesService {
   // §2.6: reemplaza a los KPIs sueltos — de dónde vienen los clientes, para
   // el gráfico de torta. Siempre devuelve las 5 categorías (incluso en 0)
   // para que el gráfico y su leyenda no cambien de forma según los datos.
-  // Excluye tipoOperacion VENDER (propietarios) — pedido del usuario
-  // 2026-08-15: el gráfico es "origen de los CLIENTES" (quieren
-  // alquilar/comprar), un propietario que carga una propiedad no es un
-  // lead nuevo en ese sentido y no tiene que inflar estas categorías.
+  // Excluye tipoOperacion VENDER y PROPIETARIO_ALQUILER (propietarios) —
+  // pedido del usuario 2026-08-15: el gráfico es "origen de los CLIENTES"
+  // (quieren alquilar/comprar), un propietario que carga una propiedad no
+  // es un lead nuevo en ese sentido y no tiene que inflar estas categorías.
+  // PROPIETARIO_ALQUILER (agregado 2026-08-18) es el mismo caso que VENDER
+  // pero para propiedades en alquiler, así que se excluye igual.
   async statsPorOrigen() {
     const conteos = await this.prisma.cliente.groupBy({
       by: ['origen'],
-      where: { eliminadoEn: null, tipoOperacion: { not: TipoOperacionCliente.VENDER } },
+      where: {
+        eliminadoEn: null,
+        tipoOperacion: { notIn: [TipoOperacionCliente.VENDER, TipoOperacionCliente.PROPIETARIO_ALQUILER] },
+      },
       _count: { _all: true },
     });
     const porOrigen = new Map(conteos.map((c) => [c.origen, c._count._all]));

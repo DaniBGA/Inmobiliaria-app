@@ -793,6 +793,33 @@ Se actualiza a medida que se implementa cada sección. Convención:
       Cliente TEST con `tipoOperacion: VENDER` (no varió); dato de prueba
       borrado en forma definitiva al terminar. `tsc --noEmit` limpio en
       `app/api/`.
+- [x] **2026-08-18, pedido del usuario: nueva categoría de tipo de cliente
+      "Propietario/a de propiedad en alquiler", y renombrar "Propietario /
+      quiere vender" a solo "Quiere vender".** Se agregó
+      `PROPIETARIO_ALQUILER` a `enum TipoOperacionCliente` (migración
+      aditiva `20260818150217_cliente_propietario_alquiler`,
+      `ALTER TYPE ... ADD VALUE`, mismo patrón que
+      `evento_tipo_otro`) — distinto de `VENDER`: un propietario cuya
+      propiedad está en alquiler, no en venta. `admin/src/pages/
+      ClientesPage.tsx`: nueva función `esPropietario(tipo)` (`tipo ===
+      'VENDER' || tipo === 'PROPIETARIO_ALQUILER'`) reemplaza las
+      comparaciones sueltas contra `'VENDER'` que ya ocultaban los campos
+      de "búsqueda" (zona, presupuesto, estado, origen, etc.) en la
+      tarjeta y en el modal de edición (§ver arriba, "modal de Cliente
+      simplificado") — ahora ambos tipos de propietario comparten el mismo
+      trato, porque ninguno de los dos es un lead buscando algo. Badge
+      nuevo reusa la clase de color `propietario` (verde) ya existente.
+      `ClientesService.statsPorOrigen()` extendido a excluir también
+      `PROPIETARIO_ALQUILER` del gráfico de torta, mismo criterio que ya
+      excluía `VENDER`. `AgregarPropiedadPage.tsx`: el alta de "propietario
+      nuevo" (§2.6, entrada del 2026-07-30) elegía siempre `VENDER` sin
+      importar la modalidad de la propiedad cargada — ahora usa
+      `modalidad === 'ALQUILER' ? 'PROPIETARIO_ALQUILER' : 'VENDER'`, así
+      que cargar una propiedad en alquiler con propietario nuevo ya lo
+      clasifica bien de entrada. Probado con curl: `POST /clientes` con
+      `tipoOperacion: PROPIETARIO_ALQUILER` aceptado, y `stats-por-origen`
+      no varió al crearlo (igual que ya pasaba con VENDER). `tsc --noEmit`
+      limpio en `app/api/` y `admin/`. Dato de prueba borrado.
 
 ## 2.7 Agenda
 

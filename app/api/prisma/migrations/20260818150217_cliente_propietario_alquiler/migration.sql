@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "TipoOperacionCliente" ADD VALUE 'PROPIETARIO_ALQUILER';

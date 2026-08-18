@@ -6,7 +6,15 @@ import { Modal } from '../components/Modal';
 import { MultiDonut } from '../components/charts/MultiDonut';
 import { formatMoney } from '../lib/format';
 
-type TipoOperacionCliente = 'ALQUILAR' | 'COMPRAR' | 'VENDER';
+type TipoOperacionCliente = 'ALQUILAR' | 'COMPRAR' | 'VENDER' | 'PROPIETARIO_ALQUILER';
+
+// Propietario (vende o tiene una propiedad en alquiler) — no es un lead
+// buscando algo, así que en varios lugares de esta página se le oculta la
+// info de "búsqueda" (zona, presupuesto, estado, origen, etc.) que sí
+// aplica a ALQUILAR/COMPRAR.
+function esPropietario(tipo: TipoOperacionCliente) {
+  return tipo === 'VENDER' || tipo === 'PROPIETARIO_ALQUILER';
+}
 type EstadoCliente = 'SIN_CONTACTAR' | 'EN_SEGUIMIENTO' | 'CERRADO';
 type ZonaCliente = 'CENTRO' | 'SEMICENTRICO' | 'INDIFERENTE';
 type OrigenCliente = 'INSTAGRAM' | 'PAGINA_WEB' | 'EN_PERSONA' | 'FACEBOOK' | 'CONTACTOS';
@@ -58,12 +66,14 @@ const ORIGEN_COLOR: Record<OrigenCliente, string> = {
 const TIPO_LABEL: Record<TipoOperacionCliente, string> = {
   ALQUILAR: 'BUSCA ALQUILAR',
   COMPRAR: 'BUSCA COMPRAR',
-  VENDER: 'PROPIETARIO',
+  VENDER: 'QUIERE VENDER',
+  PROPIETARIO_ALQUILER: 'PROPIETARIO ALQUILER',
 };
 const TIPO_CLASE: Record<TipoOperacionCliente, string> = {
   ALQUILAR: 'inquilino',
   COMPRAR: 'comprador',
   VENDER: 'propietario',
+  PROPIETARIO_ALQUILER: 'propietario',
 };
 const ESTADO_LABEL: Record<EstadoCliente, string> = {
   SIN_CONTACTAR: 'Sin contactar',
@@ -196,7 +206,8 @@ export function ClientesPage() {
               <option value="todos">Todos los tipos</option>
               <option value="ALQUILAR">Busca alquilar</option>
               <option value="COMPRAR">Busca comprar</option>
-              <option value="VENDER">Propietario / quiere vender</option>
+              <option value="VENDER">Quiere vender</option>
+              <option value="PROPIETARIO_ALQUILER">Propietario/a de propiedad en alquiler</option>
             </select>
             <span style={{ flex: 1 }}></span>
             <button className="btn-sm" onClick={() => setVerEliminados(true)}>
@@ -246,7 +257,7 @@ export function ClientesPage() {
                   </div>
                   <span className={`clitipo ${TIPO_CLASE[c.tipoOperacion]}`}>{TIPO_LABEL[c.tipoOperacion]}</span>
                 </div>
-                {c.tipoOperacion !== 'VENDER' && (
+                {!esPropietario(c.tipoOperacion) && (
                   <>
                     {(busca.length > 0 || c.detalle) && (
                       <div className="contact" style={{ marginTop: 10 }}>
@@ -491,10 +502,11 @@ function ClienteModal({
           <select value={tipoOperacion} onChange={(e) => setTipoOperacion(e.target.value as TipoOperacionCliente)}>
             <option value="ALQUILAR">Busca alquilar</option>
             <option value="COMPRAR">Busca comprar</option>
-            <option value="VENDER">Propietario / quiere vender</option>
+            <option value="VENDER">Quiere vender</option>
+            <option value="PROPIETARIO_ALQUILER">Propietario/a de propiedad en alquiler</option>
           </select>
         </div>
-        {tipoOperacion !== 'VENDER' && (
+        {!esPropietario(tipoOperacion) && (
           <>
             <div className="fg">
               <label>Estado</label>

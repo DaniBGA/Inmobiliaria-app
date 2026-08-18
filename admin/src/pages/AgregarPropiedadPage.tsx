@@ -162,10 +162,13 @@ export function AgregarPropiedadPage() {
         // Todo propietario nuevo entra también como Cliente (§2.6) — ya
         // tiene una relación activa con la inmobiliaria (nos dio una
         // propiedad), así que arranca "En seguimiento" y no "Sin
-        // contactar" como un lead frío recién llegado.
+        // contactar" como un lead frío recién llegado. El tipo distingue
+        // si nos dio una propiedad para VENDER o una para poner en
+        // ALQUILER (PROPIETARIO_ALQUILER) — antes siempre quedaba VENDER
+        // sin importar la modalidad.
         await api.post('/clientes', {
           nombre: propietarioNuevoNombre.trim(),
-          tipoOperacion: 'VENDER',
+          tipoOperacion: modalidad === 'ALQUILER' ? 'PROPIETARIO_ALQUILER' : 'VENDER',
           estado: 'EN_SEGUIMIENTO',
           origen: origenPropietarioNuevo || undefined,
         });

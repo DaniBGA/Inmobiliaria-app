@@ -822,6 +822,9 @@ enum TipoOperacionCliente {
   ALQUILAR
   COMPRAR
   VENDER
+  // Propietario de una propiedad ya en alquiler (distinto de VENDER, que es
+  // el propietario que quiere vender) — pedido del usuario 2026-08-18.
+  PROPIETARIO_ALQUILER
 }
 
 enum ZonaCliente {
