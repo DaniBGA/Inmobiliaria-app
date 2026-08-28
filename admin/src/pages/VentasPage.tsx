@@ -7,6 +7,7 @@ import { Modal } from '../components/Modal';
 import { formatMoney, formatUsd, formatDate } from '../lib/format';
 import { honorariosLabel, resolverPorcentajeHonorarios, type TipoHonorarios } from '../lib/honorarios';
 import { FotosPropiedad, type FotoPropiedadItem } from '../components/FotosPropiedad';
+import { SeccionGuia } from '../components/SeccionGuia';
 
 type EstadoVenta = 'PUBLICADA' | 'RESERVADA' | 'VENDIDA' | 'VENDIDA_POR_TERCEROS' | 'PAUSADA';
 type EtapaInteresado = 'CONSULTA' | 'VISITA' | 'NEGOCIACION' | 'RESERVA' | 'DESCARTADO';
@@ -342,6 +343,67 @@ export function VentasPage() {
     <>
       <PageHeader title="Ventas y Carteles" />
       <main>
+        <SeccionGuia
+          icono="◈"
+          titulo="¿Qué podés hacer en Ventas y Carteles?"
+          intro="Acá vive la cartera en modalidad Venta: desde publicarla hasta cerrar la operación, más el seguimiento de los carteles en la calle."
+          paginas={[
+            [
+              {
+                titulo: 'Publicar propiedad en venta',
+                subtitulo:
+                  'El botón "+ Publicar propiedad en venta" toma una propiedad ya cargada en la cartera y le crea la ficha de venta (precio, moneda, si se publica en la web).',
+              },
+              {
+                titulo: 'Editar ficha',
+                subtitulo:
+                  'El botón "✎ Editar ficha" de cada tarjeta corrige datos generales, honorarios, ambientes, servicios y fotos, además del precio y el estado de la operación.',
+              },
+              {
+                titulo: 'Filtros',
+                subtitulo: 'Por tipo de propiedad y por etapa de los interesados, arriba de la grilla.',
+              },
+            ],
+            [
+              {
+                titulo: 'Interesados',
+                subtitulo:
+                  '"+ Agregar interesado" registra a alguien interesado (cliente ya cargado o nombre libre) y le asigna una etapa: Consulta, Visita, Negociación, Reserva o Descartado.',
+              },
+              {
+                titulo: 'Seña',
+                subtitulo:
+                  '"¤ Registrar seña" / "✎ Editar seña" anota una seña en USD y pasa la propiedad a "Reservada"; "✕ Quitar seña" la revierte.',
+              },
+              {
+                titulo: 'Cerrar venta',
+                subtitulo:
+                  '"✓ Cerrar venta" fija la fecha y el precio final y genera la comisión en Caja; "↺ Deshacer venta" la revierte por completo.',
+              },
+              {
+                titulo: 'Vendida por terceros',
+                subtitulo: 'Registra que otra inmobiliaria la vendió, sin generar comisión propia.',
+              },
+            ],
+            [
+              {
+                titulo: 'Nuevo cartel',
+                subtitulo:
+                  'El botón "+ Nuevo cartel" asocia un cartel (Colocado, Por colocar o Retirado) a una propiedad, con medida y fecha de colocación.',
+              },
+              {
+                titulo: 'Marcar colocado / retirado',
+                subtitulo:
+                  'Cambiá el estado directamente desde la tabla — el sistema calcula solo los días que lleva en la calle.',
+              },
+              {
+                titulo: 'Buscador y KPIs',
+                subtitulo:
+                  'Cantidad de carteles colocados, por colocar, retirados y propiedades publicadas que todavía no tienen cartel.',
+              },
+            ],
+          ]}
+        />
         <div className="kpis">
           <div className="kpi">
             <div className="lbl">En venta</div>

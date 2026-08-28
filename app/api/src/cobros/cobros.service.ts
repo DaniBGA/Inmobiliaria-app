@@ -202,9 +202,22 @@ export class CobrosService {
 
   // §5.4: deuda acumulada sobre los últimos 12 meses cerrados (el mes en
   // curso todavía no es deuda — es "Pendiente" hasta que cierra, §5.3).
+  //
+  // `ahora` normalmente es la fecha real de hoy, pero `itemsPredeterminados()`
+  // lo pisa con el mes que se está por facturar/liquidar para reconstruir la
+  // deuda "a esa altura" cuando ese mes ya es pasado (reemitir un
+  // comprobante viejo no debe traer deuda de meses posteriores). Si ese mes
+  // es FUTURO en cambio, no hay que dejar que la ventana de "meses cerrados"
+  // se estire hasta ahí — todavía no pasaron, así que no pueden ser deuda
+  // (`ultimosMesesCerrados` no distingue esto solo). Se recorta a hoy: la
+  // deuda que corresponde mostrar en una factura/liquidación armada por
+  // adelantado es la deuda real acumulada HOY, no una inventada para meses
+  // que todavía no llegaron.
   async deudaAcumulada(propiedadId: string, ahora: Date = new Date()) {
+    const hoy = new Date();
+    const referencia = ahora.getTime() > hoy.getTime() ? hoy : ahora;
     const alDiaDesde = await this.alDiaDesde(propiedadId);
-    const meses = ultimosMesesCerrados(VENTANA_DEUDA_MESES, ahora).filter(
+    const meses = ultimosMesesCerrados(VENTANA_DEUDA_MESES, referencia).filter(
       (mes) => !alDiaDesde || mes.getTime() >= alDiaDesde.getTime(),
     );
     let deuda = 0;

@@ -16,6 +16,7 @@ import { PropiedadesService } from './propiedades.service';
 import { CreatePropiedadDto } from './dto/create-propiedad.dto';
 import { UpdatePropiedadDto } from './dto/update-propiedad.dto';
 import { RegistrarAumentoDto } from './dto/registrar-aumento.dto';
+import { UpdateAumentoDto } from './dto/update-aumento.dto';
 import { UpsertInquilinoDto } from './dto/upsert-inquilino.dto';
 import { fotoPropiedadMulterOptions, documentoMulterOptions } from './multer.config';
 import { MulterExceptionFilter } from './multer-exception.filter';
@@ -51,6 +52,11 @@ export class PropiedadesController {
     return { monto, proximoAumento };
   }
 
+  @Get(':id/proximos-aumentos')
+  proximosAumentos(@Param('id') id: string) {
+    return this.propiedadesService.proximosAumentos(id);
+  }
+
   @Post()
   @UseGuards(RolesGuard)
   @Roles(RolUsuario.ADMIN)
@@ -77,6 +83,20 @@ export class PropiedadesController {
   @Roles(RolUsuario.ADMIN)
   registrarAumento(@Param('id') id: string, @Body() dto: RegistrarAumentoDto) {
     return this.propiedadesService.registrarAumento(id, dto);
+  }
+
+  @Patch(':id/aumentos/:aumentoId')
+  @UseGuards(RolesGuard)
+  @Roles(RolUsuario.ADMIN)
+  editarAumento(@Param('id') id: string, @Param('aumentoId') aumentoId: string, @Body() dto: UpdateAumentoDto) {
+    return this.propiedadesService.editarAumento(id, aumentoId, dto);
+  }
+
+  @Delete(':id/aumentos/:aumentoId')
+  @UseGuards(RolesGuard)
+  @Roles(RolUsuario.ADMIN)
+  eliminarAumento(@Param('id') id: string, @Param('aumentoId') aumentoId: string) {
+    return this.propiedadesService.eliminarAumento(id, aumentoId);
   }
 
   @Patch(':id/inquilino')

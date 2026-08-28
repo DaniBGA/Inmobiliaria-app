@@ -3,12 +3,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api, ApiError, BASE_URL } from '../api/client';
 import { Modal } from './Modal';
-import { formatMoney, formatUsd, formatDate, mesActualStr, mesLabel } from '../lib/format';
+import { formatMoney, formatUsd, formatDate, mesActualStr, mesLabel, parseMontoArgentino } from '../lib/format';
 import { resolverPorcentajeHonorariosAdministracion, type TipoHonorarios } from '../lib/honorarios';
 import { FotosPropiedad, type FotoPropiedadItem } from './FotosPropiedad';
 import { ComprobanteImpreso } from './ComprobanteImpreso';
 import { descargarPdfComprobante } from '../lib/pdfComprobante';
 import { ServiciosCuentaInputs, SERVICIOS_OPCIONES, type ServicioFacturable } from './ServiciosCuentaInputs';
+import { splitDescripcionCuenta, combinarDescripcionCuenta, esServicioConCuenta } from '../lib/itemServicioCuenta';
 
 type Modalidad = 'ALQUILER' | 'VENTA';
 type IndiceAjuste = 'IPC' | 'ICL' | null;
@@ -96,6 +97,9 @@ interface PropiedadFicha {
 interface RentaVigente {
   monto: string | number | null;
   proximoAumento: string | null;
+}
+interface ProximoAumentoItem {
+  fecha: string;
 }
 interface Pago {
   id: string;
@@ -210,6 +214,8 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
   const [datosModal, setDatosModal] = useState(false);
   const [fotosModal, setFotosModal] = useState(false);
   const [editarInquilinoModal, setEditarInquilinoModal] = useState(false);
+  const [aumentoModal, setAumentoModal] = useState<HistorialAumento | null>(null);
+  const [pantallaCompleta, setPantallaCompleta] = useState(false);
 
   const propiedad = useQuery({
     queryKey: ['propiedades', propiedadId],
@@ -221,6 +227,14 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
   const rentaVigente = useQuery({
     queryKey: ['renta-vigente', propiedadId],
     queryFn: () => api.get<RentaVigente>(`/propiedades/${propiedadId}/renta-vigente`),
+    enabled: esAlquiler,
+  });
+  // Calendario completo de aumentos que le quedan al contrato vigente
+  // (no solo el próximo) — respeta índice/frecuencia igual que
+  // `rentaVigente`, ver PropiedadesService.proximosAumentos().
+  const proximosAumentos = useQuery({
+    queryKey: ['proximos-aumentos', propiedadId],
+    queryFn: () => api.get<ProximoAumentoItem[]>(`/propiedades/${propiedadId}/proximos-aumentos`),
     enabled: esAlquiler,
   });
   const pagos = useQuery({
@@ -255,6 +269,7 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
     qc.invalidateQueries({ queryKey: ['caja'] });
     qc.invalidateQueries({ queryKey: ['avisos'] });
     qc.invalidateQueries({ queryKey: ['renta-vigente', propiedadId] });
+    qc.invalidateQueries({ queryKey: ['proximos-aumentos', propiedadId] });
   }
 
   const eliminarGasto = useMutation({
@@ -281,6 +296,18 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo aplicar el aumento.'),
   });
+
+  const eliminarAumento = useMutation({
+    mutationFn: (aumentoId: string) => api.delete(`/propiedades/${propiedadId}/aumentos/${aumentoId}`),
+    onSuccess: invalidarTodo,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo eliminar el aumento.'),
+  });
+
+  function confirmarEliminarAumento(h: HistorialAumento) {
+    if (window.confirm(`¿Eliminar el aumento del ${formatDate(h.fecha)} (${formatMoney(h.monto)})? Esta acción no se puede deshacer.`)) {
+      eliminarAumento.mutate(h.id);
+    }
+  }
 
   const eliminarPropiedad = useMutation({
     mutationFn: () => api.delete(`/propiedades/${propiedadId}`),
@@ -378,7 +405,7 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
   const sugerido = montoVigente > 0 && indiceValor > 0 ? Math.round(montoVigente * (1 + indiceValor / 100) * 100) / 100 : null;
 
   function confirmarAumento() {
-    const nuevo = Number(montoNuevo);
+    const nuevo = parseMontoArgentino(montoNuevo);
     if (!nuevo || nuevo <= 0) return;
     if (!window.confirm(`Aplicar aumento: ${formatMoney(montoVigente)} → ${formatMoney(nuevo)}?`)) return;
     const fecha = aumentoInminente && proximoAumento ? proximoAumento.slice(0, 10) : new Date().toISOString().slice(0, 10);
@@ -387,6 +414,12 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
 
   const historial = p?.historialAumentos ?? [];
   const montoInicial = historial.length ? historial[historial.length - 1].monto : null;
+  // Vista de "Historial de aumentos" (§ pedido del usuario): un único
+  // timeline cronológico ascendente (más viejo arriba) que combina lo ya
+  // aplicado con lo que falta — `historial` en sí queda en orden desc
+  // (más reciente primero) porque de ahí depende `montoInicial` arriba.
+  const historialAsc = [...historial].reverse();
+  const proximosData = proximosAumentos.data ?? [];
   const v = p?.venta ?? null;
   const dolarReferencia = cfg ? Number(cfg.dolarReferencia) : 0;
   const precioVentaArs = v ? (v.moneda === 'USD' ? Number(v.precio) * dolarReferencia : Number(v.precio)) : 0;
@@ -395,7 +428,7 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
   return (
     <>
       <div className="overlay on" onClick={onClose}></div>
-      <div className="drawer on">
+      <div className={`drawer on${pantallaCompleta ? ' full' : ''}`}>
         {propiedad.isLoading || !p ? (
           <div className="dhead">
             <div>
@@ -419,6 +452,13 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
               </button>
               <button className="btn-sm" onClick={() => setFotosModal(true)}>
                 🖼 Fotos ({p.fotos.length})
+              </button>
+              <button
+                className={`dfull${pantallaCompleta ? ' active' : ''}`}
+                title={pantallaCompleta ? 'Salir de pantalla completa' : 'Pantalla completa — ver todo sin scroll'}
+                onClick={() => setPantallaCompleta((v) => !v)}
+              >
+                ⛶
               </button>
               <button className="dclose" onClick={onClose}>
                 ✕
@@ -491,92 +531,141 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
                   </div>
                 </div>
 
-                <div className="dsec" style={{ marginTop: 22, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                  <div>
-                    <h5>INQUILINO</h5>
-                    {esAlquiler && (
-                      <label className="chk" style={{ marginBottom: 10 }}>
-                        <input
-                          type="checkbox"
-                          checked={p.alquilerPublicado}
-                          disabled={togglePublicadoAlquiler.isPending}
-                          onChange={(e) => togglePublicadoAlquiler.mutate(e.target.checked)}
-                        />
-                        <span>Publicada en la web</span>
-                      </label>
-                    )}
-                    {p.inquilino ? (
-                      <>
-                        <div className="contactline">
-                          👤 <b>{p.inquilino.nombre}</b>
-                        </div>
-                        {p.inquilino.telefono && <div className="contactline">✆ {p.inquilino.telefono}</div>}
-                        {p.inquilino.email && (
+                <div className="dsec" style={{ marginTop: 22 }}>
+                  {esAlquiler && (
+                    <label className="chk" style={{ marginBottom: 14 }}>
+                      <input
+                        type="checkbox"
+                        checked={p.alquilerPublicado}
+                        disabled={togglePublicadoAlquiler.isPending}
+                        onChange={(e) => togglePublicadoAlquiler.mutate(e.target.checked)}
+                      />
+                      <span>Publicada en la web</span>
+                    </label>
+                  )}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                    <div>
+                      <h5>INQUILINO</h5>
+                      {p.inquilino ? (
+                        <>
                           <div className="contactline">
-                            ✉ <a href={`mailto:${p.inquilino.email}`}>{p.inquilino.email}</a>
+                            👤 <b>{p.inquilino.nombre}</b>
                           </div>
-                        )}
-                        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                          <button className="btn-invoice" style={{ marginTop: 0, flex: 1 }} onClick={() => setFacturaModal(true)}>
-                            📄 Emitir factura
-                          </button>
-                          <button className="btn-invoice" style={{ marginTop: 0, flex: 1 }} onClick={() => setReciboModal(true)}>
-                            🧾 Emitir recibo
-                          </button>
+                          {p.inquilino.telefono && <div className="contactline">✆ {p.inquilino.telefono}</div>}
+                          {p.inquilino.email && (
+                            <div className="contactline">
+                              ✉ <a href={`mailto:${p.inquilino.email}`}>{p.inquilino.email}</a>
+                            </div>
+                          )}
+                          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                            <button className="btn-invoice" style={{ marginTop: 0, flex: 1 }} onClick={() => setFacturaModal(true)}>
+                              📄 Emitir factura
+                            </button>
+                            <button className="btn-invoice" style={{ marginTop: 0, flex: 1 }} onClick={() => setReciboModal(true)}>
+                              🧾 Emitir recibo
+                            </button>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                            <button className="btn-sm" style={{ flex: 1 }} onClick={() => setEditarInquilinoModal(true)}>
+                              ✎ Editar datos
+                            </button>
+                            <button
+                              className="btn-sm ghostred"
+                              style={{ flex: 1 }}
+                              disabled={quitarInquilino.isPending}
+                              onClick={confirmarQuitarInquilino}
+                            >
+                              ✕ Marcar como vacante
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="contactline" style={{ color: 'var(--muted)' }}>
+                          Sin inquilino
                         </div>
-                        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                          <button className="btn-sm" style={{ flex: 1 }} onClick={() => setEditarInquilinoModal(true)}>
-                            ✎ Editar datos
-                          </button>
-                          <button
-                            className="btn-sm ghostred"
-                            style={{ flex: 1 }}
-                            disabled={quitarInquilino.isPending}
-                            onClick={confirmarQuitarInquilino}
-                          >
-                            ✕ Marcar como vacante
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="contactline" style={{ color: 'var(--muted)' }}>
-                        Sin inquilino
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <h5>PROPIETARIO</h5>
-                    {p.propietario ? (
-                      <>
-                        <div className="contactline">
-                          👤 <b>{p.propietario.nombre}</b>
-                        </div>
-                        {p.propietario.telefono && <div className="contactline">✆ {p.propietario.telefono}</div>}
-                        {p.propietario.email && (
+                      )}
+                    </div>
+                    <div>
+                      <h5>PROPIETARIO</h5>
+                      {p.propietario ? (
+                        <>
                           <div className="contactline">
-                            ✉ <a href={`mailto:${p.propietario.email}`}>{p.propietario.email}</a>
+                            👤 <b>{p.propietario.nombre}</b>
                           </div>
-                        )}
-                      </>
-                    ) : (
-                      <div className="contactline" style={{ color: 'var(--muted)' }}>
-                        No especificado
-                      </div>
-                    )}
+                          {p.propietario.telefono && <div className="contactline">✆ {p.propietario.telefono}</div>}
+                          {p.propietario.email && (
+                            <div className="contactline">
+                              ✉ <a href={`mailto:${p.propietario.email}`}>{p.propietario.email}</a>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="contactline" style={{ color: 'var(--muted)' }}>
+                          No especificado
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
                 <div className="dsec" style={{ marginTop: 22 }}>
                   <h5>HISTORIAL DE AUMENTOS</h5>
                   <div className="hist">
-                    {historial.length ? (
-                      historial.map((h) => (
-                        <div className="row" key={h.id}>
-                          <span>{formatDate(h.fecha)}</span>
-                          <span>{formatMoney(h.monto)}</span>
+                    {historialAsc.map((h) => (
+                      <div className="row" key={h.id} style={{ alignItems: 'center', gap: 12 }}>
+                        <span>{formatDate(h.fecha)}</span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
+                          {formatMoney(h.monto)}
+                          <button
+                            className="btn-sm"
+                            style={{ padding: '2px 8px' }}
+                            title="Editar aumento"
+                            onClick={() => setAumentoModal(h)}
+                          >
+                            ✎
+                          </button>
+                          <button
+                            className="btn-sm ghostred"
+                            style={{ padding: '2px 8px' }}
+                            title="Eliminar aumento"
+                            onClick={() => confirmarEliminarAumento(h)}
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      </div>
+                    ))}
+                    {esAlquiler && p.inquilino && (
+                      proximosData.length ? (
+                        proximosData.map((a, i) => (
+                          <div
+                            className="row"
+                            key={`proximo-${i}`}
+                            // El primero es el próximo aumento a aplicar — se
+                            // resalta para que se note dónde está "hoy"
+                            // dentro del timeline completo (pedido del
+                            // usuario).
+                            style={i === 0 ? { background: 'var(--green-soft)' } : undefined}
+                          >
+                            <span>
+                              {formatDate(a.fecha)}
+                              {i === 0 && <b style={{ color: 'var(--green)' }}> · Próximo</b>}
+                            </span>
+                            <span style={{ color: 'var(--muted)' }}>{p.indice ?? '—'}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="row">
+                          <span style={{ color: 'var(--muted)' }}>
+                            {p.indice && p.frecuenciaAumentoMeses && p.contratoInicio
+                              ? 'Sin aumentos por venir dentro del contrato actual'
+                              : 'Cargá índice, frecuencia y fechas de contrato para calcular los próximos aumentos'}
+                          </span>
+                          <span></span>
                         </div>
-                      ))
-                    ) : (
+                      )
+                    )}
+                    {historialAsc.length === 0 && !(esAlquiler && p.inquilino) && (
                       <div className="row">
                         <span style={{ color: 'var(--muted)' }}>Sin registros</span>
                         <span></span>
@@ -689,12 +778,11 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
                           <div style={{ gridColumn: '1/-1' }}>
                             <label>Nuevo monto calculado ($)</label>
                             <input
-                              type="number"
-                              min={0}
-                              step="0.01"
+                              type="text"
+                              inputMode="decimal"
                               placeholder="Copiá aquí el resultado de la calculadora"
                               value={montoNuevo}
-                              onChange={(e) => setMontoNuevo(e.target.value)}
+                              onChange={(e) => setMontoNuevo(e.target.value.replace(/[^\d.,]/g, ''))}
                             />
                           </div>
                         </div>
@@ -846,6 +934,34 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
                         {deuda.data!.mesesImpagos} mes(es) impago(s)
                       </div>
                     )}
+                    {(p.usinaUsuario || p.usinaNumeroCuenta || p.obrasSanitariasNumeroCuenta || p.camuzziNumeroCuenta) && (
+                      <div className="hist" style={{ marginTop: 12 }}>
+                        {p.usinaUsuario && (
+                          <div className="row">
+                            <span>Luz — Usuario</span>
+                            <span>{p.usinaUsuario}</span>
+                          </div>
+                        )}
+                        {p.usinaNumeroCuenta && (
+                          <div className="row">
+                            <span>Luz — N° de control</span>
+                            <span>{p.usinaNumeroCuenta}</span>
+                          </div>
+                        )}
+                        {p.obrasSanitariasNumeroCuenta && (
+                          <div className="row">
+                            <span>Agua — N° de cuenta</span>
+                            <span>{p.obrasSanitariasNumeroCuenta}</span>
+                          </div>
+                        )}
+                        {p.camuzziNumeroCuenta && (
+                          <div className="row">
+                            <span>Gas — N° de cuenta</span>
+                            <span>{p.camuzziNumeroCuenta}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -906,6 +1022,17 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
           onClose={() => setEditarInquilinoModal(false)}
           onSaved={() => {
             setEditarInquilinoModal(false);
+            invalidarTodo();
+          }}
+        />
+      )}
+      {aumentoModal && (
+        <EditarAumentoModal
+          propiedadId={propiedadId}
+          aumento={aumentoModal}
+          onClose={() => setAumentoModal(null)}
+          onSaved={() => {
+            setAumentoModal(null);
             invalidarTodo();
           }}
         />
@@ -1248,6 +1375,56 @@ function EditarInquilinoModal({
   );
 }
 
+function EditarAumentoModal({
+  propiedadId,
+  aumento,
+  onClose,
+  onSaved,
+}: {
+  propiedadId: string;
+  aumento: HistorialAumento;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [fecha, setFecha] = useState(aumento.fecha.slice(0, 10));
+  const [monto, setMonto] = useState(String(aumento.monto));
+  const [error, setError] = useState<string | null>(null);
+
+  const guardar = useMutation({
+    mutationFn: () =>
+      api.patch(`/propiedades/${propiedadId}/aumentos/${aumento.id}`, {
+        fecha,
+        monto: Number(monto),
+      }),
+    onSuccess: onSaved,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo guardar el aumento.'),
+  });
+
+  return (
+    <Modal open onClose={onClose} title="Editar aumento" width={360}>
+      {error && <div className="errstate" style={{ marginBottom: 14 }}>{error}</div>}
+      <div className="formgrid">
+        <div className="fg full">
+          <label>Fecha</label>
+          <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+        </div>
+        <div className="fg full">
+          <label>Monto ($)</label>
+          <input type="number" min={0} step="0.01" value={monto} onChange={(e) => setMonto(e.target.value)} />
+        </div>
+      </div>
+      <div className="btnrow">
+        <button className="btn-ghost" onClick={onClose}>
+          Cancelar
+        </button>
+        <button className="btn-dark" disabled={guardar.isPending || !fecha || !monto} onClick={() => guardar.mutate()}>
+          Guardar
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function NuevoGastoModal({
   propiedadId,
   gasto,
@@ -1316,7 +1493,7 @@ function NuevoGastoModal({
         </div>
         <div className="fg">
           <label>Monto</label>
-          <input type="number" min={0} step="0.01" value={monto} onChange={(e) => setMonto(e.target.value)} />
+          <input type="number" min={0} step="0.01" placeholder="0" value={monto} onChange={(e) => setMonto(e.target.value)} />
         </div>
         <div className="fg">
           <label>Fecha</label>
@@ -1358,27 +1535,37 @@ function NuevoGastoModal({
 
 interface ItemEditable {
   descripcion: string;
+  cuenta: string;
   monto: string;
   numeroLiquidacion: string;
 }
 
-function FacturaModal({
+export function FacturaModal({
   propiedadId,
   propiedadNombre,
   inquilino,
   honorariosAdministracionActual,
   honorariosAdministracionPorcentajeActual,
+  mes: mesProp,
   onClose,
 }: {
   propiedadId: string;
   propiedadNombre: string;
-  inquilino: Inquilino | null;
+  // Estructural (no el `Inquilino` completo de la ficha) — esta modal solo
+  // necesita nombre/teléfono, así que también se puede abrir desde
+  // "Inquilinos y Cobros", que no trae `numero`/`alDiaDesde`.
+  inquilino: { nombre: string; telefono: string | null } | null;
   honorariosAdministracionActual: boolean;
   honorariosAdministracionPorcentajeActual: number | string | null;
+  // Opcional: para emitir la factura de un mes que no es el actual (p. ej.
+  // desde "Inquilinos y Cobros" con un mes futuro seleccionado en el
+  // navegador de mes — pedido del usuario 2026-08-28). Si no se manda, es
+  // el mes en curso (comportamiento de siempre desde la ficha).
+  mes?: string;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
-  const mes = mesActualStr();
+  const mes = mesProp ?? mesActualStr();
 
   // Mismo queryKey que ya usa el drawer padre (línea ~218): React Query
   // dedupea y sirve del caché, no dispara un segundo pedido de red.
@@ -1388,17 +1575,30 @@ function FacturaModal({
   });
   const cfg = configuracion.data;
 
+  // Si este mes ya se emitió una factura (p. ej. se emitió hace un rato y
+  // se vuelve a abrir "Emitir factura" para retocarla), se precarga desde
+  // ESA factura en vez de recalcular de cero — antes siempre recalculaba
+  // los predeterminados, así que reabrir el mismo mes te hacía perder lo
+  // recién cargado (pedido del usuario 2026-08-28). Reemitir sigue
+  // reemplazando la anterior, como siempre.
+  const facturaExistente = useQuery({
+    queryKey: ['factura-mes', propiedadId, mes],
+    queryFn: () => api.get<Factura | null>(`/facturacion/propiedades/${propiedadId}/facturas/${mes}`),
+  });
+
   // Ítems predeterminados (§3.5: alquiler vigente + servicios habilitados,
   // precargados con lo último facturado + gastos trasladados + deuda
   // arrastrada) — se traen como punto de partida editable, no se emiten
   // directo: el usuario puede agregar/quitar líneas y cambiar montos antes
-  // de confirmar.
+  // de confirmar. Solo hace falta calcularlos si este mes todavía no tiene
+  // factura propia (ver `facturaExistente` arriba).
   const predeterminados = useQuery({
     queryKey: ['items-predeterminados', propiedadId, mes],
     queryFn: () =>
       api.get<{ descripcion: string; monto: number; numeroLiquidacion?: string | null }[]>(
         `/facturacion/propiedades/${propiedadId}/items-predeterminados?mes=${mes}`,
       ),
+    enabled: facturaExistente.isSuccess && !facturaExistente.data,
   });
 
   const [items, setItems] = useState<ItemEditable[] | null>(null);
@@ -1413,19 +1613,46 @@ function FacturaModal({
   );
 
   useEffect(() => {
-    if (predeterminados.data && items === null) {
+    if (items !== null) return;
+    // El backend sigue devolviendo el N° de cuenta/usuario pegado a la
+    // descripción del servicio (ver datosCuentaSuffix()) — se separa acá
+    // para mostrarlo en su propio input, y se vuelve a unir recién al
+    // emitir (ver `emitir` más abajo).
+    if (facturaExistente.data) {
       setItems(
-        predeterminados.data.map((it) => ({
-          descripcion: it.descripcion,
-          monto: String(it.monto),
-          numeroLiquidacion: it.numeroLiquidacion ?? '',
-        })),
+        facturaExistente.data.items.map((it) => {
+          const { base, cuenta } = splitDescripcionCuenta(it.descripcion);
+          return {
+            descripcion: base,
+            cuenta,
+            monto: String(it.monto),
+            numeroLiquidacion: it.numeroLiquidacion ?? '',
+          };
+        }),
+      );
+      setNumeroFactura(String(facturaExistente.data.numero));
+      return;
+    }
+    if (predeterminados.data) {
+      setItems(
+        predeterminados.data.map((it) => {
+          const { base, cuenta } = splitDescripcionCuenta(it.descripcion);
+          return {
+            descripcion: base,
+            cuenta,
+            // Un ítem sin monto previo llega en 0 desde el backend (ver
+            // itemsPredeterminados()) — se muestra vacío en vez de "0" para
+            // que quede claro que falta cargarlo, no que valga cero.
+            monto: it.monto ? String(it.monto) : '',
+            numeroLiquidacion: it.numeroLiquidacion ?? '',
+          };
+        }),
       );
     }
-    // Solo precarga la primera vez que llegan los predeterminados; después
-    // el usuario es dueño del estado.
+    // Solo precarga la primera vez que llegan los datos; después el
+    // usuario es dueño del estado.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [predeterminados.data]);
+  }, [facturaExistente.data, predeterminados.data]);
 
   // Honorarios de administración (§2.3, §5.5): se calculan sobre el
   // alquiler puro, no sobre el total facturado (que también incluye
@@ -1434,7 +1661,13 @@ function FacturaModal({
   // deja guardado en la propiedad para esta y las próximas liquidaciones.
   // Los honorarios profesionales (comisión) no aplican acá — son solo para
   // propiedades en venta.
-  const montoAlquiler = Number(items?.find((it) => it.descripcion === 'Alquiler')?.monto ?? 0);
+  // "startsWith" además del match exacto porque el usuario puede editar el
+  // texto de este ítem a mano (ej. "Alquiler (ajustado)") sin perder el
+  // cálculo de honorarios — si no, con solo `=== 'Alquiler'` alcanzaba con
+  // tocar la descripción para que esto quedara silenciosamente en $0.
+  const montoAlquiler = Number(
+    items?.find((it) => it.descripcion === 'Alquiler' || it.descripcion.startsWith('Alquiler ('))?.monto ?? 0,
+  );
 
   const pctAdministracionResuelto = resolverPorcentajeHonorariosAdministracion({
     honorariosAdministracion,
@@ -1464,12 +1697,18 @@ function FacturaModal({
         items: (items ?? [])
           .filter((it) => it.descripcion.trim())
           .map((it) => ({
-            descripcion: it.descripcion.trim(),
+            descripcion: combinarDescripcionCuenta(it.descripcion.trim(), it.cuenta),
             monto: Number(it.monto) || 0,
             numeroLiquidacion: it.numeroLiquidacion.trim() || undefined,
           })),
       });
     },
+    // Si se cierra este modal y se vuelve a abrir "Emitir factura" ya con
+    // la factura recién emitida en caché como "no existe" (la consulta de
+    // más arriba corrió antes de emitir), sin invalidar quedaría sirviendo
+    // ese `null` viejo un instante y precargando de cero otra vez — la
+    // razón original de este arreglo.
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['factura-mes', propiedadId, mes] }),
   });
 
   const F = emitir.data;
@@ -1504,15 +1743,21 @@ function FacturaModal({
     setItems((prev) => prev && prev.filter((_, i) => i !== idx));
   };
   const agregarItem = () => {
-    setItems((prev) => [...(prev ?? []), { descripcion: '', monto: '0', numeroLiquidacion: '' }]);
+    setItems((prev) => [...(prev ?? []), { descripcion: '', cuenta: '', monto: '', numeroLiquidacion: '' }]);
   };
 
   const totalEditable = (items ?? []).reduce((acc, it) => acc + (Number(it.monto) || 0), 0);
 
+  // `predeterminados` queda deshabilitada mientras no se sepa si este mes
+  // ya tiene factura propia — su propio `isPending` no sirve solo para
+  // decidir si mostrar "Cargando…".
+  const cargandoItems = facturaExistente.isPending || (facturaExistente.isSuccess && !facturaExistente.data && predeterminados.isPending);
+  const errorItems = facturaExistente.isError || predeterminados.isError;
+
   return (
-    <Modal open onClose={onClose} title={`Factura — ${propiedadNombre}`} width={560}>
-      {predeterminados.isPending && <div className="loadstate">Cargando ítems…</div>}
-      {predeterminados.isError && <div className="errstate">No se pudieron cargar los ítems de la factura.</div>}
+    <Modal open onClose={onClose} title={`Factura — ${propiedadNombre}`} width={620}>
+      {cargandoItems && <div className="loadstate">Cargando ítems…</div>}
+      {errorItems && <div className="errstate">No se pudieron cargar los ítems de la factura.</div>}
       {emitir.isError && (
         <div className="errstate">{emitir.error instanceof ApiError ? emitir.error.message : 'No se pudo emitir la factura.'}</div>
       )}
@@ -1532,7 +1777,7 @@ function FacturaModal({
             </div>
             <div className="fg">
               <label>Inquilino</label>
-              <input value={inquilino ? `N° ${inquilino.numero} — ${inquilino.nombre}` : '—'} disabled />
+              <input value={inquilino?.nombre ?? '—'} disabled />
             </div>
           </div>
 
@@ -1579,6 +1824,17 @@ function FacturaModal({
                   onChange={(e) => actualizarItem(idx, 'descripcion', e.target.value)}
                   placeholder="Descripción"
                 />
+                {esServicioConCuenta(it.descripcion) ? (
+                  <input
+                    className="itemcuenta"
+                    placeholder="N° cuenta / usuario"
+                    title="N° de cuenta / usuario del servicio"
+                    value={it.cuenta}
+                    onChange={(e) => actualizarItem(idx, 'cuenta', e.target.value)}
+                  />
+                ) : (
+                  <div className="itemcuenta" />
+                )}
                 <input
                   className="itemliq"
                   placeholder="Liq"
@@ -1590,6 +1846,7 @@ function FacturaModal({
                   className="itemmonto"
                   type="number"
                   step="0.01"
+                  placeholder="0"
                   value={it.monto}
                   onChange={(e) => actualizarItem(idx, 'monto', e.target.value)}
                 />
@@ -1619,7 +1876,7 @@ function FacturaModal({
 
       {F && (
         <>
-          <ComprobanteImpreso cfg={cfg} ref={comprobanteRef}>
+          <ComprobanteImpreso cfg={cfg} ocultarMatricula ref={comprobanteRef}>
             <div className="liqcard" style={{ boxShadow: 'none' }}>
               <div className="liqhead">
                 <div>

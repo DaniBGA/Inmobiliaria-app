@@ -5,6 +5,7 @@ import { PageHeader } from '../components/PageHeader';
 import { Modal } from '../components/Modal';
 import { formatMoney, formatUsd, formatDate, mesActualStr, sumarMesesStr, mesLabel } from '../lib/format';
 import { descargarCsv } from '../lib/csv';
+import { SeccionGuia } from '../components/SeccionGuia';
 
 type TipoMovimiento = 'INGRESO' | 'EGRESO';
 type Moneda = 'ARS' | 'USD' | 'EUR';
@@ -245,6 +246,64 @@ export function CajaPage() {
     <>
       <PageHeader title="Caja" />
       <main>
+        <SeccionGuia
+          icono="₲"
+          titulo="¿Qué podés hacer en Caja?"
+          intro="Es el libro de ingresos y egresos de la inmobiliaria — junta lo manual con lo que generan solos el resto de los módulos."
+          paginas={[
+            [
+              {
+                titulo: 'Nuevo movimiento',
+                subtitulo:
+                  'El botón "+ Nuevo movimiento" carga un ingreso o egreso manual (sueldos, alquiler de oficina, servicios, etc.) o un pago de alquiler de un inquilino con deuda.',
+                pasos: [
+                  'Elegí Ingreso o Egreso y la categoría.',
+                  'Si es "Pago de alquiler", elegí primero el inquilino y después el mes que abona.',
+                ],
+              },
+              {
+                titulo: 'Editar o eliminar',
+                subtitulo: 'Hacé clic en cualquier fila manual para corregirla o borrarla.',
+              },
+              {
+                titulo: 'Filtros y exportar',
+                subtitulo: 'Filtrá por categoría de ingreso o de egreso, y exportá el mes completo a CSV.',
+              },
+              {
+                titulo: 'Saldo corrido',
+                subtitulo: 'La columna SALDO acumula mes a mes en pesos (no incluye movimientos en USD o EUR).',
+              },
+            ],
+            [
+              {
+                titulo: 'Origen automático',
+                subtitulo:
+                  'Los cobros de alquiler, gastos de propiedad, liquidaciones a propietarios, pagos a proveedores y comisiones de venta aparecen solos, generados por sus propios módulos.',
+              },
+              {
+                titulo: 'Corregir desde acá',
+                subtitulo:
+                  'Un clic en cualquiera de ellos abre el editor correspondiente (cobro, gasto, pago a proveedor, comisión o liquidación) sin ir a buscarlo a su sección de origen.',
+              },
+              {
+                titulo: 'Liquidación',
+                subtitulo:
+                  'Desde el movimiento de una liquidación podés "Recalcular liquidación" (si corregiste algo después de emitida) o eliminarla.',
+              },
+            ],
+            [
+              {
+                titulo: 'Resumen anual',
+                subtitulo:
+                  'Tabla mes a mes de esperado, cobrado, morosidad, gastos, honorarios y liquidado, navegable por año con ‹ ›.',
+              },
+              {
+                titulo: 'Exportar el resumen',
+                subtitulo: 'El botón "Exportar este resumen" descarga el año completo a CSV.',
+              },
+            ],
+          ]}
+        />
         <div className="kpis">
           <div className="kpi">
             <div className="lbl">Ingresos en Pesos</div>

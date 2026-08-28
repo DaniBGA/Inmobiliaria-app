@@ -7,6 +7,7 @@ import { MiniArea } from '../components/charts/MiniArea';
 import { MiniDonut } from '../components/charts/MiniDonut';
 import { MiniBars } from '../components/charts/MiniBars';
 import { PropiedadFichaDrawer } from '../components/PropiedadFichaDrawer';
+import { SeccionGuia } from '../components/SeccionGuia';
 import { formatMoney, formatDate, mesActualStr, sumarMesesStr, mesLabel } from '../lib/format';
 
 interface Configuracion {
@@ -149,6 +150,35 @@ export function DashboardPage() {
         ]}
       />
       <main>
+        <SeccionGuia
+          icono="▦"
+          titulo="¿Qué muestra el Panel General?"
+          intro="Es la pantalla de inicio: un resumen ejecutivo de toda la cartera de alquiler para ver de un vistazo cómo viene el mes, sin entrar a cada sección."
+          paginas={[
+            [
+              {
+                titulo: 'KPIs superiores',
+                subtitulo:
+                  'Actualizaciones IPC/ICL, Deuda de Inquilinos, Ocupación de Cartera y Cobranza del Mes.',
+                pasos: [
+                  'Hacé clic en "Actualizaciones IPC" o "ICL" para ir directo a editar el índice en Configuración.',
+                  'Hacé clic en "Deuda de Inquilinos" o "Cobranza del Mes" para ir a Inquilinos y Cobros.',
+                ],
+              },
+              {
+                titulo: 'Gráficos',
+                subtitulo:
+                  'Evolución Estratégica (recaudación de los últimos 7 meses), Cartera por Contrato (IPC vs. ICL) y Eficiencia de Recaudación (bruto vs. neto de honorarios).',
+              },
+              {
+                titulo: 'Tabla de propiedades alquiladas',
+                subtitulo:
+                  'Inquilino, índice y frecuencia de ajuste, renta vigente, próximo aumento y estado de pago de cada propiedad.',
+                pasos: ['Hacé clic en cualquier fila para abrir la ficha completa de esa propiedad.'],
+              },
+            ],
+          ]}
+        />
         <div className="kpis">
           <Link to="/configuracion" className="kpi editable" title="Clic para editar el valor del índice">
             <div className="lbl">Actualizaciones IPC</div>

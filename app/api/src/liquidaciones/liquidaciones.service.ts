@@ -81,7 +81,13 @@ export class LiquidacionesService {
         // puro, no sobre `cobradoTotal` (que además incluye expensas,
         // servicios trasladados y deuda arrastrada — montos que la
         // inmobiliaria solo intermedia, no factura como propios).
-        const baseAlquiler = Number(items.find((it) => it.descripcion === 'Alquiler')?.monto ?? 0);
+        // "startsWith" además del match exacto: si se editó el texto del
+        // ítem de Alquiler (ej. "Alquiler (ajustado)") al emitir la
+        // factura, no debe perderse el cálculo de honorarios de
+        // administración — antes quedaba silenciosamente en $0.
+        const baseAlquiler = Number(
+          items.find((it) => it.descripcion === 'Alquiler' || it.descripcion.startsWith('Alquiler ('))?.monto ?? 0,
+        );
         const honorariosAdministracion =
           Math.round(baseAlquiler * (porcentajeHonorariosAdministracion / 100) * 100) / 100;
 

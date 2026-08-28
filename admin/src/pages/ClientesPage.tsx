@@ -4,6 +4,7 @@ import { api, ApiError } from '../api/client';
 import { PageHeader } from '../components/PageHeader';
 import { Modal } from '../components/Modal';
 import { MultiDonut } from '../components/charts/MultiDonut';
+import { SeccionGuia } from '../components/SeccionGuia';
 import { formatMoney } from '../lib/format';
 
 type TipoOperacionCliente = 'ALQUILAR' | 'COMPRAR' | 'VENDER' | 'PROPIETARIO_ALQUILER';
@@ -168,6 +169,30 @@ export function ClientesPage() {
     <>
       <PageHeader title="Clientes" />
       <main>
+        <SeccionGuia
+          icono="☏"
+          titulo="¿Qué podés hacer en Clientes?"
+          intro="Es el CRM de la inmobiliaria: gente que busca comprar o alquilar, y también los propietarios e inquilinos ya activos."
+          paginas={[
+            [
+              {
+                titulo: 'Nuevo cliente',
+                subtitulo:
+                  'El botón "+ Nuevo cliente" carga a alguien que busca comprar, alquilar, vender, o que ya es propietario con una propiedad en alquiler — con su interés (tipo, zona, presupuesto), origen de contacto y delegado asignado.',
+              },
+              {
+                titulo: 'Filtro por tipo de operación',
+                subtitulo:
+                  'Busca alquilar, Busca comprar, Quiere vender o Propietario/a de propiedad en alquiler, combinable con el buscador libre por nombre, zona, contacto o notas.',
+              },
+              {
+                titulo: 'Origen de contacto',
+                subtitulo:
+                  'El gráfico de arriba muestra de dónde vienen los clientes: Instagram, Página web, En persona, Facebook o Contactos.',
+              },
+            ],
+          ]}
+        />
         <div className="panel" style={{ marginBottom: 22 }}>
           <h3>ORIGEN DE LOS CLIENTES</h3>
           <div style={{ display: 'flex', alignItems: 'center', gap: 28, flexWrap: 'wrap' }}>

@@ -4,7 +4,8 @@ import { api, ApiError } from '../api/client';
 import { PageHeader } from '../components/PageHeader';
 import { Modal } from '../components/Modal';
 import { AlquilarPropiedadModal, type PropiedadParaAlquilar } from '../components/AlquilarPropiedadModal';
-import { PropiedadFichaDrawer } from '../components/PropiedadFichaDrawer';
+import { PropiedadFichaDrawer, FacturaModal } from '../components/PropiedadFichaDrawer';
+import { SeccionGuia } from '../components/SeccionGuia';
 import { formatMoney, formatDate, mesActualStr, sumarMesesStr, mesLabel } from '../lib/format';
 
 interface Inquilino {
@@ -65,6 +66,8 @@ interface PropiedadDb extends PropiedadParaAlquilar {
   alquilerPublicado: boolean;
   propietario: { nombre: string } | null;
   designado: { nombre: string } | null;
+  honorariosAdministracion: boolean;
+  honorariosAdministracionPorcentaje: string | number | null;
 }
 
 const TIPO_LABEL: Record<string, string> = {
@@ -85,6 +88,7 @@ export function InquilinosPage() {
   const [mes, setMes] = useState(mesActualStr());
   const [busqueda, setBusqueda] = useState('');
   const [modalFila, setModalFila] = useState<FilaCobro | null>(null);
+  const [facturaDe, setFacturaDe] = useState<FilaCobro | null>(null);
   const [alquilarModal, setAlquilarModal] = useState(false);
   const [fichaId, setFichaId] = useState<string | null>(null);
   const qc = useQueryClient();
@@ -129,10 +133,56 @@ export function InquilinosPage() {
       .includes(q);
   });
 
+  const propiedadFacturaDe = facturaDe ? (propiedades.data ?? []).find((p) => p.id === facturaDe.propiedadId) : undefined;
+
   return (
     <>
       <PageHeader title="Inquilinos y Cobros" />
       <main>
+        <SeccionGuia
+          icono="◐"
+          titulo="¿Qué podés hacer en Inquilinos y Cobros?"
+          intro="Acá vive toda la cartera de alquiler (ocupada y vacante) junto con el registro de cobros mes a mes."
+          paginas={[
+            [
+              {
+                titulo: 'Agregar inquilino',
+                subtitulo:
+                  'El botón "+ Agregar inquilino" toma una propiedad de alquiler libre y le carga el contrato y los datos del nuevo inquilino.',
+              },
+              {
+                titulo: 'Ficha de la propiedad',
+                subtitulo:
+                  'Un clic en cualquier tarjeta abre el detalle completo: propietario, inquilino, historial y próximos aumentos, y las cuentas de los servicios (luz, agua, gas).',
+              },
+              {
+                titulo: 'Publicada / Sin publicar y Vacante',
+                subtitulo:
+                  'Cada tarjeta muestra si la propiedad está visible en la web y si tiene o no inquilino, de un vistazo.',
+              },
+            ],
+            [
+              {
+                titulo: 'Registro de pagos',
+                subtitulo: 'Cargá o editá el pago del inquilino para el mes elegido con "Registrar pago".',
+                pasos: [
+                  'Movete al mes que corresponda con el navegador ‹ mes › (podés ir a un mes pasado o futuro).',
+                  'Hacé clic en "Registrar pago" (o "Editar" si ya tiene uno cargado) en la fila del inquilino.',
+                ],
+              },
+              {
+                titulo: 'Emitir facturas futuras',
+                subtitulo:
+                  'Con "📄 Emitir factura" emitís la factura de ese mismo mes, aunque todavía no haya llegado.',
+              },
+              {
+                titulo: 'Reflejo automático en Liquidaciones',
+                subtitulo:
+                  'La factura emitida aparece sola en la liquidación de ese mes al propietario, en "Propietarios y Liquidaciones".',
+              },
+            ],
+          ]}
+        />
         <div className="kpis">
           <div className="kpi">
             <div className="lbl">Inquilinos activos</div>
@@ -235,12 +285,19 @@ export function InquilinosPage() {
                       {clase ? <span className={`badge ${clase}`}><span className="dot"></span>{texto}</span> : '—'}
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      <button
-                        className={`btn-sm${f.pagos.length ? '' : ' solid'}`}
-                        onClick={() => setModalFila(f)}
-                      >
-                        {f.pagos.length ? 'Editar' : 'Registrar pago'}
-                      </button>
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        {f.inquilino && (
+                          <button className="btn-sm" title={`Emitir factura de ${mesLabel(mes)}`} onClick={() => setFacturaDe(f)}>
+                            📄 Emitir factura
+                          </button>
+                        )}
+                        <button
+                          className={`btn-sm${f.pagos.length ? '' : ' solid'}`}
+                          onClick={() => setModalFila(f)}
+                        >
+                          {f.pagos.length ? 'Editar' : 'Registrar pago'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -259,7 +316,7 @@ export function InquilinosPage() {
               onChange={(e) => setBusqueda(e.target.value)}
             />
             <button className="btn-sm solid" onClick={() => setAlquilarModal(true)}>
-              + Agregar propiedad de alquiler
+              + Agregar inquilino
             </button>
           </div>
         </div>
@@ -288,13 +345,9 @@ export function InquilinosPage() {
                       </div>
                     </div>
                     <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                      {ocupada ? (
-                        <span className="badge alquilada">Ocupada</span>
-                      ) : (
-                        <span className={`badge ${p.alquilerPublicado ? 'publicada' : 'pausada'}`}>
-                          {p.alquilerPublicado ? 'Publicada' : 'Pausada'}
-                        </span>
-                      )}
+                      <span className={`badge ${p.alquilerPublicado ? 'publicada' : 'pausada'}`}>
+                        {p.alquilerPublicado ? 'Publicada' : 'Sin publicar'}
+                      </span>
                     </span>
                   </div>
                   <div className="sprice">
@@ -303,23 +356,19 @@ export function InquilinosPage() {
                   </div>
                 </div>
                 <div className="sbody">
-                  {ocupada ? (
+                  {ocupada && (
                     <div className="srow">
                       <span>Inquilino</span>
                       <b>{p.inquilino!.nombre}</b>
                     </div>
-                  ) : (
-                    <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 10 }}>
-                      Vacante — disponible para alquilar.
-                    </div>
                   )}
+                  <div className="srow">
+                    <span>Vacante</span>
+                    <b>{ocupada ? 'No tiene vacante' : 'Tiene vacante'}</b>
+                  </div>
                   <div className="srow">
                     <span>Propietario</span>
                     <b>{p.propietario?.nombre ?? '—'}</b>
-                  </div>
-                  <div className="srow">
-                    <span>Publicada en la web</span>
-                    <b>{p.alquilerPublicado ? 'Sí' : 'No'}</b>
                   </div>
                   <div className="srow">
                     <span>La muestra</span>
@@ -355,6 +404,17 @@ export function InquilinosPage() {
         />
       )}
       {fichaId && <PropiedadFichaDrawer propiedadId={fichaId} onClose={() => setFichaId(null)} />}
+      {facturaDe && (
+        <FacturaModal
+          propiedadId={facturaDe.propiedadId}
+          propiedadNombre={facturaDe.propiedadNombre}
+          inquilino={facturaDe.inquilino}
+          honorariosAdministracionActual={propiedadFacturaDe?.honorariosAdministracion ?? false}
+          honorariosAdministracionPorcentajeActual={propiedadFacturaDe?.honorariosAdministracionPorcentaje ?? null}
+          mes={mes}
+          onClose={() => setFacturaDe(null)}
+        />
+      )}
     </>
   );
 }

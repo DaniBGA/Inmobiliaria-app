@@ -10,6 +10,7 @@ import { primerDiaMes } from '../common/fecha.util';
 import { CreatePropiedadDto } from './dto/create-propiedad.dto';
 import { UpdatePropiedadDto } from './dto/update-propiedad.dto';
 import { RegistrarAumentoDto } from './dto/registrar-aumento.dto';
+import { UpdateAumentoDto } from './dto/update-aumento.dto';
 import { UpsertInquilinoDto } from './dto/upsert-inquilino.dto';
 import { UPLOADS_DIR, FOTOS_DIR } from './multer.config';
 
@@ -195,6 +196,44 @@ export class PropiedadesService {
     return proximo;
   }
 
+  // Lista completa (no solo el próximo) de fechas de aumento que le quedan
+  // al contrato vigente, para mostrar en la ficha (§ "Próximos aumentos").
+  // Mismo ancla y misma regla de "el mes del último aumento cuenta como el
+  // primero" que proximoAumento() — acá simplemente se repite el paso de
+  // `frecuenciaAumentoMeses` en meses hasta pasarse de contratoFin. Si el
+  // contrato no tiene fecha de fin cargada, no hay tope natural: se corta
+  // en TOPE_SIN_FIN ocurrencias para no listar al infinito.
+  async proximosAumentos(propiedadId: string) {
+    const propiedad = await this.prisma.propiedad.findUniqueOrThrow({
+      where: { id: propiedadId },
+      select: { frecuenciaAumentoMeses: true, contratoInicio: true, contratoFin: true, inquilino: { select: { id: true } } },
+    });
+    if (!propiedad.inquilino) return [];
+    if (!propiedad.frecuenciaAumentoMeses || !propiedad.contratoInicio) return [];
+
+    const ultimoDeEsteContrato = await this.prisma.historialAumento.findFirst({
+      where: { propiedadId, fecha: { gte: propiedad.contratoInicio } },
+      orderBy: [{ fecha: 'desc' }, { createdAt: 'desc' }],
+    });
+    const anclaFecha = ultimoDeEsteContrato ? new Date(ultimoDeEsteContrato.fecha) : new Date(propiedad.contratoInicio);
+
+    const TOPE_SIN_FIN = 6;
+    const fechas: Date[] = [];
+    for (let i = 1; ; i++) {
+      const fecha = new Date(
+        Date.UTC(anclaFecha.getUTCFullYear(), anclaFecha.getUTCMonth() + propiedad.frecuenciaAumentoMeses * i, 1),
+      );
+      if (propiedad.contratoFin) {
+        if (fecha.getTime() > propiedad.contratoFin.getTime()) break;
+      } else if (fechas.length >= TOPE_SIN_FIN) {
+        break;
+      }
+      fechas.push(fecha);
+    }
+
+    return fechas.map((fecha) => ({ fecha }));
+  }
+
   async registrarAumento(propiedadId: string, dto: RegistrarAumentoDto) {
     await this.prisma.propiedad.findUniqueOrThrow({ where: { id: propiedadId } });
 
@@ -208,6 +247,50 @@ export class PropiedadesService {
 
     // Recalcula el vigente por si el aumento cargado no es cronológicamente
     // el último (carga tardía de un aumento retroactivo).
+    const vigente = await this.rentaVigente(propiedadId);
+    await this.prisma.propiedad.update({
+      where: { id: propiedadId },
+      data: { montoAlquilerVigente: vigente ?? undefined },
+    });
+
+    return this.findOne(propiedadId);
+  }
+
+  // Corrección de un aumento ya cargado (fecha y/o monto mal tipeados) — no
+  // recrea la fila, la edita en el lugar. Igual que en `registrarAumento`,
+  // recalcula `montoAlquilerVigente` por si la edición cambió cuál es el
+  // aumento más reciente.
+  async editarAumento(propiedadId: string, aumentoId: string, dto: UpdateAumentoDto) {
+    const aumento = await this.prisma.historialAumento.findUniqueOrThrow({ where: { id: aumentoId } });
+    if (aumento.propiedadId !== propiedadId) {
+      throw new BadRequestException('Ese aumento no pertenece a esta propiedad.');
+    }
+
+    await this.prisma.historialAumento.update({
+      where: { id: aumentoId },
+      data: {
+        fecha: dto.fecha ? new Date(dto.fecha) : undefined,
+        monto: dto.monto,
+      },
+    });
+
+    const vigente = await this.rentaVigente(propiedadId);
+    await this.prisma.propiedad.update({
+      where: { id: propiedadId },
+      data: { montoAlquilerVigente: vigente ?? undefined },
+    });
+
+    return this.findOne(propiedadId);
+  }
+
+  async eliminarAumento(propiedadId: string, aumentoId: string) {
+    const aumento = await this.prisma.historialAumento.findUniqueOrThrow({ where: { id: aumentoId } });
+    if (aumento.propiedadId !== propiedadId) {
+      throw new BadRequestException('Ese aumento no pertenece a esta propiedad.');
+    }
+
+    await this.prisma.historialAumento.delete({ where: { id: aumentoId } });
+
     const vigente = await this.rentaVigente(propiedadId);
     await this.prisma.propiedad.update({
       where: { id: propiedadId },

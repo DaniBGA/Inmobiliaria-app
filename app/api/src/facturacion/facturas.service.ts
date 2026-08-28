@@ -178,7 +178,36 @@ export class FacturasService {
       items.push({ descripcion: 'Mora', monto: mora, orden: items.length });
     }
 
+    // Ítems sueltos que se hayan tipeado a mano en la factura anterior (un
+    // cargo que no es ninguno de los fijos de arriba, p. ej. "Cochera
+    // adicional") — se ofrecen de nuevo para no tener que re-tipearlos cada
+    // mes (pedido del usuario 2026-08-28: antes se perdían apenas se pasaba
+    // de mes). Se excluye cualquier descripción ya incluida (evita
+    // duplicar) y cualquiera que sea uno de los ítems "especiales" (Alquiler/
+    // Deuda arrastrada/Mora/cualquier servicio, esté hoy habilitado o no) —
+    // esos se recalculan solos, y si ya no corresponden (deuda saldada,
+    // servicio deshabilitado) no hay que resucitar el monto viejo. Sigue
+    // siendo 100% editable en la factura antes de emitir: si el cargo
+    // carried-over ya no aplica (era de una sola vez), se borra con un clic.
+    if (facturaAnterior) {
+      const descripcionesYaIncluidas = new Set(items.map((it) => it.descripcion));
+      for (const it of facturaAnterior.items) {
+        if (descripcionesYaIncluidas.has(it.descripcion)) continue;
+        if (FacturasService.esItemEspecial(it.descripcion)) continue;
+        items.push({ descripcion: it.descripcion, monto: Number(it.monto), orden: items.length });
+      }
+    }
+
     return items;
+  }
+
+  private static readonly ETIQUETAS_ESPECIALES = ['Alquiler', 'Deuda arrastrada', 'Mora'];
+
+  private static esItemEspecial(descripcion: string): boolean {
+    if (FacturasService.ETIQUETAS_ESPECIALES.includes(descripcion)) return true;
+    return Object.values(FacturasService.SERVICIO_DESCRIPCION).some(
+      (base) => descripcion === base || descripcion.startsWith(`${base} (`),
+    );
   }
 
   // Ver comentario de itemsPredeterminados(). Si el mes anterior todavía

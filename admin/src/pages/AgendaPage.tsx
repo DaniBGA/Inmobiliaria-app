@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
 import { PageHeader } from '../components/PageHeader';
 import { Modal } from '../components/Modal';
+import { SeccionGuia } from '../components/SeccionGuia';
 import { formatDate, mesActualStr, sumarMesesStr, mesLabel } from '../lib/format';
 
 type TipoEventoManual = 'VISITA' | 'REUNION' | 'FIRMA_BOLETO' | 'FIRMA_ESCRITURA' | 'TASACION' | 'LLAMADO' | 'TAREA' | 'OTRO';
@@ -243,6 +244,35 @@ export function AgendaPage() {
     <>
       <PageHeader title="Agenda" />
       <main>
+        <SeccionGuia
+          icono="▥"
+          titulo="¿Qué podés hacer en Agenda?"
+          intro="Junta las tareas y visitas que cargás vos con los avisos que el sistema genera solo (vencimientos, aumentos, incidencias)."
+          paginas={[
+            [
+              {
+                titulo: 'Nuevo evento',
+                subtitulo:
+                  'El botón "+ Nuevo evento" agenda una visita, reunión, firma, tasación, llamado o tarea, con fecha y — si corresponde — un cliente relacionado.',
+              },
+              {
+                titulo: 'Marcar hecho',
+                subtitulo:
+                  'Tildá el check de una tarjeta para marcarla como resuelta; los eventos automáticos no se pueden marcar ni editar desde acá.',
+              },
+              {
+                titulo: 'Eventos automáticos',
+                subtitulo:
+                  'Vencimientos de contrato, aumentos próximos e incidencias abiertas o en ejecución aparecen solos, generados por el resto del sistema.',
+              },
+              {
+                titulo: 'Calendario y "Ver los ya hechos"',
+                subtitulo:
+                  'Hacé clic en un día del calendario para ver solo sus eventos; tildá "Ver los ya hechos" para no perderlos de vista.',
+              },
+            ],
+          ]}
+        />
         <div className="kpis">
           <div className={`kpi${delHoy.length ? ' alert' : ''}`}>
             <div className="lbl">Hoy</div>

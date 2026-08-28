@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { PageHeader } from '../components/PageHeader';
+import { SeccionGuia } from '../components/SeccionGuia';
 import { ComprobanteImpreso } from '../components/ComprobanteImpreso';
 import { LiquidacionComprobanteBody, type Liquidacion } from '../components/LiquidacionComprobante';
 import { descargarPdfComprobante } from '../lib/pdfComprobante';
@@ -328,18 +329,50 @@ export function AvisosPage() {
     <>
       <PageHeader title="Avisos" />
       <main>
-        <div className="notice">
-          <div className="ico">✉</div>
-          <div>
-            <b>Centro de avisos</b>
-            <p>
-              El sistema detecta solo a quién hay que escribirle hoy y redacta el mensaje. Revisalo y enviálo por
-              WhatsApp o por email con un clic. La edición del texto es solo para este envío: no se guarda. Si un
-              aviso ya no te sirve (lo resolviste por otro lado), lo podés eliminar con la ✕ — no vuelve a aparecer
-              a menos que la situación que lo generó cambie.
-            </p>
-          </div>
-        </div>
+        <SeccionGuia
+          icono="✉"
+          titulo="¿Qué es el Centro de Avisos?"
+          paginas={[
+            [
+              {
+                titulo: 'Detección automática',
+                subtitulo:
+                  'El sistema arma solo los avisos según lo que encuentra: deudas, pedidos de presupuesto pendientes, aumentos próximos, vencimientos de contrato, clientes nuevos sin contactar y liquidaciones recién emitidas.',
+              },
+              {
+                titulo: 'Enviar',
+                subtitulo:
+                  'Cada tarjeta trae el mensaje ya redactado — enviálo por WhatsApp o email con un clic. Podés editar el texto antes de enviar, pero esa edición no se guarda.',
+              },
+              {
+                titulo: 'Descartar',
+                subtitulo:
+                  'La ✕ oculta un aviso puntual que ya resolviste de otra forma; vuelve a aparecer solo si la situación que lo generó cambia.',
+              },
+              {
+                titulo: 'Filtros',
+                subtitulo: 'Los chips de arriba muestran u ocultan cada grupo de avisos y cuántos hay de cada uno.',
+              },
+            ],
+            [
+              {
+                titulo: 'Reclamos de deuda y Pedidos de presupuesto',
+                subtitulo:
+                  'Urgencias (en rojo): inquilinos con meses impagos, e incidencias resueltas que necesitan presupuesto de un proveedor.',
+              },
+              {
+                titulo: 'Avisos de aumento y Renovaciones de contrato',
+                subtitulo:
+                  'Próximos (en naranja): aumentos por aplicar según IPC/ICL, y contratos por vencer.',
+              },
+              {
+                titulo: 'Clientes sin contactar, Recordatorios y Liquidaciones listas',
+                subtitulo:
+                  'Informativos (en índigo): leads nuevos a contactar, eventos de la Agenda que se acercan, y liquidaciones recién emitidas listas para compartir (con descarga de PDF incluida).',
+              },
+            ],
+          ]}
+        />
 
         {total > 0 && (
           <div className="avfilters">

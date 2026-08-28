@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
 import { PageHeader } from '../components/PageHeader';
 import { Modal } from '../components/Modal';
+import { SeccionGuia } from '../components/SeccionGuia';
 import { formatMoney, formatDate, mesActualStr } from '../lib/format';
 
 type EstadoIncidencia = 'ABIERTA' | 'EN_CURSO' | 'RESUELTA';
@@ -208,6 +209,49 @@ export function IncidenciasPage() {
     <>
       <PageHeader title="Incidencias y Proveedores" />
       <main>
+        <SeccionGuia
+          icono="⚠"
+          titulo="¿Qué podés hacer en Incidencias y Proveedores?"
+          intro="El tablero de arriba junta los reclamos y tareas de mantenimiento; el directorio de abajo, a quién se le paga por resolverlos."
+          paginas={[
+            [
+              {
+                titulo: 'Nueva incidencia',
+                subtitulo:
+                  'El botón "+ Nueva incidencia" carga un reclamo o tarea sobre una propiedad, con rubro y, si corresponde, un proveedor (existente o nuevo al vuelo) y su costo.',
+              },
+              {
+                titulo: 'Marcar resuelta',
+                subtitulo: 'Cierra la incidencia con fecha de cierre.',
+              },
+              {
+                titulo: 'Registrar pago',
+                subtitulo:
+                  'El botón "¤ Registrar pago" aparece cuando la incidencia está resuelta, tiene proveedor y costo, y genera el egreso correspondiente en Caja.',
+              },
+              {
+                titulo: 'Buscador',
+                subtitulo: 'Por título, propiedad o proveedor.',
+              },
+            ],
+            [
+              {
+                titulo: 'Directorio de proveedores',
+                subtitulo: 'Listado de proveedores con su rubro, buscable por nombre o rubro.',
+              },
+              {
+                titulo: 'Nuevo proveedor',
+                subtitulo:
+                  'El botón "+ Nuevo proveedor" lo agrega al directorio; también se puede crear al vuelo desde el formulario de una incidencia.',
+              },
+              {
+                titulo: 'Pagar saldo',
+                subtitulo:
+                  'El botón "¤ Pagar saldo" salda de una sola vez todas las incidencias resueltas y pendientes de pago de ese proveedor.',
+              },
+            ],
+          ]}
+        />
         <div className="kpis">
           <div className={`kpi${abiertas.length ? ' alert' : ''}`}>
             <div className="lbl">Abiertas</div>

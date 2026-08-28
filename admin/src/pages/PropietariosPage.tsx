@@ -6,7 +6,9 @@ import { Modal } from '../components/Modal';
 import { ComprobanteImpreso } from '../components/ComprobanteImpreso';
 import { LiquidacionComprobanteBody, type Liquidacion, type GastoDetalle, type LiquidacionItem } from '../components/LiquidacionComprobante';
 import { descargarPdfComprobante } from '../lib/pdfComprobante';
-import { formatMoney, mesActualStr, mesLabel } from '../lib/format';
+import { formatMoney, mesActualStr, mesLabel, sumarMesesStr } from '../lib/format';
+import { splitDescripcionCuenta, combinarDescripcionCuenta, esServicioConCuenta } from '../lib/itemServicioCuenta';
+import { SeccionGuia } from '../components/SeccionGuia';
 
 interface Configuracion {
   empresaDireccion: string;
@@ -59,6 +61,7 @@ interface DetallePreview {
 
 interface ItemEditable {
   descripcion: string;
+  cuenta: string;
   monto: string;
   numeroLiquidacion: string;
 }
@@ -86,8 +89,14 @@ function iniciales(nombre: string) {
 }
 
 export function PropietariosPage() {
-  const mesActual = mesActualStr();
+  // Mes de la liquidación a imprimir — no tiene por qué ser el actual: se
+  // puede armar por adelantado la de un mes próximo (pedido del usuario).
+  // También mueve el mes de `resumenMes` (los badges Pagado/No pagado de
+  // cada propiedad), para que reflejen el mismo período que se está por
+  // liquidar en vez de siempre el actual.
+  const [mes, setMes] = useState(mesActualStr());
   const [liqDe, setLiqDe] = useState<Propietario | null>(null);
+  const [editDe, setEditDe] = useState<Propietario | null>(null);
   const qc = useQueryClient();
 
   const propietarios = useQuery({
@@ -99,8 +108,8 @@ export function PropietariosPage() {
     queryFn: () => api.get<Propiedad[]>('/propiedades'),
   });
   const resumenMes = useQuery({
-    queryKey: ['cobros', 'mes', mesActual],
-    queryFn: () => api.get<ResumenMes>(`/cobros/mes/${mesActual}`),
+    queryKey: ['cobros', 'mes', mes],
+    queryFn: () => api.get<ResumenMes>(`/cobros/mes/${mes}`),
   });
 
   const eliminarPropietario = useMutation({
@@ -151,6 +160,68 @@ export function PropietariosPage() {
         chips={[{ label: `${lista.length} propietarios`, tone: 'green' }]}
       />
       <main>
+        <SeccionGuia
+          icono="◉"
+          titulo="¿Qué podés hacer en Propietarios y Liquidaciones?"
+          intro="Cada tarjeta agrupa a un propietario con todas sus propiedades y da acceso directo a liquidarle el mes."
+          paginas={[
+            [
+              {
+                titulo: 'Datos de contacto y propiedades',
+                subtitulo:
+                  'Cada tarjeta muestra teléfono, email y sus propiedades, con el estado de pago del mes elegido (Disponible, En venta, Pagado, No pagado).',
+              },
+              {
+                titulo: 'Editar propietario',
+                subtitulo: 'El botón "✎ Editar" corrige nombre, teléfono o email.',
+                pasos: ['Hacé clic en "✎ Editar" en la tarjeta.', 'Corregí los datos y confirmá con "Guardar".'],
+              },
+              {
+                titulo: 'Eliminar propietario',
+                subtitulo:
+                  'El botón "Eliminar" lo borra junto con todo su historial de liquidaciones; sus propiedades quedan sin propietario asignado.',
+              },
+              {
+                titulo: 'Navegador de mes',
+                subtitulo:
+                  'Arriba de las tarjetas podés moverte a un mes pasado o futuro — cambia tanto el estado de pago de cada propiedad como el mes que se va a liquidar.',
+              },
+            ],
+            [
+              {
+                titulo: 'Imprimir / emitir liquidación',
+                subtitulo:
+                  'El botón "▤ Imprimir liquidación de {mes}" calcula una vista previa editable con lo cobrado, los gastos absorbidos y los honorarios de administración ya descontados.',
+                pasos: [
+                  'Elegí el mes con el navegador de arriba (puede ser un mes futuro).',
+                  'Ajustá los montos, agregá o quitá ítems y cargá el N° de cuenta/usuario si el servicio lo tiene.',
+                  'Confirmá con "Emitir liquidación" para generarla y descontarla en Caja.',
+                ],
+              },
+              {
+                titulo: 'Comprobante',
+                subtitulo: 'Una vez emitida, se puede imprimir o enviar por WhatsApp con el PDF ya adjunto.',
+              },
+              {
+                titulo: 'Ítems con N° de cuenta propio',
+                subtitulo:
+                  'Cada renglón de "Cobrado" tiene su propio campo de N° de cuenta/usuario, separado del nombre del servicio.',
+              },
+            ],
+          ]}
+        />
+        <div className="monthbar" style={{ marginBottom: 18 }}>
+          <button className="navm" onClick={() => setMes(sumarMesesStr(mes, -1))} title="Mes anterior">
+            ‹
+          </button>
+          <span className="mlabel">{mesLabel(mes)}</span>
+          <button className="navm" onClick={() => setMes(sumarMesesStr(mes, 1))} title="Mes siguiente">
+            ›
+          </button>
+          <button className="btn-sm" onClick={() => setMes(mesActualStr())}>
+            Mes actual
+          </button>
+        </div>
         <div className="owners">
           {lista.map((o) => {
             const mias = propiedadesPorPropietario.get(o.id) ?? [];
@@ -158,7 +229,7 @@ export function PropietariosPage() {
               <div className="ownercard" key={o.id}>
                 <div className="top">
                   <div className="avatar">{iniciales(o.nombre)}</div>
-                  <div>
+                  <div style={{ flex: '1 1 150px', minWidth: 150 }}>
                     <h4>{o.nombre}</h4>
                     <div className="contact">
                       ☎ {o.telefono ?? <span className="nodata">—</span>}
@@ -171,15 +242,19 @@ export function PropietariosPage() {
                       )}
                     </div>
                   </div>
-                  {o.grandesActivos && <span className="tag-big">GRANDES ACTIVOS</span>}
-                  <button
-                    className="btn-sm ghostred"
-                    style={{ marginLeft: 'auto', flexShrink: 0 }}
-                    disabled={eliminarPropietario.isPending}
-                    onClick={() => pedirEliminar(o, mias.length)}
-                  >
-                    Eliminar
-                  </button>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginLeft: 'auto', justifyContent: 'flex-end' }}>
+                    {o.grandesActivos && <span className="tag-big" style={{ marginLeft: 0 }}>GRANDES ACTIVOS</span>}
+                    <button className="btn-sm" onClick={() => setEditDe(o)}>
+                      ✎ Editar
+                    </button>
+                    <button
+                      className="btn-sm ghostred"
+                      disabled={eliminarPropietario.isPending}
+                      onClick={() => pedirEliminar(o, mias.length)}
+                    >
+                      Eliminar
+                    </button>
+                  </div>
                 </div>
                 <div className="props">
                   {mias.length === 0 && (
@@ -206,7 +281,7 @@ export function PropietariosPage() {
                   })}
                 </div>
                 <button className="btn-invoice" onClick={() => setLiqDe(o)}>
-                  ▤ Imprimir liquidación del mes
+                  ▤ Imprimir liquidación de {mesLabel(mes)}
                 </button>
               </div>
             );
@@ -215,8 +290,78 @@ export function PropietariosPage() {
         </div>
       </main>
 
-      {liqDe && <LiquidacionModal propietario={liqDe} mes={mesActual} onClose={() => setLiqDe(null)} />}
+      {liqDe && <LiquidacionModal propietario={liqDe} mes={mes} onClose={() => setLiqDe(null)} />}
+      {editDe && (
+        <EditarPropietarioModal
+          propietario={editDe}
+          onClose={() => setEditDe(null)}
+          onSaved={() => {
+            setEditDe(null);
+            qc.invalidateQueries({ queryKey: ['propietarios'] });
+            qc.invalidateQueries({ queryKey: ['propiedades'] });
+          }}
+        />
+      )}
     </>
+  );
+}
+
+// Único lugar del admin donde se puede tocar nombre/teléfono/email de un
+// Propietario (modelo aparte de Cliente, aunque todo propietario nuevo
+// también se registre como Cliente — ver AgregarPropiedadPage) — antes no
+// existía ningún formulario para esto, así que un teléfono cargado desde
+// Clientes nunca llegaba a la ficha de la propiedad, que siempre lee de acá.
+function EditarPropietarioModal({
+  propietario,
+  onClose,
+  onSaved,
+}: {
+  propietario: Propietario;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [nombre, setNombre] = useState(propietario.nombre);
+  const [telefono, setTelefono] = useState(propietario.telefono ?? '');
+  const [email, setEmail] = useState(propietario.email ?? '');
+  const [error, setError] = useState<string | null>(null);
+
+  const guardar = useMutation({
+    mutationFn: () =>
+      api.patch(`/propietarios/${propietario.id}`, {
+        nombre: nombre.trim(),
+        telefono: telefono.trim() || undefined,
+        email: email.trim() || undefined,
+      }),
+    onSuccess: onSaved,
+    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo guardar el propietario.'),
+  });
+
+  return (
+    <Modal open onClose={onClose} title={`Editar Propietario — ${propietario.nombre}`} width={420}>
+      {error && <div className="errstate" style={{ marginBottom: 14 }}>{error}</div>}
+      <div className="formgrid">
+        <div className="fg full">
+          <label>Nombre</label>
+          <input value={nombre} onChange={(e) => setNombre(e.target.value)} />
+        </div>
+        <div className="fg">
+          <label>Teléfono</label>
+          <input value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="Opcional" />
+        </div>
+        <div className="fg">
+          <label>Email</label>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Opcional" />
+        </div>
+      </div>
+      <div className="btnrow">
+        <button className="btn-ghost" onClick={onClose}>
+          Cancelar
+        </button>
+        <button className="btn-dark" disabled={guardar.isPending || !nombre.trim()} onClick={() => guardar.mutate()}>
+          Guardar
+        </button>
+      </div>
+    </Modal>
   );
 }
 
@@ -253,11 +398,22 @@ function LiquidacionModal({
     if (preview.data && itemsPorPropiedad === null) {
       const inicial: Record<string, ItemEditable[]> = {};
       for (const d of preview.data) {
-        inicial[d.propiedadId] = d.items.map((it) => ({
-          descripcion: it.descripcion,
-          monto: String(it.monto),
-          numeroLiquidacion: it.numeroLiquidacion ?? '',
-        }));
+        inicial[d.propiedadId] = d.items.map((it) => {
+          // El N° de cuenta/usuario viene pegado a la descripción del
+          // servicio (ver datosCuentaSuffix() en el backend) — se separa
+          // para su propio input y se vuelve a unir al emitir (mismo
+          // criterio que FacturaModal).
+          const { base, cuenta } = splitDescripcionCuenta(it.descripcion);
+          return {
+            descripcion: base,
+            cuenta,
+            // Un ítem sin monto previo llega en 0 — se muestra vacío en vez
+            // de "0" para que quede claro que falta cargarlo, no que valga
+            // cero (mismo criterio que FacturaModal).
+            monto: it.monto ? String(it.monto) : '',
+            numeroLiquidacion: it.numeroLiquidacion ?? '',
+          };
+        });
       }
       setItemsPorPropiedad(inicial);
     }
@@ -274,7 +430,7 @@ function LiquidacionModal({
           items: (itemsPorPropiedad?.[d.propiedadId] ?? [])
             .filter((it) => it.descripcion.trim())
             .map((it) => ({
-              descripcion: it.descripcion.trim(),
+              descripcion: combinarDescripcionCuenta(it.descripcion.trim(), it.cuenta),
               monto: Number(it.monto) || 0,
               numeroLiquidacion: it.numeroLiquidacion.trim() || undefined,
             })),
@@ -316,7 +472,7 @@ function LiquidacionModal({
   function agregarItem(propiedadId: string) {
     setItemsPorPropiedad((prev) => {
       if (!prev) return prev;
-      return { ...prev, [propiedadId]: [...prev[propiedadId], { descripcion: '', monto: '0', numeroLiquidacion: '' }] };
+      return { ...prev, [propiedadId]: [...prev[propiedadId], { descripcion: '', cuenta: '', monto: '', numeroLiquidacion: '' }] };
     });
   }
   function quitarItem(propiedadId: string, idx: number) {
@@ -332,7 +488,11 @@ function LiquidacionModal({
   // aplican a alquiler (solo a venta), así que acá solo se descuentan los
   // de administración.
   function honorariosDe(pct: number, items: ItemEditable[]) {
-    const alquiler = Number(items.find((it) => it.descripcion === 'Alquiler')?.monto ?? 0);
+    // "startsWith" además del match exacto: si se editó el texto del ítem
+    // (ej. "Alquiler (ajustado)"), no debe perderse el cálculo de honorarios.
+    const alquiler = Number(
+      items.find((it) => it.descripcion === 'Alquiler' || it.descripcion.startsWith('Alquiler ('))?.monto ?? 0,
+    );
     return Math.round(alquiler * (pct / 100) * 100) / 100;
   }
 
@@ -345,7 +505,7 @@ function LiquidacionModal({
   const neto = L ? Number(L.netoAGirar) : netoEditable;
 
   return (
-    <Modal open onClose={onClose} title={`Liquidación — ${propietario.nombre}`} width={620}>
+    <Modal open onClose={onClose} title={`Liquidación — ${propietario.nombre} (${mesLabel(mes)})`} width={620}>
       {preview.isPending && <div className="loadstate">Calculando liquidación…</div>}
       {preview.isError && <div className="errstate">No se pudo calcular la liquidación.</div>}
       {generar.isError && (
@@ -380,10 +540,22 @@ function LiquidacionModal({
                         onChange={(e) => actualizarItem(d.propiedadId, idx, 'descripcion', e.target.value)}
                         placeholder="Descripción"
                       />
+                      {esServicioConCuenta(it.descripcion) ? (
+                        <input
+                          className="itemcuenta"
+                          placeholder="N° cuenta / usuario"
+                          title="N° de cuenta / usuario del servicio"
+                          value={it.cuenta}
+                          onChange={(e) => actualizarItem(d.propiedadId, idx, 'cuenta', e.target.value)}
+                        />
+                      ) : (
+                        <div className="itemcuenta" />
+                      )}
                       <input
                         className="itemmonto"
                         type="number"
                         step="0.01"
+                        placeholder="0"
                         value={it.monto}
                         onChange={(e) => actualizarItem(d.propiedadId, idx, 'monto', e.target.value)}
                       />

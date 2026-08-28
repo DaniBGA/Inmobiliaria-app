@@ -16,12 +16,17 @@ interface DatosComprobante {
 // `global.css`), así que en el modal en pantalla no se ve nada de esto.
 // Expone un `ref` al nodo raíz porque `lib/pdfComprobante.ts` necesita
 // agarrarlo para clonarlo y generar el PDF que manda el botón de WhatsApp.
-export const ComprobanteImpreso = forwardRef<HTMLDivElement, { cfg?: DatosComprobante; children: ReactNode }>(
-  function ComprobanteImpreso({ cfg, children }, ref) {
+export const ComprobanteImpreso = forwardRef<
+  HTMLDivElement,
+  { cfg?: DatosComprobante; ocultarMatricula?: boolean; children: ReactNode }
+>(
+  function ComprobanteImpreso({ cfg, ocultarMatricula, children }, ref) {
     return (
       <div className="comprobante" ref={ref}>
         <img className="comp-marcaagua printonly" src={logoMarcaAgua} alt="" aria-hidden="true" />
-        {cfg?.publicoMatricula && <div className="comp-matricula printonly">{cfg.publicoMatricula}</div>}
+        {!ocultarMatricula && cfg?.publicoMatricula && (
+          <div className="comp-matricula printonly">{cfg.publicoMatricula}</div>
+        )}
 
         <div className="comp-membrete printonly">
           <img className="comp-logo" src={logoComprobante} alt="" />

@@ -59,7 +59,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  // Un endpoint que devuelve `null` (p. ej. "factura de este mes: no hay
+  // todavía") a veces llega con body vacío en vez del texto "null" — un
+  // `res.json()` directo tira "Unexpected end of JSON input" en ese caso.
+  const texto = await res.text();
+  return (texto ? JSON.parse(texto) : null) as T;
 }
 
 export const api = {

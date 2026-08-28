@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { PageHeader } from '../components/PageHeader';
 import { ServiciosCuentaInputs, SERVICIOS_OPCIONES, type ServicioFacturable } from '../components/ServiciosCuentaInputs';
+import { SeccionGuia } from '../components/SeccionGuia';
 
 type Modalidad = 'ALQUILER' | 'VENTA';
 type IndiceAjuste = '' | 'IPC' | 'ICL';
@@ -279,17 +280,37 @@ export function AgregarPropiedadPage() {
     <>
       <PageHeader title="Agregar Propiedad" />
       <main>
-        <div className="notice">
-          <div className="ico">⌂</div>
-          <div>
-            <b>Nueva propiedad para el catálogo</b>
-            <p>
-              Cargá una propiedad para alquilar o vender. Si la modalidad es "Venta" y la marcás como publicada, queda
-              lista para mostrarse en la página web pública apenas esté conectada al mismo catálogo. Las propiedades
-              de alquiler sin inquilino también se consideran "disponibles para publicar".
-            </p>
-          </div>
-        </div>
+        <SeccionGuia
+          icono="⌂"
+          titulo="¿Qué podés cargar acá?"
+          intro="Este formulario da de alta una propiedad nueva en la cartera, para alquilar o para vender, y queda disponible al toque en el resto del sistema."
+          paginas={[
+            [
+              {
+                titulo: 'Datos generales y propietario',
+                subtitulo: 'Nombre, dirección, tipo de propiedad y a quién pertenece.',
+                pasos: [
+                  'Elegí un propietario ya cargado en el desplegable, o completá "Nombre" y "Cómo llegó" para crear uno nuevo sin salir del formulario.',
+                ],
+              },
+              {
+                titulo: 'Modalidad: Alquiler o Venta',
+                subtitulo:
+                  'Alquiler pide índice de ajuste (IPC/ICL), frecuencia de aumento y monto inicial; Venta pide precio, moneda y si se publica en la web.',
+              },
+              {
+                titulo: 'Servicios que se facturan',
+                subtitulo:
+                  'Marcá qué servicios tiene la propiedad (luz, gas, agua, expensas, etc.) — de esto depende qué ítems van a aparecer después al emitir facturas y liquidaciones.',
+              },
+              {
+                titulo: 'Fotos',
+                subtitulo:
+                  'Subí imágenes de la propiedad; si la marcás "Carácter especial" podés elegir una como portada del carrusel destacado de la web.',
+              },
+            ],
+          ]}
+        />
 
         {exito && (
           <div className="okstate" style={{ marginBottom: 22 }}>

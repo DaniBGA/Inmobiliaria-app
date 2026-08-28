@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError, BASE_URL } from '../api/client';
 import { PageHeader } from '../components/PageHeader';
+import { SeccionGuia } from '../components/SeccionGuia';
 import { Modal } from '../components/Modal';
 import { formatMoney, formatDate, mesActualStr, sumarMesesStr, mesLabel } from '../lib/format';
 import { descargarCsv } from '../lib/csv';
@@ -54,6 +55,80 @@ export function ConfiguracionPage() {
     <>
       <PageHeader title="Configuración y Reportes" />
       <main>
+        <SeccionGuia
+          icono="⚙"
+          titulo="¿Qué podés hacer en Configuración y Reportes?"
+          intro="Acá se ajustan los parámetros que usa todo el sistema — cambiar un valor acá repercute en Facturas, Liquidaciones, Ventas, Caja y la página web pública."
+          paginas={[
+            [
+              {
+                titulo: 'Datos fiscales',
+                subtitulo:
+                  'Razón social, CUIT, contacto y dirección que encabezan todas las facturas, recibos y liquidaciones impresas.',
+              },
+              {
+                titulo: 'Equipo — designados y su acceso',
+                subtitulo:
+                  'Cargá a cada integrante (aparecen como "Designado para mostrar" en propiedades y clientes).',
+                pasos: [
+                  'Con el ✎ de cada fila podés darle usuario y contraseña propios para que entre al panel viendo solo Ventas y Carteles + Agenda.',
+                  'Desde el mismo modal podés revocarle o reactivarle el acceso cuando haga falta, sin borrar su historial.',
+                ],
+              },
+              {
+                titulo: 'Datos públicos (landing page)',
+                subtitulo:
+                  'WhatsApp, teléfono, email, Instagram, dirección, matrícula y foto de "Nosotros" que se muestran en la página web pública.',
+              },
+            ],
+            [
+              {
+                titulo: 'Índices IPC / ICL',
+                subtitulo:
+                  'Los que publica el INDEC — de acá salen los aumentos que el sistema propone en cada propiedad.',
+              },
+              {
+                titulo: 'Cotización del dólar',
+                subtitulo:
+                  'Convierte a pesos las propiedades en venta listadas en USD. El botón "Actualizar desde dólar oficial" la trae sola desde dolarapi.com.',
+              },
+              {
+                titulo: 'Honorarios y comisión por defecto',
+                subtitulo:
+                  'Porcentaje de alquiler y de venta que se usa cuando una propiedad no tiene el suyo propio.',
+              },
+              {
+                titulo: 'Vencimiento del alquiler y anticipación de alertas',
+                subtitulo:
+                  'Qué día del mes vence el alquiler, y con cuántos días de anticipación avisa el sistema sobre aumentos y vencimientos de contrato.',
+              },
+            ],
+            [
+              {
+                titulo: 'Numeración de comprobantes',
+                subtitulo:
+                  'Próximo número de factura, recibo y liquidación — es correlativo y compartido por todo el sistema.',
+              },
+              {
+                titulo: 'Mensaje de WhatsApp',
+                subtitulo: 'El texto que se prearma al enviar una factura por WhatsApp.',
+              },
+              {
+                titulo: 'Saldo inicial de Caja',
+                subtitulo: 'El punto de partida del saldo acumulado que se ve en Caja.',
+              },
+              {
+                titulo: 'Reportes',
+                subtitulo:
+                  'Al pie de la página: tres grupos de reportes exportables a CSV — dinero, propiedades e inquilinos, y comercial y seguimiento.',
+                pasos: [
+                  'Elegí el período con el navegador "▥ Período de los reportes".',
+                  'Hacé clic en el reporte que necesites para descargarlo en CSV.',
+                ],
+              },
+            ],
+          ]}
+        />
         {configuracion.isLoading ? (
           <div className="loadstate">Cargando…</div>
         ) : (
