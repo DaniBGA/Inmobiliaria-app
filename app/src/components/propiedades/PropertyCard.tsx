@@ -1,10 +1,8 @@
 import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useQuery } from '@tanstack/react-query';
-import { BASE_URL } from '../../api/client';
 import { type PropiedadPublica } from '../../api/propiedades';
-import { fetchContactoInfo } from '../../api/configuracionPublica';
-import { TIPO_LABEL, formatPrecio, formatMoney, waLink, gradienteFor, specsDe } from '../../lib/format';
+import { useContactoInfo } from '../../hooks/useContactoInfo';
+import { TIPO_LABEL, formatPrecio, formatMoney, waLink, gradienteFor, specsDe, imgUrl } from '../../lib/format';
 
 function PropertyPhotoCarousel({
   propiedad,
@@ -38,7 +36,7 @@ function PropertyPhotoCarousel({
 
   return (
     <div className="property-photo">
-      <img src={`${BASE_URL}${fotos[indice].url}`} alt={propiedad.nombre} />
+      <img src={imgUrl(fotos[indice].url)} alt={propiedad.nombre} loading="lazy" />
       {fotos.length > 1 && (
         <>
           <button type="button" className="property-photo-nav prev" onClick={anterior} aria-label="Foto anterior">
@@ -95,10 +93,10 @@ function PropertyDetailModal({
             <>
               <div
                 className="property-modal-photo-bg"
-                style={{ backgroundImage: `url(${BASE_URL}${foto.url})` }}
+                style={{ backgroundImage: `url(${imgUrl(foto.url)})` }}
                 aria-hidden="true"
               />
-              <img className="property-modal-photo-img" src={`${BASE_URL}${foto.url}`} alt={propiedad.nombre} />
+              <img className="property-modal-photo-img" src={imgUrl(foto.url)} alt={propiedad.nombre} />
             </>
           )}
           <button type="button" className="property-modal-close" onClick={onClose} aria-label="Cerrar">
@@ -176,11 +174,7 @@ function PropertyDetailModal({
 export function PropertyCard({ propiedad }: { propiedad: PropiedadPublica }) {
   const [indice, setIndice] = useState(0);
   const [detalleAbierto, setDetalleAbierto] = useState(false);
-  const contactoInfo = useQuery({
-    queryKey: ['contacto-info'],
-    queryFn: fetchContactoInfo,
-    staleTime: 5 * 60_000,
-  });
+  const contactoInfo = useContactoInfo();
 
   // Con varias fotos (§ propiedades con muchas imágenes), cambiar de foto
   // se sentía con un lag perceptible: el <img> recién pedía la imagen de
@@ -195,7 +189,7 @@ export function PropertyCard({ propiedad }: { propiedad: PropiedadPublica }) {
       fotosPrecargadasRef.current = true;
       propiedad.fotos.forEach((f) => {
         const img = new window.Image();
-        img.src = `${BASE_URL}${f.url}`;
+        img.src = imgUrl(f.url);
       });
     }
     setIndice(i);

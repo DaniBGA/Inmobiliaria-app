@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
+import { useConfiguracion } from '../hooks/useConfiguracion';
 import { PageHeader } from '../components/PageHeader';
 import { SeccionGuia } from '../components/SeccionGuia';
 import { ComprobanteImpreso } from '../components/ComprobanteImpreso';
@@ -266,10 +267,7 @@ export function AvisosPage() {
   // /liquidaciones/propietarios/:id/:mes`, la liquidación YA emitida, no
   // una vista previa) y recién ahí se puede armar el comprobante oculto
   // que captura `descargarPdfComprobante`.
-  const configuracion = useQuery({
-    queryKey: ['configuracion'],
-    queryFn: () => api.get<Configuracion>('/configuracion'),
-  });
+  const configuracion = useConfiguracion<Configuracion>();
   const comprobanteRef = useRef<HTMLDivElement>(null);
   const [pdfData, setPdfData] = useState<{ propietarioNombre: string; L: Liquidacion } | null>(null);
   const mes = mesActualStr();

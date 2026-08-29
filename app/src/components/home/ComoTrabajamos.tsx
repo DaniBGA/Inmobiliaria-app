@@ -1,7 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
-import { fetchContactoInfo } from '../../api/configuracionPublica';
 import { waLink } from '../../lib/format';
 import { useRevealOnScroll } from '../../hooks/useRevealOnScroll';
+import { useContactoInfo } from '../../hooks/useContactoInfo';
 
 const PASOS = [
   {
@@ -24,11 +23,7 @@ const PASOS = [
 export function ComoTrabajamos() {
   const { ref, visible } = useRevealOnScroll<HTMLDivElement>();
   const { ref: ctaRef, visible: ctaVisible } = useRevealOnScroll<HTMLDivElement>();
-  const contactoInfo = useQuery({
-    queryKey: ['contacto-info'],
-    queryFn: fetchContactoInfo,
-    staleTime: 5 * 60_000,
-  });
+  const contactoInfo = useContactoInfo();
 
   return (
     <section id="servicios" className="section">

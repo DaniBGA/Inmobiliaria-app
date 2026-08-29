@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError, BASE_URL } from '../api/client';
+import { useConfiguracion } from '../hooks/useConfiguracion';
 import { PageHeader } from '../components/PageHeader';
 import { SeccionGuia } from '../components/SeccionGuia';
 import { Modal } from '../components/Modal';
@@ -42,10 +43,7 @@ interface IntegranteEquipo {
 }
 
 export function ConfiguracionPage() {
-  const configuracion = useQuery({
-    queryKey: ['configuracion'],
-    queryFn: () => api.get<Configuracion>('/configuracion'),
-  });
+  const configuracion = useConfiguracion<Configuracion>();
   const integrantes = useQuery({
     queryKey: ['integrantes-equipo'],
     queryFn: () => api.get<IntegranteEquipo[]>('/integrantes-equipo'),

@@ -5,19 +5,11 @@ import { api, ApiError } from '../api/client';
 import { PageHeader } from '../components/PageHeader';
 import { ServiciosCuentaInputs, SERVICIOS_OPCIONES, type ServicioFacturable } from '../components/ServiciosCuentaInputs';
 import { SeccionGuia } from '../components/SeccionGuia';
+import { ORIGEN_LABEL, type OrigenCliente } from '../lib/clienteEnums';
 
 type Modalidad = 'ALQUILER' | 'VENTA';
 type IndiceAjuste = '' | 'IPC' | 'ICL';
 type Moneda = 'ARS' | 'USD';
-type OrigenCliente = 'INSTAGRAM' | 'PAGINA_WEB' | 'EN_PERSONA' | 'FACEBOOK' | 'CONTACTOS';
-
-const ORIGEN_LABEL: Record<OrigenCliente, string> = {
-  INSTAGRAM: 'Instagram',
-  PAGINA_WEB: 'Página web',
-  EN_PERSONA: 'En persona',
-  FACEBOOK: 'Facebook',
-  CONTACTOS: 'Contactos',
-};
 
 interface Propietario {
   id: string;
@@ -353,7 +345,7 @@ export function AgregarPropiedadPage() {
         )}
         {error && <div className="errstate" style={{ marginBottom: 14 }}>{error}</div>}
 
-        <div className="cfggrid">
+        <div className="cfgsplit">
           <div className="cfgcard">
             <h3>DATOS GENERALES</h3>
             <div className="hint">Nombre, dirección, tipo y a quién pertenece.</div>
@@ -663,6 +655,7 @@ export function AgregarPropiedadPage() {
             </div>
           )}
 
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           {caracterEspecial && (
             <div className="cfgcard">
               <h3>IMAGEN DEL CARRUSEL DESTACADO</h3>
@@ -741,6 +734,7 @@ export function AgregarPropiedadPage() {
                 ))}
               </div>
             )}
+          </div>
           </div>
         </div>
 

@@ -32,13 +32,17 @@ export class GastosService {
     private readonly cajaService: CajaService,
   ) {}
 
+  // `select` acotado en la relación (no `include`): el admin solo muestra
+  // `propiedad.nombre` en las pantallas que consumen estos dos métodos —
+  // pedir la fila entera de Propiedad (~40 columnas) por cada gasto era
+  // puro over-fetch.
   findAll(propiedadId?: string, mes?: string) {
     return this.prisma.gasto.findMany({
       where: {
         propiedadId,
         mes: mes ? mesStringAFecha(mes) : undefined,
       },
-      include: { propiedad: true },
+      include: { propiedad: { select: { id: true, nombre: true } } },
       orderBy: { fecha: 'desc' },
     });
   }
@@ -49,7 +53,7 @@ export class GastosService {
   findOne(id: string) {
     return this.prisma.gasto.findUniqueOrThrow({
       where: { id },
-      include: { propiedad: true },
+      include: { propiedad: { select: { id: true, nombre: true } } },
     });
   }
 

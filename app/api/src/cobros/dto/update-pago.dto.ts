@@ -1,25 +1,6 @@
-import { IsDateString, IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
-import { MedioPago } from '@prisma/client';
+import { PartialType, OmitType } from '@nestjs/mapped-types';
+import { CreatePagoDto } from './create-pago.dto';
 
-export class UpdatePagoDto {
-  @IsOptional()
-  @IsNumber()
-  @Min(0.01)
-  monto?: number;
-
-  @IsOptional()
-  @IsDateString()
-  fecha?: string;
-
-  @IsOptional()
-  @IsEnum(MedioPago)
-  medio?: MedioPago;
-
-  @IsOptional()
-  @IsString()
-  comprobante?: string;
-
-  @IsOptional()
-  @IsString()
-  observaciones?: string;
-}
+// Sin `mes`: editarPago() no permite cambiar a qué mes corresponde un pago
+// ya cargado (ver PagosService).
+export class UpdatePagoDto extends PartialType(OmitType(CreatePagoDto, ['mes'] as const)) {}

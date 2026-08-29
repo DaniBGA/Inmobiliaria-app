@@ -6,6 +6,7 @@ import { Modal } from '../components/Modal';
 import { MultiDonut } from '../components/charts/MultiDonut';
 import { SeccionGuia } from '../components/SeccionGuia';
 import { formatMoney } from '../lib/format';
+import { ORIGEN_LABEL, type OrigenCliente } from '../lib/clienteEnums';
 
 type TipoOperacionCliente = 'ALQUILAR' | 'COMPRAR' | 'VENDER' | 'PROPIETARIO_ALQUILER';
 
@@ -18,7 +19,6 @@ function esPropietario(tipo: TipoOperacionCliente) {
 }
 type EstadoCliente = 'SIN_CONTACTAR' | 'EN_SEGUIMIENTO' | 'CERRADO';
 type ZonaCliente = 'CENTRO' | 'SEMICENTRICO' | 'INDIFERENTE';
-type OrigenCliente = 'INSTAGRAM' | 'PAGINA_WEB' | 'EN_PERSONA' | 'FACEBOOK' | 'CONTACTOS';
 
 interface Delegado {
   id: string;
@@ -49,13 +49,6 @@ interface OrigenStat {
   cantidad: number;
 }
 
-const ORIGEN_LABEL: Record<OrigenCliente, string> = {
-  INSTAGRAM: 'Instagram',
-  PAGINA_WEB: 'Página web',
-  EN_PERSONA: 'En persona',
-  FACEBOOK: 'Facebook',
-  CONTACTOS: 'Contactos',
-};
 const ORIGEN_COLOR: Record<OrigenCliente, string> = {
   INSTAGRAM: 'var(--orange)',
   FACEBOOK: 'var(--indigo)',

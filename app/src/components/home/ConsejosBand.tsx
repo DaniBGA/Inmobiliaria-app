@@ -1,6 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { fetchContactoInfo } from '../../api/configuracionPublica';
 import { useRevealOnScroll } from '../../hooks/useRevealOnScroll';
+import { useContactoInfo } from '../../hooks/useContactoInfo';
 
 const TIPS = [
   {
@@ -18,11 +17,7 @@ const TIPS = [
 ];
 
 export function ConsejosBand() {
-  const contactoInfo = useQuery({
-    queryKey: ['contacto-info'],
-    queryFn: fetchContactoInfo,
-    staleTime: 5 * 60_000,
-  });
+  const contactoInfo = useContactoInfo();
   const { ref, visible } = useRevealOnScroll<HTMLDivElement>();
 
   return (

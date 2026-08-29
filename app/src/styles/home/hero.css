@@ -149,10 +149,6 @@
   gap: 6px;
 }
 
-.hero-stat-icon {
-  color: var(--color-accent-dark);
-}
-
 .hero-stat-val {
   font-family: var(--font-label);
   font-weight: 700;

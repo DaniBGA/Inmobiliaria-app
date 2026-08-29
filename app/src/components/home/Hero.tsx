@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { listarPropiedades, type ModalidadPropiedad, type TipoPropiedad } from '../../api/propiedades';
-import { BASE_URL } from '../../api/client';
-import { TIPO_LABEL, formatPrecio, formatMoney, gradienteFor, specsLineDe } from '../../lib/format';
+import { TIPO_LABEL, formatPrecio, formatMoney, gradienteFor, specsLineDe, imgUrl } from '../../lib/format';
 import { useParallax } from '../../hooks/useParallax';
 import fondoHero from '../../images/fondoHero.jpg';
 
@@ -21,6 +20,7 @@ function HeroCarousel() {
   const propiedades = useQuery({
     queryKey: ['public-propiedades', 'hero'],
     queryFn: () => listarPropiedades({ especial: true, limit: 5 }),
+    staleTime: 5 * 60_000,
   });
   const items = propiedades.data?.items ?? [];
 
@@ -50,7 +50,7 @@ function HeroCarousel() {
         return (
           <div className={`hero-slide${i === cur ? ' active' : ''}`} key={p.id}>
             <div className="hero-slide-bg" style={fotoUrl ? undefined : { background: gradienteFor(p.id) }}>
-              {fotoUrl && <img src={`${BASE_URL}${fotoUrl}`} alt={p.nombre} />}
+              {fotoUrl && <img src={imgUrl(fotoUrl)} alt={p.nombre} />}
             </div>
             <div className="hero-slide-overlay" />
             <div className="hero-slide-copy">

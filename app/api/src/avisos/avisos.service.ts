@@ -75,12 +75,15 @@ export class AvisosService {
       include: { inquilino: true },
     });
 
-    const avisos = [];
-    for (const p of propiedades) {
-      const proxima = await this.propiedadesService.proximoAumento(p.id);
-      if (proxima && proxima >= hoy && proxima <= limite) {
+    // Cada propiedad es independiente de las demás — se resuelven en
+    // paralelo (Promise.all preserva el orden de `propiedades`) en vez de
+    // esperar una por una.
+    const candidatos = await Promise.all(
+      propiedades.map(async (p) => {
+        const proxima = await this.propiedadesService.proximoAumento(p.id);
+        if (!proxima || proxima < hoy || proxima > limite) return null;
         const rentaVigenteRaw = await this.propiedadesService.rentaVigente(p.id);
-        avisos.push({
+        return {
           grupo: 'AVISO_AUMENTO' as const,
           clave: `${p.id}:${proxima.toISOString().slice(0, 10)}`,
           propiedadId: p.id,
@@ -90,10 +93,10 @@ export class AvisosService {
             `Hola ${p.inquilino?.nombre ?? ''}, te avisamos que el ${formatearFecha(proxima)} ` +
             `corresponde actualizar el alquiler de ${p.nombre} ` +
             `(valor vigente actual: $${formatearMonto(Number(rentaVigenteRaw ?? 0))}). Te contactaremos con el nuevo monto.`,
-        });
-      }
-    }
-    return avisos;
+        };
+      }),
+    );
+    return candidatos.filter((a): a is NonNullable<typeof a> => a != null);
   }
 
   // §2.8: renovaciones de contrato dentro de la ventana configurada
@@ -145,9 +148,10 @@ export class AvisosService {
     const limite = new Date(hoy);
     limite.setDate(limite.getDate() + 7);
 
+    // Sin `include`: la respuesta de abajo solo usa id/titulo/fecha, no
+    // cliente ni propiedad — antes se traían completos sin usarlos.
     const eventos = await this.prisma.eventoAgenda.findMany({
       where: { hecho: false, fecha: { gte: hoy, lte: limite } },
-      include: { cliente: true, propiedad: true },
       orderBy: { fecha: 'asc' },
     });
 

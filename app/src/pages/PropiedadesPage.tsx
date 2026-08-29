@@ -39,6 +39,7 @@ export function PropiedadesPage() {
   const propiedades = useQuery({
     queryKey: ['public-propiedades-listado', modalidad, tipoParam, page],
     queryFn: () => listarPropiedades({ modalidad: modalidad ?? undefined, tipo: tipo ?? undefined, page, limit: LIMIT }),
+    staleTime: 5 * 60_000,
   });
 
   const items = propiedades.data?.items ?? [];

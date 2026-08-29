@@ -12,40 +12,40 @@ export class ReportesService {
   // §2.4: resumen anual — tabla mes a mes (esperado, cobrado, morosidad,
   // gastos, honorarios, liquidado).
   async resumenAnual(anio: number) {
-    const filas = [];
+    // Los 12 meses son independientes entre sí (ningún cálculo de un mes
+    // depende del resultado de otro) — antes se esperaban uno por uno en
+    // secuencia; con Promise.all corren en paralelo, mismo resultado, sin
+    // el tiempo de espera acumulado de 12 rondas de queries.
+    const meses = Array.from({ length: 12 }, (_, mesIdx) => mesIdx);
+    const filas = await Promise.all(
+      meses.map(async (mesIdx) => {
+        const mesDate = new Date(Date.UTC(anio, mesIdx, 1));
+        const mesStr = `${anio}-${String(mesIdx + 1).padStart(2, '0')}`;
 
-    for (let mesIdx = 0; mesIdx < 12; mesIdx++) {
-      const mesDate = new Date(Date.UTC(anio, mesIdx, 1));
-      const mesStr = `${anio}-${String(mesIdx + 1).padStart(2, '0')}`;
+        const [{ totales }, gastos, liquidaciones] = await Promise.all([
+          this.cobrosService.resumenMes(mesStr),
+          this.prisma.gasto.aggregate({ where: { mes: mesDate }, _sum: { monto: true } }),
+          this.prisma.liquidacion.findMany({ where: { mes: mesDate }, include: { detalle: true } }),
+        ]);
 
-      const { totales } = await this.cobrosService.resumenMes(mesStr);
+        const honorarios = liquidaciones.reduce(
+          (acc, l) =>
+            acc + l.detalle.reduce((a, d) => a + Number(d.honorarios) + Number(d.honorariosAdministracion), 0),
+          0,
+        );
+        const liquidado = liquidaciones.reduce((acc, l) => acc + Number(l.netoAGirar), 0);
 
-      const gastos = await this.prisma.gasto.aggregate({
-        where: { mes: mesDate },
-        _sum: { monto: true },
-      });
-
-      const liquidaciones = await this.prisma.liquidacion.findMany({
-        where: { mes: mesDate },
-        include: { detalle: true },
-      });
-      const honorarios = liquidaciones.reduce(
-        (acc, l) =>
-          acc + l.detalle.reduce((a, d) => a + Number(d.honorarios) + Number(d.honorariosAdministracion), 0),
-        0,
-      );
-      const liquidado = liquidaciones.reduce((acc, l) => acc + Number(l.netoAGirar), 0);
-
-      filas.push({
-        mes: mesStr,
-        esperado: totales.esperado,
-        cobrado: totales.cobrado,
-        morosidad: totales.pendiente,
-        gastos: Number(gastos._sum.monto ?? 0),
-        honorarios,
-        liquidado,
-      });
-    }
+        return {
+          mes: mesStr,
+          esperado: totales.esperado,
+          cobrado: totales.cobrado,
+          morosidad: totales.pendiente,
+          gastos: Number(gastos._sum.monto ?? 0),
+          honorarios,
+          liquidado,
+        };
+      }),
+    );
 
     return { anio, filas };
   }

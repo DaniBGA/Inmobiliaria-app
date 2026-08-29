@@ -29,11 +29,6 @@ export function fechaAMesString(fecha: Date): string {
   return `${fecha.getUTCFullYear()}-${String(fecha.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
-export function esMesActual(mes: Date, ahora: Date = new Date()): boolean {
-  const actual = primerDiaMes(ahora);
-  return mes.getTime() === actual.getTime();
-}
-
 // true si `mes` ya cerró (es anterior al mes en curso)
 export function mesCerrado(mes: Date, ahora: Date = new Date()): boolean {
   const actual = primerDiaMes(ahora);

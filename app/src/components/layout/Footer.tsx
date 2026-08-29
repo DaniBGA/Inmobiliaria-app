@@ -1,14 +1,9 @@
-import { useQuery } from '@tanstack/react-query';
-import { fetchContactoInfo } from '../../api/configuracionPublica';
+import { useContactoInfo } from '../../hooks/useContactoInfo';
 import { waLink } from '../../lib/format';
 import logo from '../../logos/LOGO PNG.-02.png';
 
 export function Footer() {
-  const contactoInfo = useQuery({
-    queryKey: ['contacto-info'],
-    queryFn: fetchContactoInfo,
-    staleTime: 5 * 60_000,
-  });
+  const contactoInfo = useContactoInfo();
   const c = contactoInfo.data;
   const anio = new Date().getFullYear();
 

@@ -73,11 +73,14 @@ export class CobrosService {
           ? null
           : await this.propiedadesService.rentaVigente(p.id, finDeMes(mes));
         const esperado = esperadoRaw != null ? Number(esperadoRaw) : null;
-        const cobrado = await this.cobradoDelMes(p.id, mes);
+        // `cobrado` se calcula del propio listado de pagos de abajo (mismo
+        // where que tenía el `aggregate` separado que había acá antes) —
+        // evita un segundo round-trip a la misma tabla con el mismo filtro.
         const pagos = await this.prisma.pago.findMany({
           where: { propiedadId: p.id, mes, anulado: false },
           orderBy: { fecha: 'asc' },
         });
+        const cobrado = pagos.reduce((acc, pago) => acc + Number(pago.monto), 0);
         return {
           propiedadId: p.id,
           propiedadNombre: p.nombre,
@@ -220,14 +223,22 @@ export class CobrosService {
     const meses = ultimosMesesCerrados(VENTANA_DEUDA_MESES, referencia).filter(
       (mes) => !alDiaDesde || mes.getTime() >= alDiaDesde.getTime(),
     );
+    // Cada mes es independiente del resto (no hay dependencia de datos
+    // entre uno y otro) — se resuelven en paralelo en vez de esperar mes a
+    // mes, mismo resultado.
+    const porMes = await Promise.all(
+      meses.map(async (mes) => {
+        const esperadoRaw = await this.propiedadesService.rentaVigente(propiedadId, finDeMes(mes));
+        if (esperadoRaw == null) return 0;
+        const cobrado = await this.cobradoDelMes(propiedadId, mes);
+        const faltante = Number(esperadoRaw) - cobrado;
+        return faltante > 0 ? faltante : 0;
+      }),
+    );
+
     let deuda = 0;
     let mesesImpagos = 0;
-
-    for (const mes of meses) {
-      const esperadoRaw = await this.propiedadesService.rentaVigente(propiedadId, finDeMes(mes));
-      if (esperadoRaw == null) continue;
-      const cobrado = await this.cobradoDelMes(propiedadId, mes);
-      const faltante = Number(esperadoRaw) - cobrado;
+    for (const faltante of porMes) {
       if (faltante > 0) {
         deuda += faltante;
         mesesImpagos++;
@@ -245,20 +256,22 @@ export class CobrosService {
     const meses = [...ultimosMesesCerrados(VENTANA_DEUDA_MESES, ahora), primerDiaMes(ahora)].filter(
       (mes) => !alDiaDesde || mes.getTime() >= alDiaDesde.getTime(),
     );
-    const pendientes: { mes: string; esperado: number; cobrado: number; pendiente: number }[] = [];
+    // Igual que en deudaAcumulada(): los meses son independientes entre sí,
+    // se resuelven en paralelo — Promise.all preserva el orden de `meses`
+    // (cronológico) sin importar en qué orden terminen las queries.
+    const porMes = await Promise.all(
+      meses.map(async (mes) => {
+        const esperadoRaw = await this.propiedadesService.rentaVigente(propiedadId, finDeMes(mes));
+        if (esperadoRaw == null) return null;
+        const esperado = Number(esperadoRaw);
+        const cobrado = await this.cobradoDelMes(propiedadId, mes);
+        const pendiente = Math.max(esperado - cobrado, 0);
+        if (pendiente <= 0) return null;
+        return { mes: fechaAMesString(mes), esperado, cobrado, pendiente };
+      }),
+    );
 
-    for (const mes of meses) {
-      const esperadoRaw = await this.propiedadesService.rentaVigente(propiedadId, finDeMes(mes));
-      if (esperadoRaw == null) continue;
-      const esperado = Number(esperadoRaw);
-      const cobrado = await this.cobradoDelMes(propiedadId, mes);
-      const pendiente = Math.max(esperado - cobrado, 0);
-      if (pendiente > 0) {
-        pendientes.push({ mes: fechaAMesString(mes), esperado, cobrado, pendiente });
-      }
-    }
-
-    return pendientes;
+    return porMes.filter((p): p is { mes: string; esperado: number; cobrado: number; pendiente: number } => p != null);
   }
 
   // §2.2 FICHAS DE INQUILINOS

@@ -20,7 +20,7 @@ function pad(n: number) {
 
 export function TipoStatsBand() {
   const navigate = useNavigate();
-  const stats = useQuery({ queryKey: ['public-stats-tipo'], queryFn: statsPorTipo });
+  const stats = useQuery({ queryKey: ['public-stats-tipo'], queryFn: statsPorTipo, staleTime: 5 * 60_000 });
   const { ref, visible } = useRevealOnScroll<HTMLDivElement>();
   const bgParallax = useParallax<HTMLImageElement>(0.12);
   const textParallax = useParallax<HTMLDivElement>(-0.06);

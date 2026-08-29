@@ -1,3 +1,12 @@
+import { BASE_URL } from '../api/client';
+
+// `${BASE_URL}${path}` estaba repetido a mano en varios componentes para
+// armar la URL completa de una imagen servida por el backend (fotos de
+// propiedad, foto de "Nosotros") — un solo helper.
+export function imgUrl(path: string): string {
+  return `${BASE_URL}${path}`;
+}
+
 export const TIPO_LABEL: Record<string, string> = {
   CASA: 'Casa',
   DEPARTAMENTO: 'Departamento',

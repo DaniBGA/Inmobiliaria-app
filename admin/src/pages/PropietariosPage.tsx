@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
+import { useConfiguracion } from '../hooks/useConfiguracion';
+import { useEnviarComprobantePorWhatsapp } from '../hooks/useEnviarComprobantePorWhatsapp';
 import { PageHeader } from '../components/PageHeader';
 import { Modal } from '../components/Modal';
 import { ComprobanteImpreso } from '../components/ComprobanteImpreso';
 import { LiquidacionComprobanteBody, type Liquidacion, type GastoDetalle, type LiquidacionItem } from '../components/LiquidacionComprobante';
-import { descargarPdfComprobante } from '../lib/pdfComprobante';
 import { formatMoney, mesActualStr, mesLabel, sumarMesesStr } from '../lib/format';
 import { splitDescripcionCuenta, combinarDescripcionCuenta, esServicioConCuenta } from '../lib/itemServicioCuenta';
 import { SeccionGuia } from '../components/SeccionGuia';
@@ -376,10 +377,7 @@ function LiquidacionModal({
 }) {
   const qc = useQueryClient();
 
-  const configuracion = useQuery({
-    queryKey: ['configuracion'],
-    queryFn: () => api.get<Configuracion>('/configuracion'),
-  });
+  const configuracion = useConfiguracion<Configuracion>();
   const cfg = configuracion.data;
 
   // Vista previa editable (§3.4) — igual criterio que Facturas: se calcula
@@ -449,18 +447,17 @@ function LiquidacionModal({
 
   const L = generar.data;
   const comprobanteRef = useRef<HTMLDivElement>(null);
-  const [enviandoWhatsapp, setEnviandoWhatsapp] = useState(false);
+  const { enviando: enviandoWhatsapp, enviar: enviarComprobante } = useEnviarComprobantePorWhatsapp();
 
   async function enviarPorWhatsapp() {
-    if (!comprobanteRef.current || !propietario.telefono || !L) return;
-    setEnviandoWhatsapp(true);
-    try {
-      await descargarPdfComprobante(comprobanteRef.current, `Liquidacion ${L.numero} - ${propietario.nombre}.pdf`);
-      const texto = `Hola ${propietario.nombre}, te comparto la Liquidación N° ${L.numero} de ${mesLabel(mes)}. Te dejo el PDF descargado — adjuntalo acá mismo en el chat.`;
-      window.open(`https://wa.me/${propietario.telefono.replace(/\D/g, '')}?text=${encodeURIComponent(texto)}`, '_blank');
-    } finally {
-      setEnviandoWhatsapp(false);
-    }
+    if (!L) return;
+    const texto = `Hola ${propietario.nombre}, te comparto la Liquidación N° ${L.numero} de ${mesLabel(mes)}. Te dejo el PDF descargado — adjuntalo acá mismo en el chat.`;
+    await enviarComprobante({
+      elemento: comprobanteRef.current,
+      telefono: propietario.telefono,
+      nombreArchivo: `Liquidacion ${L.numero} - ${propietario.nombre}.pdf`,
+      texto,
+    });
   }
 
   function actualizarItem(propiedadId: string, idx: number, campo: keyof ItemEditable, valor: string) {
@@ -501,8 +498,6 @@ function LiquidacionModal({
     const cobrado = items.reduce((s, it) => s + (Number(it.monto) || 0), 0);
     return acc + (cobrado - d.gastosAbsorbidos - honorariosDe(d.porcentajeHonorariosAdministracion, items));
   }, 0);
-
-  const neto = L ? Number(L.netoAGirar) : netoEditable;
 
   return (
     <Modal open onClose={onClose} title={`Liquidación — ${propietario.nombre} (${mesLabel(mes)})`} width={620}>

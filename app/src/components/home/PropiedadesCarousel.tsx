@@ -46,6 +46,7 @@ export function PropiedadesCarousel() {
   const propiedades = useQuery({
     queryKey: ['public-propiedades', serializarTipo(filtro)],
     queryFn: () => listarPropiedades({ tipo: filtro ?? undefined, limit: 12 }),
+    staleTime: 5 * 60_000,
   });
 
   const items = propiedades.data?.items ?? [];

@@ -1,19 +1,11 @@
-import { IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
-import { EstadoCartel } from '@prisma/client';
+import { PartialType, OmitType } from '@nestjs/mapped-types';
+import { IsDateString, IsOptional } from 'class-validator';
+import { CreateCartelDto } from './create-cartel.dto';
 
-export class UpdateCartelDto {
-  @IsOptional()
-  @IsEnum(EstadoCartel)
-  tipoCartel?: EstadoCartel;
-
-  @IsOptional()
-  @IsString()
-  medida?: string;
-
-  @IsOptional()
-  @IsDateString()
-  fechaColocacion?: string;
-
+// Sin `propiedadId` (no se reasigna un cartel a otra propiedad). Suma
+// `fechaRetiro`, que no existe en el alta (un cartel recién colocado
+// todavía no tiene fecha de retiro).
+export class UpdateCartelDto extends PartialType(OmitType(CreateCartelDto, ['propiedadId'] as const)) {
   @IsOptional()
   @IsDateString()
   fechaRetiro?: string;

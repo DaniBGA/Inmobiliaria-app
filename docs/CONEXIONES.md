@@ -776,6 +776,27 @@ Se actualiza a medida que se implementa cada sección. Convención:
       `AgregarPropiedadPage.tsx` (ahí la imagen queda en memoria como
       `heroFile` hasta crear la propiedad, igual que ya pasaba con la
       galería, y se sube a `/hero` después de crearla).
+      **Bug de layout encontrado el mismo día en `AgregarPropiedadPage.tsx`
+      (tres vueltas)**: las cards vivían en `.cfggrid`
+      (`display:grid; grid-template-columns: repeat(auto-fit,
+      minmax(400px,1fr))` — auto-acomoda 2 o 3 columnas según el ancho).
+      Al agregar la card de portada, el grid reacomodaba "FOTOS DE LA
+      PROPIEDAD" en otra fila/columna de forma impredecible. 1) Se probó
+      `gridColumn:'1/-1'` en ambas cards de fotos (una fila entera cada
+      una) — resolvió el reacomodo pero el usuario pidió que en vez de ir
+      debajo de todo, queden a la derecha de "DATOS DE ALQUILER" para no
+      scrollear. 2) Se armó `.cfgsplit` de 2 columnas (izquierda: DATOS
+      GENERALES + DATOS DE ALQUILER/VENTA apilados; derecha: las 2 cards
+      de fotos apiladas) — el usuario pidió ir un paso más: las tres cosas
+      (Datos generales / Datos de alquiler-venta / Fotos) en la misma
+      fila, ninguna abajo de otra. 3) Solución final: `.cfgsplit` pasa a 3
+      columnas fijas (`grid-template-columns:1fr 1fr 1fr`, colapsa a 1
+      columna en el mismo breakpoint de 900px que `.cfggrid`) — DATOS
+      GENERALES y DATOS DE ALQUILER/VENTA son ahora hijos directos del
+      grid (cada uno ocupa su propia columna, sin wrapper), y la tercera
+      columna sigue siendo el único `<div>` flex-column que apila IMAGEN
+      DEL CARRUSEL (si `caracterEspecial`) + FOTOS DE LA PROPIEDAD, porque
+      esas dos sí van una debajo de la otra dentro de la misma columna.
       **CSS del carrusel (`app/src/styles/home/hero.css`), tres vueltas
       en la misma sesión sobre `.hero-slide-bg img`**: primero
       `object-fit:cover` al 100% del slide (rechazado: con la foto ya
@@ -3426,6 +3447,101 @@ Se aprovechó para deduplicar: `ServiciosCuentaInputs` (componente + tipo
 `wrapperClassName`/`wrapperStyle`/`fieldStyle` opcionales para que cada
 pantalla mantenga su propio layout sin cambiar el diseño visual (verificado
 con capturas antes/después, pixel a pixel igual) (2026-08-13).
+
+## 2026-08-29 — Auditoría de código muerto/repetido + optimización (backend, admin, landing)
+
+Pedido explícito del usuario: revisión de casi todo el código buscando código
+repetido/viejo sin uso y optimizaciones de bajo riesgo (mapeo de datos, DB).
+Se hizo con 3 agentes de solo lectura (backend/admin/landing) y después se
+aplicó todo lo que salió, verificado con `tsc --noEmit` en los tres
+workspaces + pruebas end-to-end con curl de cada endpoint tocado (creando y
+borrando datos de prueba, o revirtiendo el campo tocado en datos reales).
+
+**Backend — optimización (loops secuenciales → `Promise.all`, mismo
+resultado, solo corren en paralelo):**
+- `ReportesService.resumenAnual()` — los 12 meses del año eran
+  secuenciales, ahora en paralelo.
+- `CobrosService.deudaAcumulada()` / `mesesPendientes()` — loop de hasta 12
+  meses por propiedad, ahora en paralelo (se dispara en cascada desde
+  Cobros, Inquilinos, Panel General, Avisos y Facturas/Liquidaciones).
+- `AgendaService.eventosDelMes()` / `AvisosService.avisosAumento()` — loop
+  de propiedades alquiladas, ahora en paralelo (el orden final no cambia:
+  ambos ordenan/filtran el resultado después).
+
+**Backend — over-fetch y queries redundantes:**
+- `GastosService.findAll()`/`findOne()`: `include: { propiedad: true }` →
+  `select: { id, nombre }` (el admin solo usa `.nombre`).
+- `AvisosService.recordatorios()`: sacado un `include: { cliente,
+  propiedad }` que no se usaba en la respuesta.
+- `CobrosService.resumenMes()`: sacado un `pago.aggregate()` redundante —
+  el `pago.findMany()` de al lado (mismo `where`) ya alcanza para calcular
+  `cobrado` con `.reduce()`.
+- `ProveedoresService.findAll()`: de 2 `aggregate` por proveedor (N+1) a 2
+  `groupBy` totales para todos los proveedores a la vez.
+
+**Backend — código muerto y duplicado:**
+- `esMesActual()` (`common/fecha.util.ts`) sin ningún uso — borrada.
+- `UpdateMovimientoDto`, `UpdatePagoDto`, `UpdateCartelDto` reescritos con
+  `PartialType`/`OmitType` (como ya hacían `UpdateClienteDto`,
+  `UpdateGastoDto`, etc.) en vez de repetir los campos a mano.
+- Nuevo `common/imagen-multer.util.ts::crearOpcionesImagenMulter()` —
+  `propiedades/multer.config.ts` y
+  `configuracion/foto-nosotros-multer.config.ts` repetían el mismo `Set`
+  de extensiones/mimes y el mismo `fileFilter` letra por letra.
+
+**Admin:**
+- Nuevo hook `hooks/useConfiguracion.ts` (con `staleTime: 5min` — es una
+  fila singleton que casi no cambia y ya se invalida a mano en cada
+  guardado desde Configuración) reemplaza el mismo `useQuery(['configuracion'])`
+  que estaba copy-pasteado en 8 lugares (3 solo dentro de
+  `PropiedadFichaDrawer.tsx`).
+- Nuevo hook `hooks/useEnviarComprobantePorWhatsapp.ts` — unifica el
+  flujo "generar PDF + abrir wa.me" que estaba duplicado entre "Emitir
+  Factura" (`PropiedadFichaDrawer.tsx`) y "Generar Liquidación"
+  (`PropietariosPage.tsx`); cada pantalla solo arma su propio texto/nombre
+  de archivo.
+- `VentasPage.tsx` tenía su propia copia de `ServicioFacturable`/
+  `SERVICIOS_OPCIONES` en vez de importarla de `ServiciosCuentaInputs.tsx`
+  (donde ya se había deduplicado para otras 2 pantallas, 2026-08-13) —
+  ahora importa la compartida.
+- Nuevo `lib/clienteEnums.ts` (`OrigenCliente`/`ORIGEN_LABEL`) y
+  `lib/ventaEnums.ts` (`EstadoVenta`/`ESTADO_VENTA_LABEL`/
+  `ESTADO_VENTA_CLASE`) — cada uno estaba declarado por separado en 2
+  archivos (`ClientesPage.tsx`+`AgregarPropiedadPage.tsx`, y
+  `VentasPage.tsx`+`PropiedadFichaDrawer.tsx` respectivamente), mismo tipo
+  y mismos valores en los dos casos.
+- Variable sin uso en `PropietariosPage.tsx` (`const neto = ...`) borrada.
+
+**Landing:**
+- Las 4 queries de propiedades sin `staleTime` (`Hero.tsx`,
+  `PropiedadesCarousel.tsx`, `TipoStatsBand.tsx`, `PropiedadesPage.tsx`)
+  ahora tienen `staleTime: 5min` — antes cualquier ida y vuelta entre `/` y
+  `/propiedades` disparaba un refetch de datos que casi no cambian
+  (mismo `staleTime` que ya usaba `contacto-info`).
+- Nuevo hook `hooks/useContactoInfo.ts` reemplaza el mismo
+  `useQuery(['contacto-info'])` copy-pasteado en 8 componentes (Header,
+  Footer, WhatsAppButton, Nosotros, ContactoForm, ComoTrabajamos,
+  ConsejosBand, PropertyCard).
+- `loading="lazy"` en las fotos de propiedad (`PropertyCard.tsx`, hasta 12
+  por página en `/propiedades`) y en la foto de "Nosotros" — antes
+  cargaban todas de una sin importar si estaban en pantalla.
+- Nuevo helper `lib/format.ts::imgUrl()` reemplaza `` `${BASE_URL}${url}` ``
+  repetido a mano en 6 lugares de `Hero.tsx`/`PropertyCard.tsx`/`Nosotros.tsx`.
+- Assets sin ninguna referencia en el código: `images/FOTO1.png` (3.4MB) y
+  14 de los 16 logos en `logos/` (~530KB) — borrados (no afectaban el
+  bundle de producción al no estar importados, pero eran peso muerto en
+  el repo). `.hero-stat-icon` (CSS sin ningún `className` que lo use) en
+  `hero.css` también borrada.
+
+No se tocó (evaluado y descartado explícitamente, no por falta de
+tiempo): paginación de `/clientes` y `/propietarios` en el admin — hoy es
+volumen chico de una sola inmobiliaria, y paginar requeriría cambios de
+API fuera del alcance de "sin riesgo"; prop `action` de `PageHeader.tsx`
+sin ningún uso hoy pero podría ser API pensada para el futuro, no se borró
+por las dudas; índices de DB — ya están todos los que hacían falta
+(agregados 2026-07-23 y 2026-07-30), los problemas de performance
+encontrados esta vez eran todos de fan-out de queries en el código, no de
+índices faltantes.
 
 ## Cómo actualizar este archivo
 

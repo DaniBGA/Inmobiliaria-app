@@ -30,11 +30,30 @@ export class ProveedoresService {
     };
   }
 
+  // Antes llamaba `cuentaCorriente(p.id)` por cada proveedor (2 `aggregate`
+  // por uno, N+1). Con `groupBy` es una sola pasada por tabla para todos
+  // los proveedores a la vez — mismo resultado por proveedor.
   async findAll() {
-    const proveedores = await this.prisma.proveedor.findMany({ orderBy: { nombre: 'asc' } });
-    return Promise.all(
-      proveedores.map(async (p) => ({ ...p, ...(await this.cuentaCorriente(p.id)) })),
-    );
+    const [proveedores, facturados, abonados] = await Promise.all([
+      this.prisma.proveedor.findMany({ orderBy: { nombre: 'asc' } }),
+      this.prisma.incidencia.groupBy({
+        by: ['proveedorId'],
+        where: { proveedorId: { not: null }, estado: 'RESUELTA', costo: { not: null } },
+        _sum: { costo: true },
+      }),
+      this.prisma.pagoProveedor.groupBy({
+        by: ['proveedorId'],
+        _sum: { monto: true },
+      }),
+    ]);
+    const facturadoPorProveedor = new Map(facturados.map((f) => [f.proveedorId, Number(f._sum.costo ?? 0)]));
+    const abonadoPorProveedor = new Map(abonados.map((a) => [a.proveedorId, Number(a._sum.monto ?? 0)]));
+
+    return proveedores.map((p) => {
+      const totalFacturado = facturadoPorProveedor.get(p.id) ?? 0;
+      const totalAbonado = abonadoPorProveedor.get(p.id) ?? 0;
+      return { ...p, totalFacturado, abonado: totalAbonado, saldoAPagar: totalFacturado - totalAbonado };
+    });
   }
 
   async findOne(id: string) {

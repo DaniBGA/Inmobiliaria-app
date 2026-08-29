@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
+import { useConfiguracion } from '../hooks/useConfiguracion';
 import { useAuth } from '../auth/AuthContext';
 import { PageHeader } from '../components/PageHeader';
 import { Modal } from '../components/Modal';
@@ -9,30 +10,11 @@ import { honorariosLabel, resolverPorcentajeHonorarios, type TipoHonorarios } fr
 import { FotosPropiedad, type FotoPropiedadItem } from '../components/FotosPropiedad';
 import { FotoHeroPropiedad } from '../components/FotoHeroPropiedad';
 import { SeccionGuia } from '../components/SeccionGuia';
+import { SERVICIOS_OPCIONES, type ServicioFacturable } from '../components/ServiciosCuentaInputs';
+import { ESTADO_VENTA_LABEL, ESTADO_VENTA_CLASE, type EstadoVenta } from '../lib/ventaEnums';
 
-type EstadoVenta = 'PUBLICADA' | 'RESERVADA' | 'VENDIDA' | 'VENDIDA_POR_TERCEROS' | 'PAUSADA';
 type EtapaInteresado = 'CONSULTA' | 'VISITA' | 'NEGOCIACION' | 'RESERVA' | 'DESCARTADO';
 type EstadoCartel = 'COLOCADO' | 'A_PEDIDO' | 'RETIRADO';
-type ServicioFacturable =
-  | 'EXPENSAS'
-  | 'USINA'
-  | 'CAMUZZI'
-  | 'OBRAS_SANITARIAS'
-  | 'RETRIBUTIVAS'
-  | 'CLOACAS'
-  | 'GAS_ENVASADO'
-  | 'SISTEMA_BIODIGESTOR';
-
-const SERVICIOS_OPCIONES: { key: ServicioFacturable; label: string }[] = [
-  { key: 'EXPENSAS', label: 'Expensas' },
-  { key: 'USINA', label: 'Luz (Usina)' },
-  { key: 'CAMUZZI', label: 'Gas (Camuzzi)' },
-  { key: 'OBRAS_SANITARIAS', label: 'Agua (Obras Sanitarias)' },
-  { key: 'RETRIBUTIVAS', label: 'Retributivas de Servicios' },
-  { key: 'CLOACAS', label: 'Cloacas' },
-  { key: 'GAS_ENVASADO', label: 'Gas envasado' },
-  { key: 'SISTEMA_BIODIGESTOR', label: 'Sistema biodigestor' },
-];
 
 interface Cliente {
   id: string;
@@ -147,22 +129,6 @@ const TIPO_LABEL: Record<string, string> = {
   COCHERAS: 'Cocheras',
 };
 
-const ESTADO_VENTA_LABEL: Record<EstadoVenta, string> = {
-  PUBLICADA: 'Publicada',
-  RESERVADA: 'Reservada',
-  VENDIDA: 'Vendida',
-  VENDIDA_POR_TERCEROS: 'Vendida por terceros',
-  PAUSADA: 'Pausada',
-};
-
-const ESTADO_VENTA_CLASE: Record<EstadoVenta, string> = {
-  PUBLICADA: 'publicada',
-  RESERVADA: 'reservada',
-  VENDIDA: 'vendida',
-  VENDIDA_POR_TERCEROS: 'vendida_por_terceros',
-  PAUSADA: 'pausada',
-};
-
 const ETAPA_LABEL: Record<EtapaInteresado, string> = {
   CONSULTA: 'Consulta',
   VISITA: 'Visita',
@@ -242,10 +208,7 @@ export function VentasPage() {
     queryKey: ['ventas', 'kpis'],
     queryFn: () => api.get<VentasKpis>('/ventas/kpis'),
   });
-  const configuracion = useQuery({
-    queryKey: ['configuracion'],
-    queryFn: () => api.get<Configuracion>('/configuracion'),
-  });
+  const configuracion = useConfiguracion<Configuracion>();
   const clientes = useQuery({
     queryKey: ['clientes'],
     queryFn: () => api.get<Cliente[]>('/clientes'),

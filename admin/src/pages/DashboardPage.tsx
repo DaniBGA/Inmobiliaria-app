@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
+import { useConfiguracion } from '../hooks/useConfiguracion';
 import { PageHeader } from '../components/PageHeader';
 import { MiniArea } from '../components/charts/MiniArea';
 import { MiniDonut } from '../components/charts/MiniDonut';
@@ -68,10 +69,7 @@ export function DashboardPage() {
   const mesActual = mesActualStr();
   const [fichaId, setFichaId] = useState<string | null>(null);
 
-  const configuracion = useQuery({
-    queryKey: ['configuracion'],
-    queryFn: () => api.get<Configuracion>('/configuracion'),
-  });
+  const configuracion = useConfiguracion<Configuracion>();
   const cobrosKpis = useQuery({
     queryKey: ['cobros', 'kpis'],
     queryFn: () => api.get<CobrosKpis>('/cobros/kpis'),

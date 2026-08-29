@@ -105,19 +105,23 @@ export class AgendaService {
     const propiedadesAlquiladas = await this.prisma.propiedad.findMany({
       where: { modalidad: 'ALQUILER', inquilino: { isNot: null } },
     });
-    const eventosAumento = [];
-    for (const p of propiedadesAlquiladas) {
-      const proxima = await this.propiedadesService.proximoAumento(p.id);
-      if (proxima && proxima >= mes && proxima < finMes) {
-        eventosAumento.push({
+    // Cada propiedad es independiente de las demás — se resuelven en
+    // paralelo en vez de una por una; el resultado final igual se ordena
+    // más abajo, así que el orden de resolución no importa.
+    const candidatosAumento = await Promise.all(
+      propiedadesAlquiladas.map(async (p) => {
+        const proxima = await this.propiedadesService.proximoAumento(p.id);
+        if (!proxima || proxima < mes || proxima >= finMes) return null;
+        return {
           tipo: 'AUMENTO_PROXIMO' as const,
           fecha: proxima,
           titulo: `Aumento próximo — ${p.nombre}`,
           propiedadId: p.id,
           automatico: true,
-        });
-      }
-    }
+        };
+      }),
+    );
+    const eventosAumento = candidatosAumento.filter((e): e is NonNullable<typeof e> => e != null);
 
     const incidenciasSinResolver = await this.prisma.incidencia.findMany({
       where: { estado: { not: EstadoIncidencia.RESUELTA }, fechaApertura: enRango },

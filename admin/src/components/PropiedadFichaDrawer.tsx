@@ -2,13 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api, ApiError, BASE_URL } from '../api/client';
+import { useConfiguracion } from '../hooks/useConfiguracion';
+import { useEnviarComprobantePorWhatsapp } from '../hooks/useEnviarComprobantePorWhatsapp';
+import { ESTADO_VENTA_LABEL, ESTADO_VENTA_CLASE, type EstadoVenta } from '../lib/ventaEnums';
 import { Modal } from './Modal';
 import { formatMoney, formatUsd, formatDate, mesActualStr, mesLabel, parseMontoArgentino } from '../lib/format';
 import { resolverPorcentajeHonorariosAdministracion, type TipoHonorarios } from '../lib/honorarios';
 import { FotosPropiedad, type FotoPropiedadItem } from './FotosPropiedad';
 import { FotoHeroPropiedad } from './FotoHeroPropiedad';
 import { ComprobanteImpreso } from './ComprobanteImpreso';
-import { descargarPdfComprobante } from '../lib/pdfComprobante';
 import { ServiciosCuentaInputs, SERVICIOS_OPCIONES, type ServicioFacturable } from './ServiciosCuentaInputs';
 import { splitDescripcionCuenta, combinarDescripcionCuenta, esServicioConCuenta } from '../lib/itemServicioCuenta';
 
@@ -16,7 +18,6 @@ type Modalidad = 'ALQUILER' | 'VENTA';
 type IndiceAjuste = 'IPC' | 'ICL' | null;
 type PunitorioFrecuencia = 'DIA' | 'SEMANA' | 'MES' | 'UNICO' | null;
 type PunitorioTipo = 'PORCENTAJE' | 'MONTO_FIJO' | null;
-type EstadoVenta = 'PUBLICADA' | 'RESERVADA' | 'VENDIDA' | 'VENDIDA_POR_TERCEROS' | 'PAUSADA';
 
 interface Inquilino {
   numero: number;
@@ -177,20 +178,6 @@ const TIPO_LABEL: Record<string, string> = {
 };
 const FREQ_LABEL: Record<number, string> = { 1: 'MENSUAL', 3: 'TRIMESTRAL', 6: 'SEMESTRAL', 12: 'ANUAL' };
 const PUNIT_FREQ_LABEL: Record<string, string> = { DIA: 'POR DÍA', SEMANA: 'POR SEMANA', MES: 'POR MES', UNICO: 'ÚNICO' };
-const ESTADO_VENTA_LABEL: Record<EstadoVenta, string> = {
-  PUBLICADA: 'Publicada',
-  RESERVADA: 'Reservada',
-  VENDIDA: 'Vendida',
-  VENDIDA_POR_TERCEROS: 'Vendida por terceros',
-  PAUSADA: 'Pausada',
-};
-const ESTADO_VENTA_CLASE: Record<EstadoVenta, string> = {
-  PUBLICADA: 'publicada',
-  RESERVADA: 'reservada',
-  VENDIDA: 'vendida',
-  VENDIDA_POR_TERCEROS: 'vendida_por_terceros',
-  PAUSADA: 'pausada',
-};
 const DESTINO_LABEL: Record<Gasto['destino'], string> = {
   PROPIETARIO: 'AL PROPIETARIO',
   INQUILINO: 'AL INQUILINO',
@@ -260,10 +247,7 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
     queryKey: ['incidencias', propiedadId],
     queryFn: () => api.get<Incidencia[]>(`/incidencias?propiedadId=${propiedadId}`),
   });
-  const configuracion = useQuery({
-    queryKey: ['configuracion'],
-    queryFn: () => api.get<Configuracion>('/configuracion'),
-  });
+  const configuracion = useConfiguracion<Configuracion>();
 
   function invalidarTodo() {
     qc.invalidateQueries({ queryKey: ['propiedades'] });
@@ -1589,12 +1573,9 @@ export function FacturaModal({
   const qc = useQueryClient();
   const mes = mesProp ?? mesActualStr();
 
-  // Mismo queryKey que ya usa el drawer padre (línea ~218): React Query
-  // dedupea y sirve del caché, no dispara un segundo pedido de red.
-  const configuracion = useQuery({
-    queryKey: ['configuracion'],
-    queryFn: () => api.get<Configuracion>('/configuracion'),
-  });
+  // Mismo queryKey que ya usa el drawer padre: React Query dedupea y sirve
+  // del caché, no dispara un segundo pedido de red.
+  const configuracion = useConfiguracion<Configuracion>();
   const cfg = configuracion.data;
 
   // Si este mes ya se emitió una factura (p. ej. se emitió hace un rato y
@@ -1755,27 +1736,26 @@ export function FacturaModal({
 
   const F = emitir.data;
   const comprobanteRef = useRef<HTMLDivElement>(null);
-  const [enviandoWhatsapp, setEnviandoWhatsapp] = useState(false);
+  const { enviando: enviandoWhatsapp, enviar: enviarComprobante } = useEnviarComprobantePorWhatsapp();
 
   async function enviarPorWhatsapp() {
-    if (!comprobanteRef.current || !inquilino?.telefono || !F) return;
-    setEnviandoWhatsapp(true);
-    try {
-      await descargarPdfComprobante(comprobanteRef.current, `Factura ${F.numero} - ${propiedadNombre}.pdf`);
-      // Plantilla editable desde Configuración y Reportes (§ facturaWhatsappMensaje)
-      // — con un default razonable por si todavía no se cargó nada ahí.
-      const plantilla =
-        cfg?.facturaWhatsappMensaje ||
-        'Hola {nombre}, te comparto la Factura N° {numero} de {propiedad} correspondiente a {mes}. Te dejo el PDF descargado — adjuntalo acá mismo en el chat.';
-      const texto = plantilla
-        .split('{nombre}').join(inquilino.nombre)
-        .split('{numero}').join(String(F.numero))
-        .split('{propiedad}').join(propiedadNombre)
-        .split('{mes}').join(mesLabel(mes));
-      window.open(`https://wa.me/${inquilino.telefono.replace(/\D/g, '')}?text=${encodeURIComponent(texto)}`, '_blank');
-    } finally {
-      setEnviandoWhatsapp(false);
-    }
+    if (!F || !inquilino) return;
+    // Plantilla editable desde Configuración y Reportes (§ facturaWhatsappMensaje)
+    // — con un default razonable por si todavía no se cargó nada ahí.
+    const plantilla =
+      cfg?.facturaWhatsappMensaje ||
+      'Hola {nombre}, te comparto la Factura N° {numero} de {propiedad} correspondiente a {mes}. Te dejo el PDF descargado — adjuntalo acá mismo en el chat.';
+    const texto = plantilla
+      .split('{nombre}').join(inquilino.nombre)
+      .split('{numero}').join(String(F.numero))
+      .split('{propiedad}').join(propiedadNombre)
+      .split('{mes}').join(mesLabel(mes));
+    await enviarComprobante({
+      elemento: comprobanteRef.current,
+      telefono: inquilino.telefono,
+      nombreArchivo: `Factura ${F.numero} - ${propiedadNombre}.pdf`,
+      texto,
+    });
   }
 
   const actualizarItem = (idx: number, campo: keyof ItemEditable, valor: string) => {
@@ -1978,10 +1958,7 @@ function ReciboModal({
   const mes = mesActualStr();
   // Mismo queryKey que ya usa el drawer padre: React Query dedupea y sirve
   // del caché, no dispara un segundo pedido de red.
-  const configuracion = useQuery({
-    queryKey: ['configuracion'],
-    queryFn: () => api.get<Configuracion>('/configuracion'),
-  });
+  const configuracion = useConfiguracion<Configuracion>();
   const cfg = configuracion.data;
 
   const generar = useMutation({

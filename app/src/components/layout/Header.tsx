@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { fetchContactoInfo } from '../../api/configuracionPublica';
+import { useContactoInfo } from '../../hooks/useContactoInfo';
 import { waLink } from '../../lib/format';
 import logo from '../../logos/LOGO PNG.-02.png';
 
@@ -16,11 +15,7 @@ const NAV_LINKS = [
 export function Header() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const contactoInfo = useQuery({
-    queryKey: ['contacto-info'],
-    queryFn: fetchContactoInfo,
-    staleTime: 5 * 60_000,
-  });
+  const contactoInfo = useContactoInfo();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 30);

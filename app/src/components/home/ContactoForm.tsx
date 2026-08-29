@@ -1,18 +1,14 @@
 import { useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { enviarContacto, type TipoOperacionContacto } from '../../api/contacto';
-import { fetchContactoInfo } from '../../api/configuracionPublica';
 import { ApiError } from '../../api/client';
 import { waLink } from '../../lib/format';
 import { useRevealOnScroll } from '../../hooks/useRevealOnScroll';
+import { useContactoInfo } from '../../hooks/useContactoInfo';
 
 export function ContactoForm() {
   const { ref, visible } = useRevealOnScroll<HTMLDivElement>();
-  const contactoInfo = useQuery({
-    queryKey: ['contacto-info'],
-    queryFn: fetchContactoInfo,
-    staleTime: 5 * 60_000,
-  });
+  const contactoInfo = useContactoInfo();
   const c = contactoInfo.data;
   const infoRows = c
     ? ([
