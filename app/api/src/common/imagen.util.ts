@@ -20,3 +20,23 @@ export async function procesarFotoParaTarjeta(buffer: Buffer): Promise<Buffer> {
     .jpeg({ quality: 85 })
     .toBuffer();
 }
+
+// Imagen de portada del carrusel destacado del Hero (Propiedad.heroPortadaUrl)
+// — a propósito NO usa `fit:'cover'` como la de arriba: el Hero la muestra
+// con `object-fit:contain` (nunca se recorta, ver hero.css), así que acá
+// tampoco hay que recortar, solo evitar que un archivo gigante (foto de
+// cámara sin comprimir) pese de más. `fit:'inside'` reduce si la imagen
+// excede el recuadro sin agrandar una más chica ni deformarla; 1800x1050
+// es la proporción recomendada al admin (~3/4 del ancho del carrusel
+// contra su alto máximo de 520px en desktop, ver hero.css) pero cualquier
+// otra proporción entra igual, sin recorte.
+const HERO_ANCHO_MAX = 1800;
+const HERO_ALTO_MAX = 1050;
+
+export async function procesarFotoParaHero(buffer: Buffer): Promise<Buffer> {
+  return sharp(buffer)
+    .rotate()
+    .resize(HERO_ANCHO_MAX, HERO_ALTO_MAX, { fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 88 })
+    .toBuffer();
+}

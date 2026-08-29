@@ -6,6 +6,7 @@ import { Modal } from './Modal';
 import { formatMoney, formatUsd, formatDate, mesActualStr, mesLabel, parseMontoArgentino } from '../lib/format';
 import { resolverPorcentajeHonorariosAdministracion, type TipoHonorarios } from '../lib/honorarios';
 import { FotosPropiedad, type FotoPropiedadItem } from './FotosPropiedad';
+import { FotoHeroPropiedad } from './FotoHeroPropiedad';
 import { ComprobanteImpreso } from './ComprobanteImpreso';
 import { descargarPdfComprobante } from '../lib/pdfComprobante';
 import { ServiciosCuentaInputs, SERVICIOS_OPCIONES, type ServicioFacturable } from './ServiciosCuentaInputs';
@@ -67,6 +68,7 @@ interface PropiedadFicha {
   superficieCubierta: string | number | null;
   descripcion: string | null;
   caracterEspecial: boolean;
+  heroPortadaUrl: string | null;
   serviciosHabilitados: ServicioFacturable[];
   obrasSanitariasNumeroCuenta: string | null;
   camuzziNumeroCuenta: string | null;
@@ -934,7 +936,11 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
                         {deuda.data!.mesesImpagos} mes(es) impago(s)
                       </div>
                     )}
-                    {(p.usinaUsuario || p.usinaNumeroCuenta || p.obrasSanitariasNumeroCuenta || p.camuzziNumeroCuenta) && (
+                    {(p.usinaUsuario ||
+                      p.usinaNumeroCuenta ||
+                      p.obrasSanitariasNumeroCuenta ||
+                      p.camuzziNumeroCuenta ||
+                      p.retributivasNumeroCuenta) && (
                       <div className="hist" style={{ marginTop: 12 }}>
                         {p.usinaUsuario && (
                           <div className="row">
@@ -958,6 +964,12 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
                           <div className="row">
                             <span>Gas — N° de cuenta</span>
                             <span>{p.camuzziNumeroCuenta}</span>
+                          </div>
+                        )}
+                        {p.retributivasNumeroCuenta && (
+                          <div className="row">
+                            <span>Retributivas — N° de cuenta</span>
+                            <span>{p.retributivasNumeroCuenta}</span>
                           </div>
                         )}
                       </div>
@@ -1039,10 +1051,20 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
       )}
       {fotosModal && p && (
         <Modal open onClose={() => setFotosModal(false)} title={`Fotos — ${p.nombre}`} width={520}>
+          {p.caracterEspecial && (
+            <div style={{ marginBottom: 22, paddingBottom: 20, borderBottom: '1px solid var(--border2)' }}>
+              <h4 style={{ margin: '0 0 10px' }}>Imagen del carrusel destacado</h4>
+              <FotoHeroPropiedad
+                propiedadId={p.id}
+                heroPortadaUrl={p.heroPortadaUrl}
+                onChange={() => qc.invalidateQueries({ queryKey: ['propiedades', propiedadId] })}
+              />
+            </div>
+          )}
+          <h4 style={{ margin: '0 0 10px' }}>Fotos de la propiedad</h4>
           <FotosPropiedad
             propiedadId={p.id}
             fotos={p.fotos}
-            mostrarPortada={p.caracterEspecial}
             onChange={() => qc.invalidateQueries({ queryKey: ['propiedades', propiedadId] })}
           />
           <div className="btnrow">
@@ -1590,15 +1612,22 @@ export function FacturaModal({
   // precargados con lo último facturado + gastos trasladados + deuda
   // arrastrada) — se traen como punto de partida editable, no se emiten
   // directo: el usuario puede agregar/quitar líneas y cambiar montos antes
-  // de confirmar. Solo hace falta calcularlos si este mes todavía no tiene
-  // factura propia (ver `facturaExistente` arriba).
+  // de confirmar. Si este mes todavía no tiene factura propia (ver
+  // `facturaExistente` arriba), esto arma los ítems de punta a punta. Si
+  // YA tiene factura, igual se pide — no para los ítems en sí (esos se
+  // precargan de la factura ya guardada, ver el efecto de abajo) sino para
+  // refrescar el N° de cuenta/usuario de cada servicio contra el valor
+  // ACTUAL de la propiedad (pedido del usuario 2026-08-18: editar el N° de
+  // Retributivas desde "Editar Datos" y guardar no se reflejaba al volver
+  // a abrir "Emitir factura" del mismo mes, porque ese N° queda pegado
+  // como texto fijo en la descripción de la factura ya emitida).
   const predeterminados = useQuery({
     queryKey: ['items-predeterminados', propiedadId, mes],
     queryFn: () =>
       api.get<{ descripcion: string; monto: number; numeroLiquidacion?: string | null }[]>(
         `/facturacion/propiedades/${propiedadId}/items-predeterminados?mes=${mes}`,
       ),
-    enabled: facturaExistente.isSuccess && !facturaExistente.data,
+    enabled: facturaExistente.isSuccess,
   });
 
   const [items, setItems] = useState<ItemEditable[] | null>(null);
@@ -1619,12 +1648,25 @@ export function FacturaModal({
     // para mostrarlo en su propio input, y se vuelve a unir recién al
     // emitir (ver `emitir` más abajo).
     if (facturaExistente.data) {
+      // Espera a que `predeterminados` también resuelva (ahora se pide
+      // siempre, ver más arriba) para poder refrescar el N° de
+      // cuenta/usuario de cada servicio contra el valor actual de la
+      // propiedad — el resto del ítem (descripción editada a mano, monto,
+      // N° de liquidación) sigue viniendo tal cual de la factura ya
+      // guardada.
+      if (!predeterminados.data && !predeterminados.isError) return;
+      const cuentaFresca = new Map(
+        (predeterminados.data ?? []).map((it) => {
+          const { base, cuenta } = splitDescripcionCuenta(it.descripcion);
+          return [base, cuenta];
+        }),
+      );
       setItems(
         facturaExistente.data.items.map((it) => {
           const { base, cuenta } = splitDescripcionCuenta(it.descripcion);
           return {
             descripcion: base,
-            cuenta,
+            cuenta: esServicioConCuenta(base) && cuentaFresca.has(base) ? cuentaFresca.get(base)! : cuenta,
             monto: String(it.monto),
             numeroLiquidacion: it.numeroLiquidacion ?? '',
           };
@@ -1652,7 +1694,7 @@ export function FacturaModal({
     // Solo precarga la primera vez que llegan los datos; después el
     // usuario es dueño del estado.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facturaExistente.data, predeterminados.data]);
+  }, [facturaExistente.data, predeterminados.data, predeterminados.isError]);
 
   // Honorarios de administración (§2.3, §5.5): se calculan sobre el
   // alquiler puro, no sobre el total facturado (que también incluye
@@ -1751,7 +1793,7 @@ export function FacturaModal({
   // `predeterminados` queda deshabilitada mientras no se sepa si este mes
   // ya tiene factura propia — su propio `isPending` no sirve solo para
   // decidir si mostrar "Cargando…".
-  const cargandoItems = facturaExistente.isPending || (facturaExistente.isSuccess && !facturaExistente.data && predeterminados.isPending);
+  const cargandoItems = facturaExistente.isPending || (facturaExistente.isSuccess && predeterminados.isPending);
   const errorItems = facturaExistente.isError || predeterminados.isError;
 
   return (

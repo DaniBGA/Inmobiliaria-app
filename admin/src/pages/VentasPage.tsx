@@ -7,6 +7,7 @@ import { Modal } from '../components/Modal';
 import { formatMoney, formatUsd, formatDate } from '../lib/format';
 import { honorariosLabel, resolverPorcentajeHonorarios, type TipoHonorarios } from '../lib/honorarios';
 import { FotosPropiedad, type FotoPropiedadItem } from '../components/FotosPropiedad';
+import { FotoHeroPropiedad } from '../components/FotoHeroPropiedad';
 import { SeccionGuia } from '../components/SeccionGuia';
 
 type EstadoVenta = 'PUBLICADA' | 'RESERVADA' | 'VENDIDA' | 'VENDIDA_POR_TERCEROS' | 'PAUSADA';
@@ -87,6 +88,7 @@ interface Propiedad {
   banos: number | null;
   superficieM2: string | number | null;
   caracterEspecial: boolean;
+  heroPortadaUrl: string | null;
   serviciosHabilitados: ServicioFacturable[];
   fotos: FotoPropiedadItem[];
 }
@@ -476,7 +478,12 @@ export function VentasPage() {
             const moneda = v?.moneda ?? 'ARS';
             const ars = moneda === 'USD' ? precio * dolarReferencia : precio;
             const pct = resolverPorcentajeHonorarios(p, honorDefault);
-            const com = (ars * pct) / 100;
+            // Honorarios profesionales en dólares (pedido del usuario
+            // 2026-08-28: antes se mostraba siempre en pesos, convertido
+            // al dólar de referencia cuando la venta era en USD — ahora es
+            // al revés, siempre en USD, convirtiendo desde pesos cuando la
+            // venta está publicada en ARS).
+            const comUsd = moneda === 'USD' ? (precio * pct) / 100 : dolarReferencia > 0 ? (precio * pct) / 100 / dolarReferencia : 0;
             const interesados = 'interesados' in (v ?? {}) ? (v as VentaCompleta).interesados : [];
             const activos = interesados.filter((i) => i.etapa !== 'DESCARTADO');
             const mejor = activos.reduce<Interesado | null>((m, i) => {
@@ -515,7 +522,7 @@ export function VentasPage() {
                   </div>
                   <div className="srow">
                     <span>Honorarios profesionales ({honorariosLabel(p, honorDefault)})</span>
-                    <b>{com ? formatMoney(com) : '—'}</b>
+                    <b>{comUsd ? formatUsd(comUsd) : '—'}</b>
                   </div>
                   <div className="srow">
                     <span>La muestra</span>
@@ -1102,11 +1109,21 @@ function SaleModal({
         </>
       )}
 
+      {propiedad.caracterEspecial && (
+        <>
+          <div className="secttl">IMAGEN DEL CARRUSEL DESTACADO</div>
+          <FotoHeroPropiedad
+            propiedadId={propiedad.id}
+            heroPortadaUrl={propiedad.heroPortadaUrl}
+            onChange={onFotosChange}
+          />
+        </>
+      )}
+
       <div className="secttl">FOTOS</div>
       <FotosPropiedad
         propiedadId={propiedad.id}
         fotos={propiedad.fotos}
-        mostrarPortada={propiedad.caracterEspecial}
         onChange={onFotosChange}
       />
 

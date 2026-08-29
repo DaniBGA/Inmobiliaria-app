@@ -136,6 +136,22 @@ export class PropiedadesController {
     return this.propiedadesService.marcarFotoPortada(id, fotoId);
   }
 
+  @Post(':id/hero')
+  @UseGuards(RolesGuard)
+  @Roles(RolUsuario.ADMIN)
+  @UseFilters(MulterExceptionFilter)
+  @UseInterceptors(FileInterceptor('archivo', fotoPropiedadMulterOptions))
+  actualizarFotoHero(@Param('id') id: string, @UploadedFile() archivo: Express.Multer.File) {
+    return this.propiedadesService.actualizarFotoHero(id, archivo);
+  }
+
+  @Delete(':id/hero')
+  @UseGuards(RolesGuard)
+  @Roles(RolUsuario.ADMIN)
+  eliminarFotoHero(@Param('id') id: string) {
+    return this.propiedadesService.eliminarFotoHero(id);
+  }
+
   @Post(':id/documentos')
   @UseGuards(RolesGuard)
   @Roles(RolUsuario.ADMIN)

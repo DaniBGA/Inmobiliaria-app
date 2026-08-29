@@ -21,6 +21,7 @@ const SELECT_PUBLICO = {
   superficieCubierta: true,
   descripcion: true,
   caracterEspecial: true,
+  heroPortadaUrl: true,
   fotos: { select: { id: true, url: true, orden: true, esPortada: true }, orderBy: { orden: 'asc' as const } },
   venta: { select: { precio: true, moneda: true, estado: true } },
   // Solo para derivar `estadoPublico` (§ventana de gracia) — nunca se
@@ -78,10 +79,14 @@ function mapear(p: PropiedadPublicaRaw) {
     superficieCubierta: p.superficieCubierta != null ? Number(p.superficieCubierta) : null,
     descripcion: p.descripcion,
     caracterEspecial: p.caracterEspecial,
-    // El carrusel destacado del Hero siempre usa `fotos[0]` como imagen
-    // principal — si hay una marcada como portada, se antepone acá para
-    // que ese `[0]` la use sin que el frontend tenga que saber nada de
-    // `esPortada` (por eso no se expone ese campo en la forma pública).
+    // El carrusel destacado del Hero usa `heroPortadaUrl` si existe (imagen
+    // dedicada, sin recorte — ver Propiedad.heroPortadaUrl en schema.prisma).
+    // Antes de que existiera ese campo, algunas propiedades ya habían
+    // curado su portada marcando una foto de la galería (`esPortada`) — se
+    // mantiene como fallback anteponiéndola a `fotos[0]` para no perder esa
+    // curación previa, aunque nuevas propiedades ya no deberían usar ese
+    // camino (2026-08-28).
+    heroPortadaUrl: p.heroPortadaUrl,
     fotos: [...p.fotos]
       .sort((a, b) => Number(b.esPortada) - Number(a.esPortada))
       .map(({ id, url, orden }) => ({ id, url, orden })),

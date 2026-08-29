@@ -6,24 +6,21 @@ export interface FotoPropiedadItem {
   id: string;
   url: string;
   orden: number;
-  esPortada?: boolean;
 }
 
 // Compartido entre la ficha de alquiler (PropiedadFichaDrawer) y la ficha de
 // venta (VentasPage/SaleModal) — agregar/quitar fotos es la misma operación
-// en los dos casos, solo cambia desde dónde se abre.
+// en los dos casos, solo cambia desde dónde se abre. Es la galería que se ve
+// en la ficha de la propiedad y en la landing (recortada 4:5 en el
+// servidor, ver procesarFotoParaTarjeta() en imagen.util.ts) — la imagen
+// del carrusel destacado del Hero es un campo aparte, ver FotoHeroPropiedad.
 export function FotosPropiedad({
   propiedadId,
   fotos,
-  mostrarPortada = false,
   onChange,
 }: {
   propiedadId: string;
   fotos: FotoPropiedadItem[];
-  // Solo tiene sentido elegir portada si la propiedad es "carácter
-  // especial" (la usa el carrusel destacado del Hero) y hay más de una
-  // foto entre las que elegir — con una sola foto no hay nada que decidir.
-  mostrarPortada?: boolean;
   onChange: () => void;
 }) {
   const [subiendo, setSubiendo] = useState(false);
@@ -33,12 +30,6 @@ export function FotosPropiedad({
     mutationFn: (fotoId: string) => api.delete(`/propiedades/${propiedadId}/fotos/${fotoId}`),
     onSuccess: onChange,
     onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo eliminar la foto.'),
-  });
-
-  const marcarPortada = useMutation({
-    mutationFn: (fotoId: string) => api.patch(`/propiedades/${propiedadId}/fotos/${fotoId}/portada`),
-    onSuccess: onChange,
-    onError: (err) => setError(err instanceof ApiError ? err.message : 'No se pudo marcar la portada.'),
   });
 
   async function subirArchivos(files: FileList | null) {
@@ -87,27 +78,11 @@ export function FotosPropiedad({
           }}
         />
       </label>
-      {mostrarPortada && fotos.length > 1 && (
-        <div className="hint" style={{ marginTop: 10 }}>
-          ★ Marcá con la estrella qué foto se usa en el carrusel destacado de la landing (por defecto se usa la primera).
-        </div>
-      )}
       {fotos.length > 0 ? (
         <div className="fotogrid">
           {fotos.map((f) => (
             <div className="fotothumb" key={f.id}>
               <img src={`${BASE_URL}${f.url}`} alt="" />
-              {mostrarPortada && fotos.length > 1 && (
-                <button
-                  type="button"
-                  className={`portada${f.esPortada ? ' activa' : ''}`}
-                  title={f.esPortada ? 'Portada del carrusel destacado' : 'Usar como portada del carrusel destacado'}
-                  disabled={marcarPortada.isPending}
-                  onClick={() => marcarPortada.mutate(f.id)}
-                >
-                  ★
-                </button>
-              )}
               <button
                 type="button"
                 className="quitar"

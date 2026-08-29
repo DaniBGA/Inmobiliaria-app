@@ -645,6 +645,47 @@ Se actualiza a medida que se implementa cada sección. Convención:
       toda propiedad con `frecuenciaAumentoMeses` y `contratoInicio`
       cargados ya refleja la regla nueva la próxima vez que se consulte su
       ficha, sin necesidad de tocar datos.
+- [x] **2026-08-18, dos bugs reportados por el usuario en "Servicios" /
+      Retributivas de Servicios.**
+      1. **Retributivas no aparecía en "ESTADO DE COBROS" de la ficha**:
+         el bloque que lista N°s de cuenta cargados (`PropiedadFichaDrawer.tsx`,
+         debajo de "Estado de cobros") tenía la condición de visibilidad y
+         las filas para Luz/Agua/Gas pero se había quedado afuera
+         Retributivas — ni la condición `(p.usinaUsuario || ... ||
+         p.camuzziNumeroCuenta)` ni la lista de `<div className="row">`
+         incluían `p.retributivasNumeroCuenta`. Se agregó a ambas.
+      2. **El N° de Retributivas (o cualquier otro servicio con cuenta)
+         editado desde "Editar Datos" no se reflejaba al abrir "Emitir
+         factura" para un mes que YA tenía una factura emitida.** Causa:
+         desde el cambio del 2026-08-28 ("no perder lo recién cargado al
+         reabrir el mismo mes"), si ya existe una `Factura` para ese mes,
+         el formulario se precarga desde `facturaExistente.data` (snapshot
+         guardado en su momento) en vez de `predeterminados` — y esa
+         consulta a `predeterminados` (`items-predeterminados`, que sí lee
+         el N° de cuenta ACTUAL de la propiedad) directamente no se pedía
+         en ese caso (`enabled: facturaExistente.isSuccess &&
+         !facturaExistente.data`). El N° de cuenta, aunque está separado
+         en su propio input (`splitDescripcionCuenta`/
+         `itemServicioCuenta.ts`, pedido del 2026-08-28), quedaba pegado
+         al valor viejo guardado en la descripción de la factura ya
+         emitida. **Fix**: `predeterminados` ahora se pide siempre que
+         `facturaExistente` resolvió (haya o no factura ya emitida). El
+         `useEffect` que precarga `items` desde `facturaExistente.data`
+         ahora arma un mapa `cuentaFresca` (por `base` de la descripción,
+         ej. "Retributivas de Servicios") con los N°s recién calculados de
+         `predeterminados.data`, y lo usa para el campo `cuenta` de cada
+         ítem en vez del valor parseado de la factura vieja — el resto del
+         ítem (descripción editada a mano, monto, N° de liquidación) sigue
+         viniendo tal cual de la factura ya guardada, sin tocar ese
+         comportamiento. `cargandoItems` ajustado a la nueva condición de
+         `enabled`. Probado con curl: propiedad con Retributivas="AAA" →
+         factura de agosto emitida con "AAA" en la descripción → se
+         cambia Retributivas a "BBB" vía PATCH (como haría "Editar
+         Datos") → la factura ya guardada sigue devolviendo "AAA"
+         (snapshot histórico correcto, sin tocar) → `items-predeterminados`
+         del mismo mes ya devuelve "BBB" (lo que el frontend usa para el
+         refresh). `tsc --noEmit` limpio en `admin/`. Dato de prueba
+         limpiado.
 
 ## 3.6 Ventas → Caja en dólares
 
@@ -689,6 +730,92 @@ Se actualiza a medida que se implementa cada sección. Convención:
       Publicada → Reservada → Vendida, KPIs y botones de acción se
       actualizaron correctamente en cada paso, cero errores de consola
       (2026-07-22).
+- [x] **2026-08-28, pedido del usuario: "Honorarios profesionales" en la
+      tarjeta de cada propiedad de Ventas y Carteles, en dólares en vez de
+      pesos.** `VentasPage.tsx` calculaba `com = (ars * pct) / 100` (el
+      precio siempre convertido a ARS primero — vía `dolarReferencia` si
+      la venta estaba en USD — y mostrado con `formatMoney`). Se cambió a
+      `comUsd`: si la venta está en USD usa el precio directo (`precio *
+      pct / 100`); si está en ARS, calcula igual en pesos y recién ahí
+      divide por `dolarReferencia` para expresarlo en dólares — mostrado
+      con `formatUsd`. Solo afecta esa línea por tarjeta; el KPI agregado
+      "Comisión potencial" de arriba (`ventasKpis.data.comisionPotencial`,
+      calculado en el backend) no se tocó — el pedido era sobre "las
+      propiedades" (las tarjetas), no sobre ese total. `tsc --noEmit`
+      limpio en `admin/`.
+- [x] **2026-08-28/29, imagen dedicada para el carrusel destacado del
+      Hero — reemplaza el mecanismo de "marcar una foto de la galería
+      como portada" (`FotoPropiedad.esPortada`, entrada del
+      2026-08-03 arriba).** Bug reportado con capturas: subiendo una foto
+      de prueba (proporción panorámica) al carrusel de "Local1" se veía
+      recortada a un primer plano sin importar el CSS. Causa real: **toda**
+      foto subida por `POST /propiedades/:id/fotos` (la única vía que
+      existía para marcar `esPortada`) pasa por
+      `procesarFotoParaTarjeta()` — recorte forzado 1080x1350 (retrato,
+      pensado para la grilla 4:5 de tarjetas) — así que la foto de portada
+      ya llegaba aplastada a un recorte vertical antes de que el CSS del
+      Hero la tocara. Arreglar el CSS solo no alcanzaba.
+      Solución: **campo propio, `Propiedad.heroPortadaUrl`** (migración
+      `20260828200256_propiedad_hero_portada_url`, aditiva), con su propio
+      pipeline sin recorte — `procesarFotoParaHero()`
+      (`api/src/common/imagen.util.ts`, `sharp` con `fit:'inside'` +
+      `withoutEnlargement`, tope 1800x1050, preserva la proporción
+      original) — y sus propios endpoints `POST`/`DELETE
+      /propiedades/:id/hero` (`PropiedadesService.actualizarFotoHero()` /
+      `eliminarFotoHero()`, ADMIN). `PublicPropiedadesService` expone
+      `heroPortadaUrl`; el viejo camino `esPortada` queda como fallback
+      (antepuesto a `fotos[0]`) para no perder curaciones previas, pero ya
+      no se ofrece en el admin.
+      **Admin — dos cargas de imagen separadas, pedido explícito
+      ("necesito 2 opciones de carga de imagen")**: nuevo componente
+      `FotoHeroPropiedad.tsx` (sube/reemplaza/quita, al toque, con cartel
+      de dimensiones recomendadas) usado junto a `FotosPropiedad.tsx`
+      (que perdió el picker ★ de portada, vuelve a ser una galería pura)
+      en el modal "Fotos" de `PropiedadFichaDrawer.tsx`, en la sección
+      FOTOS de `VentasPage.tsx` (`SaleModal`) y como card aparte en
+      `AgregarPropiedadPage.tsx` (ahí la imagen queda en memoria como
+      `heroFile` hasta crear la propiedad, igual que ya pasaba con la
+      galería, y se sube a `/hero` después de crearla).
+      **CSS del carrusel (`app/src/styles/home/hero.css`), tres vueltas
+      en la misma sesión sobre `.hero-slide-bg img`**: primero
+      `object-fit:cover` al 100% del slide (rechazado: con la foto ya
+      recortada a retrato se veía "recortada a la cara" — causa de datos,
+      no de CSS). Con la causa resuelta, `object-fit:contain` en una caja
+      del 75% del ancho (rechazado: "ocupa 1/4, no 3/4" — una foto que no
+      calzara exacto se achicaba de más para entrar completa). Versión
+      final: **`object-fit:cover` en esa misma caja del 75%** — la foto
+      siempre llena el 75% del ancho (nunca se ve chica) recortando solo
+      lo mínimo necesario; el 25% restante queda en navy + el degradado
+      existente. 1800x1050px (la proporción recomendada al admin) calza
+      casi exacto con esa caja en desktop (~1190px de contenido × 520px
+      de alto máximo del carrusel), así que el recorte real es mínimo.
+      `app/src/api/propiedades.ts`/`Hero.tsx` consumen
+      `heroPortadaUrl ?? fotos[0]?.url` en vez de `fotos[0]` a secas.
+      Verificado con curl end-to-end (login → subir imagen 2200x1000 de
+      prueba a "Local1" → confirmé que llega sin recortar, 1800x818,
+      proporción intacta → `GET /public/propiedades` la refleja → borrada
+      después, la propiedad quedó como estaba). `tsc --noEmit` limpio en
+      `api/`, `admin/` y `app/`; sin navegador disponible en este entorno
+      para confirmar visualmente, pendiente de que el usuario lo vea en
+      el navegador.
+- [x] **2026-08-29, degradado del carrusel recorriendo toda la foto, no
+      solo el arranque.** `.hero-slide-overlay` (`hero.css`) cubría todo
+      el slide (`inset:0`) con un degradado de 4 stops que ya estaba
+      transparente al 34% del ancho del slide — como la foto arranca en
+      el 25% (caja del 75%, ver entrada de arriba), el fade se completaba
+      a los pocos píxeles de empezar la imagen y el resto (la gran
+      mayoría de la foto) quedaba sin ningún velo. Se cambió el propio div
+      para que solo cubra la franja de la foto (`left:25%; right:0`, en
+      vez de `inset:0`) con un degradado simple de 2 stops (0% a 100% de
+      ESA franja) — un solo fade parejo de punta a punta de la imagen, en
+      vez de agotarse cerca del arranque.
+      **Ajuste el mismo día**: el primer stop arrancaba en
+      `rgba(18,39,58,0.6)` (60% opaco) — se seguía viendo la costura entre
+      el panel navy sólido y la foto como un salto de brillo justo en el
+      borde. Se cambió a `var(--color-navy)` (100% opaco, el mismo color
+      exacto del panel de al lado) en el 0%, así la costura queda
+      invisible y el degradado sigue fundiéndose a transparente hacia el
+      100%.
 
 ## 2.6 Clientes
 
@@ -2890,6 +3017,14 @@ migración:
       `fotos[0]` sin conocer `esPortada`; sin ninguna marcada, se usa la
       primera por `orden` (comportamiento de siempre). Nuevo endpoint
       `PATCH /propiedades/:id/fotos/:fotoId/portada`.
+      **Superado el 2026-08-28/29** — este mecanismo elegía la portada
+      entre las fotos de la galería, que llevan un recorte 4:5 fijo
+      pensado para tarjetas, no para un banner panorámico; se reemplazó
+      por un campo/endpoint dedicado sin ese recorte, ver la entrada
+      "imagen dedicada para el carrusel destacado del Hero" en §3.6 más
+      abajo. El endpoint de esta entrada sigue existiendo (no se borró,
+      ninguna propiedad real lo usaba todavía) pero el admin ya no lo
+      ofrece.
 - [x] **Recorte/recompresión server-side de fotos + foto institucional
       "Nosotros" en la landing.** Nueva dependencia `sharp`.
       `procesarFotoParaTarjeta()` (`api/src/common/imagen.util.ts`)

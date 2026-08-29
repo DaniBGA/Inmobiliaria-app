@@ -40,13 +40,17 @@ function HeroCarousel() {
   return (
     <div className="hero-carousel">
       {items.map((p, i) => {
-        const foto = p.fotos[0];
+        // La imagen dedicada del carrusel (Propiedad.heroPortadaUrl, sin
+        // recorte de servidor) tiene prioridad; si la propiedad todavía no
+        // tiene una cargada, cae a la primera foto de la galería (fallback
+        // de compatibilidad, ver PublicPropiedadesService.mapear()).
+        const fotoUrl = p.heroPortadaUrl ?? p.fotos[0]?.url ?? null;
         const precio = p.modalidad === 'VENTA' ? formatPrecio(p.precio, p.moneda) : `${formatMoney(p.montoAlquilerVigente)}/mes`;
         const meta = specsLineDe(p) || (TIPO_LABEL[p.tipo] ?? p.tipo);
         return (
           <div className={`hero-slide${i === cur ? ' active' : ''}`} key={p.id}>
-            <div className="hero-slide-bg" style={foto ? undefined : { background: gradienteFor(p.id) }}>
-              {foto && <img src={`${BASE_URL}${foto.url}`} alt={p.nombre} />}
+            <div className="hero-slide-bg" style={fotoUrl ? undefined : { background: gradienteFor(p.id) }}>
+              {fotoUrl && <img src={`${BASE_URL}${fotoUrl}`} alt={p.nombre} />}
             </div>
             <div className="hero-slide-overlay" />
             <div className="hero-slide-copy">

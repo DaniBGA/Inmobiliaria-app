@@ -38,6 +38,7 @@ export interface PropiedadPublica {
   superficieCubierta: number | null;
   descripcion: string | null;
   caracterEspecial: boolean;
+  heroPortadaUrl: string | null;
   fotos: FotoPublica[];
 }
 

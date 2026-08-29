@@ -5,7 +5,7 @@ import { existsSync, mkdirSync } from 'fs';
 import { unlink, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
-import { procesarFotoParaTarjeta } from '../common/imagen.util';
+import { procesarFotoParaTarjeta, procesarFotoParaHero } from '../common/imagen.util';
 import { primerDiaMes } from '../common/fecha.util';
 import { CreatePropiedadDto } from './dto/create-propiedad.dto';
 import { UpdatePropiedadDto } from './dto/update-propiedad.dto';
@@ -364,6 +364,44 @@ export class PropiedadesService {
     ]);
 
     return { ok: true };
+  }
+
+  // Imagen dedicada del carrusel destacado del Hero (Propiedad.heroPortadaUrl,
+  // ver el comentario en schema.prisma) — reemplaza la anterior si había una.
+  // A diferencia de `agregarFoto()` no recorta (`procesarFotoParaHero`,
+  // `fit:'inside'`): el Hero la muestra completa con `object-fit:contain`.
+  async actualizarFotoHero(propiedadId: string, archivo: Express.Multer.File) {
+    const actual = await this.prisma.propiedad.findUniqueOrThrow({
+      where: { id: propiedadId },
+      select: { heroPortadaUrl: true },
+    });
+    if (actual.heroPortadaUrl) {
+      await unlink(join(FOTOS_DIR, actual.heroPortadaUrl.split('/').pop()!)).catch(() => {});
+    }
+
+    const procesada = await procesarFotoParaHero(archivo.buffer);
+    if (!existsSync(FOTOS_DIR)) mkdirSync(FOTOS_DIR, { recursive: true });
+    const nombreArchivo = `${randomUUID()}.jpg`;
+    await writeFile(join(FOTOS_DIR, nombreArchivo), procesada);
+
+    return this.prisma.propiedad.update({
+      where: { id: propiedadId },
+      data: { heroPortadaUrl: `/uploads/propiedades/${nombreArchivo}` },
+    });
+  }
+
+  async eliminarFotoHero(propiedadId: string) {
+    const actual = await this.prisma.propiedad.findUniqueOrThrow({
+      where: { id: propiedadId },
+      select: { heroPortadaUrl: true },
+    });
+    if (actual.heroPortadaUrl) {
+      await unlink(join(FOTOS_DIR, actual.heroPortadaUrl.split('/').pop()!)).catch(() => {});
+    }
+    return this.prisma.propiedad.update({
+      where: { id: propiedadId },
+      data: { heroPortadaUrl: null },
+    });
   }
 
   async eliminarFoto(propiedadId: string, fotoId: string) {

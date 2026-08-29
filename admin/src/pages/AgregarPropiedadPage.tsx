@@ -88,10 +88,10 @@ export function AgregarPropiedadPage() {
   const [moneda, setMoneda] = useState<Moneda>('USD');
   const [publicada, setPublicada] = useState(true);
   const [imagenes, setImagenes] = useState<{ file: File; preview: string }[]>([]);
-  // Índice (dentro de `imagenes`) elegido como portada del carrusel
-  // destacado — recién se traduce a un fotoId real después de subir las
-  // fotos, porque hasta ese momento la propiedad ni siquiera existe.
-  const [portadaIdx, setPortadaIdx] = useState<number | null>(null);
+  // Imagen dedicada del carrusel destacado del Hero — separada de la
+  // galería (`imagenes`), se sube aparte a `/propiedades/:id/hero` recién
+  // creada la propiedad (hasta ese momento no existe el id).
+  const [heroFile, setHeroFile] = useState<{ file: File; preview: string } | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [exito, setExito] = useState<{ nombre: string; modalidad: Modalidad; fotosFallidas: string[] } | null>(null);
@@ -107,10 +107,20 @@ export function AgregarPropiedadPage() {
       URL.revokeObjectURL(prev[idx].preview);
       return prev.filter((_, i) => i !== idx);
     });
-    setPortadaIdx((prev) => {
-      if (prev == null) return prev;
-      if (prev === idx) return null;
-      return prev > idx ? prev - 1 : prev;
+  }
+
+  function elegirHero(file: File | null) {
+    if (!file) return;
+    setHeroFile((prev) => {
+      if (prev) URL.revokeObjectURL(prev.preview);
+      return { file, preview: URL.createObjectURL(file) };
+    });
+  }
+
+  function quitarHero() {
+    setHeroFile((prev) => {
+      if (prev) URL.revokeObjectURL(prev.preview);
+      return null;
     });
   }
 
@@ -150,7 +160,8 @@ export function AgregarPropiedadPage() {
     setPublicada(true);
     imagenes.forEach((img) => URL.revokeObjectURL(img.preview));
     setImagenes([]);
-    setPortadaIdx(null);
+    if (heroFile) URL.revokeObjectURL(heroFile.preview);
+    setHeroFile(null);
   }
 
   const crear = useMutation({
@@ -227,23 +238,28 @@ export function AgregarPropiedadPage() {
       // venta ya están guardadas en este punto, así que una foto que no
       // sube no debería aparentar que se perdió todo lo demás.
       const fotosFallidas: string[] = [];
-      let fotoPortadaId: string | null = null;
-      for (let i = 0; i < imagenes.length; i++) {
-        const { file } = imagenes[i];
+      for (const { file } of imagenes) {
         try {
           const form = new FormData();
           form.append('archivo', file);
-          const foto = await api.upload<{ id: string }>(`/propiedades/${propiedad.id}/fotos`, form);
-          if (i === portadaIdx) fotoPortadaId = foto.id;
+          await api.upload(`/propiedades/${propiedad.id}/fotos`, form);
         } catch (err) {
           const motivo = err instanceof ApiError ? err.message : 'error desconocido';
           fotosFallidas.push(`${file.name} (${motivo})`);
         }
       }
-      // Se marca al final (no en el mismo paso que la subida) porque recién
-      // ahí se sabe el id real de la foto elegida.
-      if (fotoPortadaId) {
-        await api.patch(`/propiedades/${propiedad.id}/fotos/${fotoPortadaId}/portada`).catch(() => {});
+
+      // Imagen dedicada del carrusel destacado del Hero — endpoint aparte,
+      // no es una foto más de la galería (ver FotoHeroPropiedad.tsx).
+      if (heroFile) {
+        try {
+          const form = new FormData();
+          form.append('archivo', heroFile.file);
+          await api.upload(`/propiedades/${propiedad.id}/hero`, form);
+        } catch (err) {
+          const motivo = err instanceof ApiError ? err.message : 'error desconocido';
+          fotosFallidas.push(`Imagen de portada del carrusel (${motivo})`);
+        }
       }
 
       return { propiedad, fotosFallidas };
@@ -647,6 +663,47 @@ export function AgregarPropiedadPage() {
             </div>
           )}
 
+          {caracterEspecial && (
+            <div className="cfgcard">
+              <h3>IMAGEN DEL CARRUSEL DESTACADO</h3>
+              <div className="hint">
+                Es la foto panorámica que se usa en el carrusel destacado del Hero de la landing — un campo aparte,
+                separado de las fotos de la propiedad de abajo.
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                {heroFile && (
+                  <img
+                    src={heroFile.preview}
+                    alt=""
+                    style={{ width: 96, height: 54, borderRadius: 8, objectFit: 'cover', border: '1px solid var(--border)' }}
+                  />
+                )}
+                <label className="dropzone" style={{ flex: 1, margin: 0 }}>
+                  {heroFile ? 'Cambiar imagen de portada' : 'Hacé clic para elegir la imagen de portada (JPG, PNG o WEBP)'}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      elegirHero(e.target.files?.[0] ?? null);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+                {heroFile && (
+                  <button type="button" className="btn-ghost" onClick={quitarHero}>
+                    Quitar
+                  </button>
+                )}
+              </div>
+              <div className="hint" style={{ marginTop: 10 }}>
+                📐 Dimensiones recomendadas: <b>1800 × 1050 px</b> aprox. Es la imagen que llena el 75% del ancho del
+                carrusel destacado (el resto queda en degradado azul) — con esa proporción el recorte para llenar el
+                espacio es mínimo.
+              </div>
+            </div>
+          )}
+
           <div className="cfgcard">
             <h3>FOTOS DE LA PROPIEDAD</h3>
             <div className="hint">
@@ -667,27 +724,11 @@ export function AgregarPropiedadPage() {
                 }}
               />
             </label>
-            {caracterEspecial && imagenes.length > 1 && (
-              <div className="hint" style={{ marginTop: 10 }}>
-                ★ Marcá con la estrella qué foto se usa en el carrusel destacado de la landing (por defecto se usa la
-                primera).
-              </div>
-            )}
             {imagenes.length > 0 && (
               <div className="fotogrid">
                 {imagenes.map((img, i) => (
                   <div className="fotothumb" key={img.preview}>
                     <img src={img.preview} alt="" />
-                    {caracterEspecial && imagenes.length > 1 && (
-                      <button
-                        type="button"
-                        className={`portada${portadaIdx === i ? ' activa' : ''}`}
-                        title={portadaIdx === i ? 'Portada del carrusel destacado' : 'Usar como portada del carrusel destacado'}
-                        onClick={() => setPortadaIdx((prev) => (prev === i ? null : i))}
-                      >
-                        ★
-                      </button>
-                    )}
                     <button
                       type="button"
                       className="quitar"

@@ -218,6 +218,19 @@ model Propiedad {
   // deriva de nada más (precio, fotos, antigüedad), es 100% curada.
   caracterEspecial Boolean @default(false)
 
+  // Imagen dedicada del carrusel destacado del Hero — separada de `fotos`
+  // (FotoPropiedad, recortadas 4:5 para la grilla de tarjetas, ver
+  // procesarFotoParaTarjeta() en common/imagen.util.ts) porque compartir
+  // ese mismo recorte con una foto de galería la dejaba irreconocible en
+  // un banner panorámico (bug reportado 2026-08-28: la portada de "Local1"
+  // se veía recortada a la cara aunque se subiera en 1920x1080, porque ya
+  // venía aplastada a 1080x1350 antes de llegar al carrusel).
+  // `PropiedadesService.actualizarFotoHero()` la procesa sin recortar
+  // (`fit:'inside'`, ver procesarFotoParaHero()) y el Hero de la landing
+  // la usa con `object-fit:contain` dentro de una caja del 75% del ancho
+  // del carrusel — nunca se recorta.
+  heroPortadaUrl String?
+
   // Qué ítems de servicios se ofrecen al emitir la factura del mes (ver
   // enum ServicioFacturable) — no incluye "Alquiler" (siempre presente en
   // ALQUILER) ni "Deuda arrastrada" (siempre calculada, no es un servicio).

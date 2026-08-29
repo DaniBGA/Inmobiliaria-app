@@ -206,8 +206,9 @@
 
 /* Fondo plano del navy de marca — atrás de la foto en todo el slide (no
    una copia desenfocada de la imagen). Flex + justify-content:flex-end
-   para que la foto (que ahora mide lo que mide realmente, ver abajo)
-   quede pegada a la derecha y centrada verticalmente. */
+   para que la caja de la foto (75% del ancho, ver abajo) quede pegada a
+   la derecha y el 25% restante de navy quede a la izquierda, detrás del
+   texto. */
 .hero-slide-bg {
   position: absolute;
   inset: 0;
@@ -218,29 +219,55 @@
   overflow: hidden;
 }
 
-/* La foto se ve completa, sin recortar. A propósito NO se usa
-   `width:100%; height:100%; object-fit:contain` — con eso el elemento
-   <img> mide todo el slide y dentro queda una franja "fantasma"
-   transparente alrededor de la foto real (el letterbox de `contain`), y
-   un degradado calculado sobre ese 100% no cae sobre los píxeles visibles
-   de la imagen sino sobre ese espacio vacío — por eso no se notaba ningún
-   fundido antes. Con `max-width/max-height` y `width/height:auto` el
-   propio <img> mide justo lo que mide la foto ya escalada, sin sobrante,
-   así la máscara de abajo cae exactamente sobre los píxeles reales. */
+/* 2026-08-28/29 — cuarta vuelta en este mismo lugar, dos problemas
+   distintos resueltos por separado:
+   1) La foto se veía "recortada a la cara" en cualquier `object-fit`
+      porque la propia foto de portada ya llegaba pre-recortada 1080x1350
+      (retrato) por el pipeline de fotos de galería — bug real de datos,
+      no de CSS (ver Propiedad.heroPortadaUrl en schema.prisma, que ahora
+      evita ese recorte previo con su propio campo/endpoint).
+   2) Con esa causa resuelta se probó `object-fit:contain` en una caja del
+      75% del ancho — la foto quedaba completa pero MUY chica dentro de
+      esa caja (una foto en cualquier proporción que no calzara exacto se
+      encogía hasta entrar entera, ocupando bastante menos que el 75%
+      visual). El usuario lo rechazó ("ocupa 1/4, no 3/4"): la prioridad
+      real es que la foto llene ese 75% de ancho y se vea grande, aceptando
+      un recorte mínimo — no que se vea completa a costa de quedar chica.
+   Con `object-fit:cover` la foto SIEMPRE llena la caja del 75% (nunca se
+   ve chica) y solo se recorta lo que sobra de los bordes. 1800x1050px es
+   la proporción recomendada al admin (ver el cartel de dimensiones en
+   FotoHeroPropiedad.tsx/AgregarPropiedadPage.tsx) porque calza casi exacto
+   con el 75% del ancho de `.hero-carousel` contra su alto máximo (520px)
+   en desktop (~1190px de contenido) — con esa proporción el recorte de
+   `cover` es mínimo. */
 .hero-slide-bg img {
   display: block;
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 60%);
-  mask-image: linear-gradient(90deg, transparent 0%, #000 60%);
+  width: 75%;
+  height: 100%;
+  object-fit: cover;
 }
 
+/* 2026-08-29 — antes cubría todo el slide (`inset:0`) con un degradado de
+   4 stops que terminaba transparente al 34% del slide entero — como la
+   foto ocupa el 75% de la derecha (empieza en el 25%), en la práctica el
+   degradado se completaba a los pocos píxeles de arrancar la foto y el
+   85% restante de la imagen quedaba sin ningún velo. Pedido del usuario:
+   que el degradado recorra la imagen entera, de punta a punta. Ahora el
+   propio div solo cubre la franja de la foto (`left:25%` = donde arranca
+   la caja del 75%, ver `.hero-slide-bg img` arriba) y el degradado va de
+   0% a 100% de ESA franja — un solo fade parejo desde donde empieza la
+   foto hasta donde termina. */
+/* Arranca en navy 100% opaco (mismo color que el panel sólido de al
+   lado, `--color-navy`) para que la costura entre el panel y la foto sea
+   invisible — con 0.6 se veía un salto de brillo justo en el borde donde
+   empieza la imagen. */
 .hero-slide-overlay {
   position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, rgba(18, 39, 58, 0.85) 0%, rgba(18, 39, 58, 0.55) 28%, rgba(18, 39, 58, 0) 52%, rgba(18, 39, 58, 0) 100%);
+  top: 0;
+  bottom: 0;
+  left: 25%;
+  right: 0;
+  background: linear-gradient(90deg, var(--color-navy) 0%, rgba(18, 39, 58, 0) 100%);
 }
 
 .hero-slide-copy {
