@@ -11,3 +11,4 @@ app/api/node_modules/
 app/api/uploads/
 deploy/.env
 deploy/.env.deploy
+*.tsbuildinfo
