@@ -1,4 +1,5 @@
 import { formatMoney } from '../lib/format';
+import { ComprobanteInfoBox } from './ComprobanteInfoBox';
 
 export interface LiquidacionItem {
   descripcion: string;
@@ -48,8 +49,21 @@ export function LiquidacionComprobanteBody({
   L: Liquidacion;
 }) {
   const neto = Number(L.netoAGirar);
+  const propiedades = L.detalle.map((d) => d.propiedad.nombre).join(', ') || '—';
   return (
-    <div className="liqcard" style={{ boxShadow: 'none' }}>
+    <>
+      <ComprobanteInfoBox
+        izquierda={[
+          { label: 'Nombre Propietario', valor: propietarioNombre },
+          { label: 'Propiedades incluidas', valor: propiedades },
+        ]}
+        derecha={[
+          { label: 'Número de Liquidación', valor: String(L.numero) },
+          { label: 'Periodo', valor: mesTexto },
+        ]}
+      />
+      <div className="comp-detalletitulo">Detalle de Liquidación</div>
+      <div className="liqcard" style={{ boxShadow: 'none' }}>
       <div className="liqhead">
         <div className="avatar">{iniciales(propietarioNombre)}</div>
         <div>
@@ -114,6 +128,7 @@ export function LiquidacionComprobanteBody({
           </>
         )}
       </div>
-    </div>
+      </div>
+    </>
   );
 }

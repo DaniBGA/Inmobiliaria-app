@@ -3,10 +3,12 @@ import { Moneda, OrigenMovimientoCaja, TipoMovimientoCaja } from '@prisma/client
 import { PrismaService } from '../prisma/prisma.service';
 import { PropiedadesService } from '../propiedades/propiedades.service';
 import { CajaService } from '../caja/caja.service';
+import { GastosService } from '../gastos/gastos.service';
 import { ConfiguracionService } from '../configuracion/configuracion.service';
 import { CreatePagoDto } from './dto/create-pago.dto';
 import { UpdatePagoDto } from './dto/update-pago.dto';
 import { fechaAMesString, finDeMes, mesCerrado, mesStringAFecha, primerDiaMes, ultimosMesesCerrados } from '../common/fecha.util';
+import { montoRegularEstimadoDelMes } from '../common/monto-regular-mes.util';
 
 export type EstadoCobro = 'PAGADO' | 'PENDIENTE' | 'IMPAGO' | 'NO_CORRESPONDE';
 
@@ -18,6 +20,7 @@ export class CobrosService {
     private readonly prisma: PrismaService,
     private readonly propiedadesService: PropiedadesService,
     private readonly cajaService: CajaService,
+    private readonly gastosService: GastosService,
     private readonly configuracionService: ConfiguracionService,
   ) {}
 
@@ -59,8 +62,39 @@ export class CobrosService {
     return mesCerrado(mes) ? 'IMPAGO' : 'PENDIENTE';
   }
 
+  // "Esperado" de un mes sin factura emitida todavía — alquiler + servicios
+  // + gastos trasladados, estimados con los últimos montos conocidos (ver
+  // el comentario de montoRegularEstimadoDelMes()), MÁS la deuda arrastrada
+  // de meses anteriores (`deudaAcumulada()`, mismo criterio que usa
+  // `FacturasService.itemsPredeterminados()` para sugerir el ítem "Deuda
+  // arrastrada" al abrir "Emitir factura"). Sin esto, si el inquilino
+  // arrastra un mes impago, "Esperado" mostraba un número (solo lo nuevo de
+  // este mes) y al emitir la factura con los ítems sugeridos el total daba
+  // otro completamente distinto (con la deuda ya incluida) — reportado por
+  // el usuario 2026-09-02 con "depto lukens" ($1.731.230,56 vs.
+  // $2.231.230,56 con $500.000 de deuda arrastrada de agosto). Si el mes YA
+  // tiene factura, resumenMes() usa `Factura.total` directamente (más
+  // preciso, refleja cualquier edición manual) en vez de llamar a esto —
+  // ese total YA incluye la deuda arrastrada si se aceptó el ítem sugerido
+  // al emitir, así que sumarla dos veces ahí sí sería un error.
+  private async esperadoEstimado(propiedadId: string, mesStr: string): Promise<number | null> {
+    const base = await montoRegularEstimadoDelMes(
+      this.prisma,
+      this.propiedadesService,
+      this.gastosService,
+      propiedadId,
+      mesStr,
+    );
+    if (base == null) return null;
+    const { deuda } = await this.deudaAcumulada(propiedadId, mesStringAFecha(mesStr));
+    return base + deuda;
+  }
+
   // §2.2 / §3.1: tabla "Cobros del mes" — esperado, cobrado, estado y pagos
-  // por cada propiedad alquilada con inquilino.
+  // por cada propiedad alquilada con inquilino. "Esperado" pedido del
+  // usuario 2026-08-29: antes era solo el alquiler (`rentaVigente`); ahora
+  // incluye los servicios/gastos que van en la factura (o el total real si
+  // ya se emitió).
   async resumenMes(mesStr: string) {
     const mes = mesStringAFecha(mesStr);
     const propiedades = await this.propiedadesAlquiladas();
@@ -69,10 +103,14 @@ export class CobrosService {
       propiedades.map(async (p) => {
         const alDiaDesde = p.inquilino?.alDiaDesde ?? null;
         const antesDeAlDia = !!alDiaDesde && mes.getTime() < alDiaDesde.getTime();
-        const esperadoRaw = antesDeAlDia
-          ? null
-          : await this.propiedadesService.rentaVigente(p.id, finDeMes(mes));
-        const esperado = esperadoRaw != null ? Number(esperadoRaw) : null;
+        let esperado: number | null = null;
+        if (!antesDeAlDia) {
+          const facturaExistente = await this.prisma.factura.findUnique({
+            where: { propiedadId_mes: { propiedadId: p.id, mes } },
+            select: { total: true },
+          });
+          esperado = facturaExistente ? Number(facturaExistente.total) : await this.esperadoEstimado(p.id, mesStr);
+        }
         // `cobrado` se calcula del propio listado de pagos de abajo (mismo
         // where que tenía el `aggregate` separado que había acá antes) —
         // evita un segundo round-trip a la misma tabla con el mismo filtro.

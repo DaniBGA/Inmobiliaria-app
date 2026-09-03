@@ -48,6 +48,15 @@ export function mesActualStr(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+// Mismo criterio que `FacturasService.calcularMora()` en el backend
+// (`facturas.service.ts`): el vencimiento de un mes es el día
+// `diaVencimientoAlquiler` (Configuración) de ESE mes, no del siguiente —
+// se replica acá para mostrarlo en el comprobante sin pedirlo a la API.
+export function fechaVencimientoAlquiler(mesStr: string, diaVencimientoAlquiler: number): Date {
+  const [anio, mes] = mesStr.split('-').map(Number);
+  return new Date(Date.UTC(anio, mes - 1, diaVencimientoAlquiler));
+}
+
 export function sumarMesesStr(mesStr: string, delta: number): string {
   const [anio, mes] = mesStr.split('-').map(Number);
   const d = new Date(Date.UTC(anio, mes - 1 + delta, 1));

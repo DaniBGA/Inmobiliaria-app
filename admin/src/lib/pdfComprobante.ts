@@ -6,15 +6,20 @@ import html2canvas from 'html2canvas';
 // para @media print — y dispara la descarga en el navegador.
 //
 // html2canvas rasteriza el nodo tal cual está en pantalla (no evalúa
-// `@media print`), así que el membrete/marca de agua/matrícula/pie —
-// ocultos con `display:none` fuera de @media print — no aparecerían solos.
-// Para no flashear el membrete en el modal real mientras se genera el PDF,
-// se clona el nodo fuera de pantalla y se fuerza la visibilidad SOLO en el
-// clon. Además, la matrícula y el pie usan `position:fixed` en
-// `@media print` (pensado para pegarse al borde de la hoja física real) —
-// eso no tiene sentido capturando un nodo suelto con html2canvas, así que
-// acá se posicionan `absolute` relativos a `.comprobante` (o, en el caso
-// del pie, en el flujo normal después del contenido) en vez de fixed.
+// `@media print`), así que el membrete/marca de agua/pie — ocultos con
+// `display:none` fuera de @media print — no aparecerían solos. Para no
+// flashear el membrete en el modal real mientras se genera el PDF, se
+// clona el nodo fuera de pantalla y se fuerza la visibilidad SOLO en el
+// clon. El resto del estilo (colores/bordes/tipografía de
+// `.comp-*`/`.liqcard`/`.liqline`) vive en reglas normales de
+// `global.css` que NO dependen de `@media print` — esas sí las agarra
+// html2canvas solo con forzar el `display`. Lo único que además hay que
+// resolver acá a mano es el `position:fixed` que usan `.comp-marcaagua` y
+// `.comp-pie` en `@media print` (pensado para pegarse al borde de la hoja
+// física real) — no tiene sentido capturando un nodo suelto con
+// html2canvas, así que acá se posicionan `absolute` relativos a
+// `.comprobante` (o, en el caso del pie, en el flujo normal después del
+// contenido) en vez de fixed.
 export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: string): Promise<void> {
   const clon = nodo.cloneNode(true) as HTMLElement;
   clon.style.position = 'fixed';
@@ -38,55 +43,19 @@ export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: 
       zIndex: '0',
     });
   }
-  const matricula = clon.querySelector<HTMLElement>('.comp-matricula');
-  if (matricula) {
-    Object.assign(matricula.style, {
-      display: 'block',
-      position: 'absolute',
-      right: '10px',
-      top: '50%',
-      transform: 'translateY(-50%) rotate(180deg)',
-      writingMode: 'vertical-rl',
-      fontSize: '9px',
-      letterSpacing: '.5px',
-      color: '#9CA3AF',
-    });
-  }
+  // Solo se fuerza acá lo que de verdad depende de `@media print` (el
+  // `display` del membrete/pie, ocultos por default fuera de esa media
+  // query, y el `position:fixed` del pie que no tiene sentido en un nodo
+  // suelto) — colores, bordes, tipografía y el tamaño de los logos ya
+  // vienen de reglas normales de `global.css` (ver comentario arriba).
   const membrete = clon.querySelector<HTMLElement>('.comp-membrete');
   if (membrete) {
-    Object.assign(membrete.style, {
-      display: 'flex',
-      alignItems: 'flex-end',
-      gap: '18px',
-      borderBottom: '2px solid #111827',
-      paddingBottom: '10px',
-      marginBottom: '18px',
-      position: 'relative',
-      zIndex: '1',
-    });
+    Object.assign(membrete.style, { display: 'flex', position: 'relative', zIndex: '1' });
   }
   const pie = clon.querySelector<HTMLElement>('.comp-pie');
   if (pie) {
-    Object.assign(pie.style, {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '14px',
-      borderTop: '2px solid #111827',
-      marginTop: '40px',
-      paddingTop: '10px',
-      fontSize: '9.5px',
-      position: 'relative',
-      zIndex: '1',
-    });
+    Object.assign(pie.style, { display: 'flex', marginTop: '40px', position: 'relative', zIndex: '1' });
   }
-  // El tamaño de estos dos logos también vive solo dentro de `@media
-  // print` — sin este ajuste, el `<img>` clonado no tiene ninguna otra
-  // regla que lo achique y se renderiza a su tamaño nativo (1088×414px),
-  // desbordando toda la página.
-  const logoMembrete = clon.querySelector<HTMLElement>('.comp-logo');
-  if (logoMembrete) Object.assign(logoMembrete.style, { height: '52px', width: 'auto', display: 'block' });
-  const logoPie = clon.querySelector<HTMLElement>('.comp-pielogo');
-  if (logoPie) Object.assign(logoPie.style, { height: '26px', width: 'auto', display: 'block' });
 
   const cuerpo = clon.querySelector<HTMLElement>('.liqcard');
   if (cuerpo) {

@@ -1,11 +1,12 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { DestinoGasto, Prisma, PunitorioFrecuencia, PunitorioTipo, ServicioFacturable } from '@prisma/client';
+import { DestinoGasto, Prisma, PunitorioFrecuencia, PunitorioTipo } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PropiedadesService } from '../propiedades/propiedades.service';
 import { GastosService } from '../gastos/gastos.service';
 import { CobrosService } from '../cobros/cobros.service';
 import { ConfiguracionService } from '../configuracion/configuracion.service';
 import { finDeMes, mesStringAFecha, sumarMeses } from '../common/fecha.util';
+import { SERVICIO_DESCRIPCION, SERVICIO_ORDEN, datosCuentaSuffix } from '../common/servicios-facturables.util';
 import { FacturaItemInputDto } from './dto/factura-item-input.dto';
 
 export interface ItemPredeterminado {
@@ -24,68 +25,6 @@ export class FacturasService {
     private readonly cobrosService: CobrosService,
     private readonly configuracionService: ConfiguracionService,
   ) {}
-
-  // Servicios trasladables (§3.5) — a qué descripción de ítem corresponde
-  // cada uno. Un servicio que la propiedad no tiene habilitado
-  // (Propiedad.serviciosHabilitados) no se ofrece al abrir la factura.
-  private static readonly SERVICIO_DESCRIPCION: Record<ServicioFacturable, string> = {
-    EXPENSAS: 'Expensas del mes',
-    USINA: 'Usina',
-    CAMUZZI: 'Camuzzi',
-    OBRAS_SANITARIAS: 'Obras Sanitarias',
-    RETRIBUTIVAS: 'Retributivas de Servicios',
-    CLOACAS: 'Cloacas',
-    GAS_ENVASADO: 'Gas envasado',
-    SISTEMA_BIODIGESTOR: 'Sistema biodigestor',
-  };
-
-  // Orden canónico en la factura, sin importar el orden en que se
-  // tildaron los checkboxes al cargar/editar la propiedad.
-  private static readonly SERVICIO_ORDEN: ServicioFacturable[] = [
-    ServicioFacturable.EXPENSAS,
-    ServicioFacturable.USINA,
-    ServicioFacturable.CAMUZZI,
-    ServicioFacturable.OBRAS_SANITARIAS,
-    ServicioFacturable.RETRIBUTIVAS,
-    ServicioFacturable.CLOACAS,
-    ServicioFacturable.GAS_ENVASADO,
-    ServicioFacturable.SISTEMA_BIODIGESTOR,
-  ];
-
-  // Datos fijos de cuenta (ver comentario en schema.prisma) para los
-  // servicios que los tienen — se agregan a la descripción del ítem
-  // predeterminado para que queden reflejados en la factura sin tener que
-  // volver a tipearlos cada mes. Usina lleva usuario + N° de control;
-  // Obras Sanitarias, Camuzzi y Retributivas de Servicios solo N° de cuenta
-  // (pedido del usuario 2026-08-15: antes era al revés, Obras Sanitarias
-  // llevaba usuario y Usina solo N° de cuenta).
-  private static datosCuentaSuffix(
-    servicio: ServicioFacturable,
-    propiedad: {
-      obrasSanitariasNumeroCuenta: string | null;
-      camuzziNumeroCuenta: string | null;
-      retributivasNumeroCuenta: string | null;
-      usinaNumeroCuenta: string | null;
-      usinaUsuario: string | null;
-    },
-  ): string {
-    if (servicio === ServicioFacturable.USINA) {
-      const partes: string[] = [];
-      if (propiedad.usinaUsuario) partes.push(`Usuario ${propiedad.usinaUsuario}`);
-      if (propiedad.usinaNumeroCuenta) partes.push(`N° de control ${propiedad.usinaNumeroCuenta}`);
-      return partes.length ? ` (${partes.join(' - ')})` : '';
-    }
-    if (servicio === ServicioFacturable.OBRAS_SANITARIAS && propiedad.obrasSanitariasNumeroCuenta) {
-      return ` (N° cuenta ${propiedad.obrasSanitariasNumeroCuenta})`;
-    }
-    if (servicio === ServicioFacturable.CAMUZZI && propiedad.camuzziNumeroCuenta) {
-      return ` (N° cuenta ${propiedad.camuzziNumeroCuenta})`;
-    }
-    if (servicio === ServicioFacturable.RETRIBUTIVAS && propiedad.retributivasNumeroCuenta) {
-      return ` (N° cuenta ${propiedad.retributivasNumeroCuenta})`;
-    }
-    return '';
-  }
 
   // §3.5: ítems predeterminados con los que se abre la factura (o la
   // liquidación, ver §3.4) — reusado también por Recibo cuando no hay
@@ -129,10 +68,10 @@ export class FacturasService {
     const items: ItemPredeterminado[] = [
       { descripcion: 'Alquiler', monto: rentaVigenteRaw != null ? Number(rentaVigenteRaw) : 0, orden: 0 },
     ];
-    const serviciosOrdenados = FacturasService.SERVICIO_ORDEN.filter((s) => propiedad.serviciosHabilitados.includes(s));
+    const serviciosOrdenados = SERVICIO_ORDEN.filter((s) => propiedad.serviciosHabilitados.includes(s));
     serviciosOrdenados.forEach((servicio, i) => {
-      const base = FacturasService.SERVICIO_DESCRIPCION[servicio];
-      const descripcion = base + FacturasService.datosCuentaSuffix(servicio, propiedad);
+      const base = SERVICIO_DESCRIPCION[servicio];
+      const descripcion = base + datosCuentaSuffix(servicio, propiedad);
       // Coincidencia exacta primero (el caso normal: la cuenta no cambió de
       // un mes a otro); si no hay, se busca por la descripción base sin el
       // sufijo de cuenta — cubre el mes en que se carga o cambia el N° de
@@ -205,7 +144,7 @@ export class FacturasService {
 
   private static esItemEspecial(descripcion: string): boolean {
     if (FacturasService.ETIQUETAS_ESPECIALES.includes(descripcion)) return true;
-    return Object.values(FacturasService.SERVICIO_DESCRIPCION).some(
+    return Object.values(SERVICIO_DESCRIPCION).some(
       (base) => descripcion === base || descripcion.startsWith(`${base} (`),
     );
   }

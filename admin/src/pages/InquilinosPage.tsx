@@ -68,6 +68,8 @@ interface PropiedadDb extends PropiedadParaAlquilar {
   designado: { nombre: string } | null;
   honorariosAdministracion: boolean;
   honorariosAdministracionPorcentaje: string | number | null;
+  contratoInicio: string | null;
+  contratoFin: string | null;
 }
 
 const TIPO_LABEL: Record<string, string> = {
@@ -408,6 +410,9 @@ export function InquilinosPage() {
         <FacturaModal
           propiedadId={facturaDe.propiedadId}
           propiedadNombre={facturaDe.propiedadNombre}
+          direccion={propiedadFacturaDe?.direccion}
+          contratoInicio={propiedadFacturaDe?.contratoInicio}
+          contratoFin={propiedadFacturaDe?.contratoFin}
           inquilino={facturaDe.inquilino}
           honorariosAdministracionActual={propiedadFacturaDe?.honorariosAdministracion ?? false}
           honorariosAdministracionPorcentajeActual={propiedadFacturaDe?.honorariosAdministracionPorcentaje ?? null}

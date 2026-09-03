@@ -12,6 +12,7 @@ import { splitDescripcionCuenta, combinarDescripcionCuenta, esServicioConCuenta 
 import { SeccionGuia } from '../components/SeccionGuia';
 
 interface Configuracion {
+  empresaNombre: string;
   empresaDireccion: string;
   empresaContacto: string;
   publicoMatricula: string;
@@ -616,7 +617,7 @@ function LiquidacionModal({
 
       {L && (
         <>
-          <ComprobanteImpreso cfg={cfg} ref={comprobanteRef}>
+          <ComprobanteImpreso cfg={cfg} titulo="Liquidación de Alquiler" ref={comprobanteRef}>
             <LiquidacionComprobanteBody propietarioNombre={propietario.nombre} mesTexto={mesLabel(mes)} L={L} />
           </ComprobanteImpreso>
           <div className="btnrow noprint">

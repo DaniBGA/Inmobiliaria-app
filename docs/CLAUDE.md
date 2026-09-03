@@ -131,9 +131,12 @@ Antes de asumir cómo funciona algo, leer en este orden:
     (`admin/src/lib/pdfComprobante.ts::descargarPdfComprobante()`) —
     clona el nodo `.comprobante`, fuerza visible el membrete (que fuera
     de `@media print` está oculto) y convierte los elementos
-    `position:fixed` del print (marca de agua, matrícula, pie) a
-    posicionamiento absoluto/normal porque html2canvas rasteriza tal cual
-    está en pantalla, sin paginación real.
+    `position:fixed` del print (marca de agua, pie) a posicionamiento
+    absoluto/normal porque html2canvas rasteriza tal cual está en
+    pantalla, sin paginación real. El resto del estilo del comprobante
+    (colores/bordes/tipografía de `.comp-*`/`.liqcard`/`.liqline`) vive en
+    reglas normales fuera de `@media print` justamente para que
+    html2canvas también las agarre sin tener que duplicarlas a mano acá.
 
 ### Módulos backend (`app/api/src/*`)
 

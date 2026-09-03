@@ -6,11 +6,12 @@ import { useConfiguracion } from '../hooks/useConfiguracion';
 import { useEnviarComprobantePorWhatsapp } from '../hooks/useEnviarComprobantePorWhatsapp';
 import { ESTADO_VENTA_LABEL, ESTADO_VENTA_CLASE, type EstadoVenta } from '../lib/ventaEnums';
 import { Modal } from './Modal';
-import { formatMoney, formatUsd, formatDate, mesActualStr, mesLabel, parseMontoArgentino } from '../lib/format';
+import { formatMoney, formatUsd, formatDate, mesActualStr, mesLabel, parseMontoArgentino, fechaVencimientoAlquiler } from '../lib/format';
 import { resolverPorcentajeHonorariosAdministracion, type TipoHonorarios } from '../lib/honorarios';
 import { FotosPropiedad, type FotoPropiedadItem } from './FotosPropiedad';
 import { FotoHeroPropiedad } from './FotoHeroPropiedad';
 import { ComprobanteImpreso } from './ComprobanteImpreso';
+import { ComprobanteInfoBox } from './ComprobanteInfoBox';
 import { ServiciosCuentaInputs, SERVICIOS_OPCIONES, type ServicioFacturable } from './ServiciosCuentaInputs';
 import { splitDescripcionCuenta, combinarDescripcionCuenta, esServicioConCuenta } from '../lib/itemServicioCuenta';
 
@@ -987,6 +988,9 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
         <FacturaModal
           propiedadId={p.id}
           propiedadNombre={p.nombre}
+          direccion={p.direccion}
+          contratoInicio={p.contratoInicio}
+          contratoFin={p.contratoFin}
           inquilino={p.inquilino}
           honorariosAdministracionActual={p.honorariosAdministracion}
           honorariosAdministracionPorcentajeActual={p.honorariosAdministracionPorcentaje}
@@ -997,6 +1001,10 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
         <ReciboModal
           propiedadId={p.id}
           propiedadNombre={p.nombre}
+          direccion={p.direccion}
+          contratoInicio={p.contratoInicio}
+          contratoFin={p.contratoFin}
+          inquilino={p.inquilino}
           onClose={() => setReciboModal(false)}
           onEmitido={() => qc.invalidateQueries({ queryKey: ['caja'] })}
         />
@@ -1549,6 +1557,9 @@ interface ItemEditable {
 export function FacturaModal({
   propiedadId,
   propiedadNombre,
+  direccion,
+  contratoInicio,
+  contratoFin,
   inquilino,
   honorariosAdministracionActual,
   honorariosAdministracionPorcentajeActual,
@@ -1557,6 +1568,14 @@ export function FacturaModal({
 }: {
   propiedadId: string;
   propiedadNombre: string;
+  // Opcionales (pedido del usuario 2026-09-02: caja de datos "tal cual el
+  // PDF" con Propiedad/Inicio-Fin de contrato) — no todos los callers los
+  // tienen a mano (ver `InquilinosPage.tsx`, que solo trae `propiedadNombre`
+  // de `FilaCobro`), así que si faltan la caja simplemente no muestra esa
+  // línea en vez de romper.
+  direccion?: string;
+  contratoInicio?: string | null;
+  contratoFin?: string | null;
   // Estructural (no el `Inquilino` completo de la ficha) — esta modal solo
   // necesita nombre/teléfono, así que también se puede abrir desde
   // "Inquilinos y Cobros", que no trae `numero`/`alDiaDesde`.
@@ -1898,7 +1917,24 @@ export function FacturaModal({
 
       {F && (
         <>
-          <ComprobanteImpreso cfg={cfg} ocultarMatricula ref={comprobanteRef}>
+          <ComprobanteImpreso cfg={cfg} titulo="Factura" ref={comprobanteRef}>
+            <ComprobanteInfoBox
+              izquierda={[
+                { label: 'Nombre Inquilino', valor: inquilino?.nombre ?? '—' },
+                { label: 'Propiedad en Locación', valor: direccion || propiedadNombre },
+                { label: 'Inicio de Contrato', valor: formatDate(contratoInicio) },
+                { label: 'Finalización de Contrato', valor: formatDate(contratoFin) },
+              ]}
+              derecha={[
+                { label: 'Número de Factura', valor: String(F.numero) },
+                { label: 'Periodo', valor: mesLabel(mes) },
+                {
+                  label: 'Fecha de Vencimiento',
+                  valor: cfg ? formatDate(fechaVencimientoAlquiler(mes, cfg.diaVencimientoAlquiler)) : '—',
+                },
+              ]}
+            />
+            <div className="comp-detalletitulo">Detalle de Factura</div>
             <div className="liqcard" style={{ boxShadow: 'none' }}>
               <div className="liqhead">
                 <div>
@@ -1947,11 +1983,19 @@ export function FacturaModal({
 function ReciboModal({
   propiedadId,
   propiedadNombre,
+  direccion,
+  contratoInicio,
+  contratoFin,
+  inquilino,
   onClose,
   onEmitido,
 }: {
   propiedadId: string;
   propiedadNombre: string;
+  direccion?: string;
+  contratoInicio?: string | null;
+  contratoFin?: string | null;
+  inquilino?: { nombre: string } | null;
   onClose: () => void;
   onEmitido: () => void;
 }) {
@@ -1982,7 +2026,21 @@ function ReciboModal({
       )}
       {R && (
         <>
-          <ComprobanteImpreso cfg={cfg}>
+          <ComprobanteImpreso cfg={cfg} titulo="Recibo">
+            <ComprobanteInfoBox
+              izquierda={[
+                { label: 'Nombre Inquilino', valor: inquilino?.nombre ?? '—' },
+                { label: 'Propiedad en Locación', valor: direccion || propiedadNombre },
+                { label: 'Inicio de Contrato', valor: formatDate(contratoInicio) },
+                { label: 'Finalización de Contrato', valor: formatDate(contratoFin) },
+              ]}
+              derecha={[
+                { label: 'Número de Recibo', valor: String(R.numero) },
+                { label: 'Periodo', valor: mesLabel(mes) },
+                { label: 'Fecha de Emisión', valor: formatDate(new Date()) },
+              ]}
+            />
+            <div className="comp-detalletitulo">Detalle de Recibo</div>
             <div className="liqcard" style={{ boxShadow: 'none' }}>
               <div className="liqhead">
                 <div>

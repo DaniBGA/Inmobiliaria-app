@@ -674,12 +674,75 @@ textarea.avmsg:focus{outline:2px solid var(--indigo);border-color:transparent;ba
   .calev{font-size:8px;padding:1px 3px;border-radius:4px}
 }
 
-/* Elementos que solo existen para el papel (membrete/marca de agua/matrícula
-   del comprobante impreso) — ocultos en pantalla; @media print más abajo los
+/* Elementos que solo existen para el papel (membrete/marca de agua del
+   comprobante impreso) — ocultos en pantalla; @media print más abajo los
    reabre. Tiene que ir ANTES del bloque @media print: a igual especificidad
    gana la regla que aparece después en el archivo, y solo se quiere que la
    de `display:none` gane en pantalla (donde @media print no aplica). */
 .printonly{display:none}
+
+/* Estilo visual del comprobante impreso (Factura/Liquidación de
+   Alquiler/Recibo) — colores, tipografía y cajas (pedido del usuario
+   2026-09-02, en base al boceto histórico en papel; sin matrícula/N° de
+   colegiado, que se sacó de los tres comprobantes). A propósito FUERA de
+   `@media print`: `lib/pdfComprobante.ts` clona el nodo `.comprobante` y lo
+   rasteriza con html2canvas para el botón de WhatsApp — html2canvas no
+   evalúa `@media print`, así que cualquier estilo que viviera solo ahí no
+   aparecería en ese PDF. No hay conflicto con `.printonly{display:none}` de
+   arriba porque acá abajo nunca se toca `display` de un elemento
+   `printonly` (eso sigue resuelto solo por el toggle de arriba/@media
+   print); lo único que de verdad depende de estar paginando una hoja física
+   (display, position:fixed, tamaño de página, saltos de hoja) se queda dentro
+   de `@media print`, reimplementado a mano en `pdfComprobante.ts` para el
+   clon. Colores tomados directo del membrete oficial (PDF de liquidación):
+   el azul marino de la marca no es ninguno de los grises/tintas que ya usa
+   el resto del panel, así que va aparte en vez de reusar `--ink`/`--muted`. */
+.comp-membrete{align-items:flex-end;gap:18px;border-bottom:1.5px solid #1C4066;padding-bottom:10px;margin-bottom:18px}
+.comp-logo{height:52px;width:auto}
+.comp-datos{font-size:10.5px;line-height:1.7;color:#767676}
+.comp-direccion{color:#767676;font-weight:400}
+.comp-contacto{color:#767676}
+/* Título del documento, a la derecha del membrete (el spacer `flex:1` entre
+   `.comp-datos` y `.comp-titulo` en `ComprobanteImpreso.tsx` es lo que lo
+   empuja ahí). */
+.comp-titulo{font-size:20px;font-weight:800;color:#1C4066;text-align:right}
+
+.comp-pie{flex-direction:column;gap:8px}
+.comp-condiciones{font-size:8.5px;line-height:1.4;color:#767676}
+.comp-pierow{display:flex;align-items:center;gap:14px;border-top:1.5px solid #1C4066;border-bottom:1.5px solid #1C4066;padding:10px 0;font-size:9.5px}
+.comp-pielogo{height:26px;width:auto}
+.comp-piedireccion{flex:1;text-align:center;font-weight:700;color:#1C4066}
+.comp-piecontacto{color:#1C4066;text-align:right;font-weight:700}
+
+/* Caja de datos (`ComprobanteInfoBox.tsx`): mismo recuadro redondeado del
+   boceto arriba de "Detalle de Liquidación", dos columnas rótulo/valor. */
+.comp-infobox{display:flex;gap:28px;border:2px solid #1C4066;border-radius:14px;padding:16px 22px;margin-bottom:18px}
+.comp-infocol{flex:1;display:flex;flex-direction:column;gap:7px;min-width:0}
+.comp-infofila{font-size:11.5px;color:var(--ink2);line-height:1.4}
+.comp-infofila b{color:#1C4066;font-weight:700;margin-right:3px}
+
+/* Título de sección ("Detalle de Factura/Recibo/Liquidación"), igual que
+   el boceto arriba de la tabla de conceptos. */
+.comp-detalletitulo{font-size:15px;font-weight:800;color:#1C4066;margin-bottom:10px}
+
+/* Caja del comprobante: borde MÁS GRUESO y en el azul de marca (pedido del
+   usuario 2026-09-02: "un reborde más grueso y azul no negro"), esquinas
+   redondeadas, ítems como renglones recuadrados — mismo criterio visual
+   del boceto histórico en papel ("Detalle de Liquidación" con cada
+   concepto en su propio recuadro). Scopeado a `.comprobante` para no
+   afectar el `.liqcard`/`.liqline` que se usa en pantalla en otras partes
+   del panel (ej. la vista previa editable de Liquidación, que no pasa por
+   acá). No depende de `@media print` (no hay nada que ocultar en
+   pantalla): estas clases no son `printonly`, ya se ven en el modal antes
+   de imprimir, así que directamente se les da este estilo siempre. */
+.comprobante .liqcard{border:2px solid #1C4066;border-radius:12px;overflow:hidden}
+.comprobante .liqhead{background:#F4F7FA;border-bottom:2px solid #1C4066;padding:16px 20px}
+.comprobante .liqhead h4{color:#1C4066;font-size:16px}
+.comprobante .liqhead .lnet span{color:#1C4066;font-size:19px}
+.comprobante .liqbody{padding:14px 20px 16px}
+.comprobante .liqline{border:2px solid #1C4066;border-radius:6px;padding:9px 14px;margin-bottom:8px}
+.comprobante .liqline:last-child{margin-bottom:0}
+.comprobante .liqline.tot{background:#F4F7FA;font-weight:800}
 
 /* Impresión: el boceto imprimía un documento aparte (#printInvoice); acá no
    hay generación de PDF todavía (pendiente de una fase posterior), así que
@@ -720,21 +783,15 @@ textarea.avmsg:focus{outline:2px solid var(--indigo);border-color:transparent;ba
   /* Membrete de la inmobiliaria (§2.10): solo se arma para el papel — en
      pantalla el modal muestra nada más el detalle, sin membrete. Logo y
      datos de contacto en `printonly`, ocultos por default (ver regla
-     general más abajo). */
+     general más arriba). */
   .comprobante{position:relative}
-  /* `.printonly` está oculto siempre (regla general más abajo); acá adentro
+  /* `.printonly` está oculto siempre (regla general más arriba); acá adentro
      de @media print se reabre, y cada clase de membrete pisa el `display`
-     genérico con el que le corresponde (bloque, o flex para las filas). */
+     genérico con el que le corresponde (bloque, o flex para las filas). El
+     resto del estilo (colores/bordes/tipografía) vive fuera de este bloque,
+     ver comentario más arriba. */
   .printonly{display:block}
-  /* Colores tomados directo del membrete oficial (PDF de liquidación) —
-     el azul marino de la marca ("Facundo París", pie, matrícula, líneas)
-     no es ninguno de los grises/tintas que ya usa el resto del panel, así
-     que va aparte en vez de reusar `--ink`/`--muted`. */
-  .comp-membrete{display:flex;align-items:flex-end;gap:18px;border-bottom:1.5px solid #1C4066;padding-bottom:10px;margin-bottom:18px}
-  .comp-logo{height:52px;width:auto}
-  .comp-datos{font-size:10.5px;line-height:1.7;color:#767676}
-  .comp-direccion{color:#767676;font-weight:400}
-  .comp-contacto{color:#767676}
+  .comp-membrete{display:flex}
 
   /* Marca de agua (§2.10): el isotipo solo, bien grande y casi invisible,
      detrás del contenido — nunca a suficiente opacidad como para competir
@@ -742,18 +799,11 @@ textarea.avmsg:focus{outline:2px solid var(--indigo);border-color:transparent;ba
   .comp-marcaagua{position:fixed;left:-140px;top:50%;transform:translateY(-50%);width:600px;opacity:.045;z-index:0}
   .comp-membrete,.liqcard{position:relative;z-index:1}
 
-  /* Matrícula: franja vertical fija sobre el margen derecho de la hoja. */
-  .comp-matricula{position:fixed;right:10px;top:50%;transform:translateY(-50%) rotate(180deg);writing-mode:vertical-rl;font-size:9px;letter-spacing:.5px;color:#1C4066}
-
   /* `position:fixed` (no `margin-top` fluyendo con el contenido): en la
      hoja de referencia el pie queda pegado al borde inferior de la página
      con el resto en blanco, no inmediatamente debajo del último ítem
-     facturado — mismo criterio ya usado para `.comp-matricula`. Dos líneas
-     (arriba y abajo del renglón), igual que el membrete original. */
-  .comp-pie{position:fixed;left:34px;right:34px;bottom:24px;display:flex;align-items:center;gap:14px;border-top:1.5px solid #1C4066;border-bottom:1.5px solid #1C4066;padding:10px 0;font-size:9.5px;break-inside:avoid;page-break-inside:avoid}
-  .comp-pielogo{height:26px;width:auto}
-  .comp-piedireccion{flex:1;text-align:center;font-weight:700;color:#1C4066}
-  .comp-piecontacto{color:#1C4066;text-align:right;font-weight:700}
+     facturado. */
+  .comp-pie{position:fixed;left:34px;right:34px;bottom:24px;display:flex;break-inside:avoid;page-break-inside:avoid}
 
   /* Comprobantes largos (muchas propiedades en una liquidación, muchos
      ítems en una factura) pueden partirse en varias hojas — que la hoja

@@ -3543,6 +3543,218 @@ por las dudas; índices de DB — ya están todos los que hacían falta
 encontrados esta vez eran todos de fan-out de queries en el código, no de
 índices faltantes.
 
+## 2026-09-02 — "Esperado" de Cobros del mes incluye servicios, no solo alquiler
+
+Pedido del usuario: en el panel "Cobros del mes" (Inquilinos y Cobros), la
+columna ESPERADO mostraba solo `rentaVigente()` (el alquiler puro) — el
+usuario quería que sea "el precio junto con los servicios de la factura".
+
+- [x] **`CobrosService.resumenMes()`** (`cobros.service.ts`) — para cada
+      propiedad, si el mes YA tiene una `Factura` emitida usa
+      `Factura.total` directamente (más preciso: refleja cualquier ítem
+      editado a mano antes de emitir). Si todavía no hay factura, usa la
+      nueva `montoRegularEstimadoDelMes()` — una estimación de alquiler +
+      servicios habilitados (con el último monto conocido, misma lógica
+      que ofrece la factura al abrirla) + gastos trasladados al inquilino
+      ese mes. A propósito NO incluye deuda arrastrada ni mora: son "lo
+      que se arrastra de antes", no "lo que corresponde a este mes", y ya
+      se reflejan aparte en "Pendiente"/`deudaAcumulada()`. Si no hay
+      `rentaVigente` configurada, sigue devolviendo `null` (estado
+      "NO_CORRESPONDE"), igual que antes.
+- [x] **Dependencia circular evitada**: `FacturasService.itemsPredeterminados()`
+      ya depende de `CobrosService` (para deuda/mora) — si `CobrosService`
+      importara `FacturasService` de vuelta para reusar esa lógica, sería
+      un ciclo real de módulos NestJS. Se resolvió sacando
+      `SERVICIO_DESCRIPCION`/`SERVICIO_ORDEN`/`datosCuentaSuffix` de
+      `facturas.service.ts` a un archivo neutral,
+      `common/servicios-facturables.util.ts` (sin importar ningún
+      service), y la nueva estimación vive en
+      `common/monto-regular-mes.util.ts` (función pura, recibe los
+      services como parámetros en vez de inyectarlos) — reusa esas mismas
+      constantes sin que `cobros.service.ts` necesite importar
+      `facturas.service.ts` en absoluto. `CobrosModule` suma
+      `GastosModule` a sus imports (necesario para `gastosTrasladados`).
+      **Ojo con este patrón a futuro**: un primer intento (mover las
+      constantes a un const exportado de `facturas.service.ts` en vez de
+      a un archivo aparte) compilaba bien con `tsc` pero rompía el
+      arranque real de Nest ("Nest encountered an undefined dependency")
+      porque cerraba un import circular entre archivos
+      (`cobros.service.ts` → el nuevo util → `facturas.service.ts` →
+      `cobros.service.ts`) — `tsc --noEmit` no lo detecta, hace falta
+      levantar el server para verlo.
+      Verificado con curl: "depto lukens" pasó de $500.000 (solo
+      alquiler) a $1.731.230,56 (alquiler + Expensas + Usina, sin la
+      deuda arrastrada de $500.000 que sigue aparte) — suma exacta contra
+      `GET /facturacion/propiedades/:id/items-predeterminados`. Emitida
+      una factura de prueba con un ítem manual sobre una propiedad TEST →
+      `esperado` pasó a usar `Factura.total` en vez de la estimación,
+      confirmando la prioridad correcta → factura de prueba borrada
+      después (**nota**: como emitir consume el correlativo global de
+      `Configuracion.proximoNumeroFactura`, el número de factura de
+      prueba queda "hueco" en la numeración real, mismo trade-off ya
+      documentado para cualquier emisión de prueba).
+
+## 2026-09-02 — Rediseño del comprobante impreso (Factura/Liquidación/Recibo) + matrícula eliminada
+
+Pedido del usuario: que Factura (inquilino) y Liquidación (propietario)
+tengan el diseño de un boceto histórico en papel ("Liquidación de
+Alquiler" con caja de datos, tabla de conceptos recuadrada y pie con
+condiciones de pago), pero sin el "Mat. 1826 T°VII F°117" vertical del
+margen derecho. Se optó por aplicar solo el estilo visual (no se agregaron
+campos nuevos como Inicio/Fin de contrato — esos no existían en Factura y
+el usuario prefirió no sumarlos) y por agregar el párrafo de condiciones
+de pago en los dos documentos (no solo en Factura).
+
+- [x] **Matrícula eliminada de los tres comprobantes** (antes se mostraba
+      en Liquidación y se ocultaba solo en Factura vía la prop
+      `ocultarMatricula`) — `ComprobanteImpreso.tsx` ya no la renderiza en
+      absoluto; se sacó `ocultarMatricula` y `publicoMatricula` de la
+      interfaz `DatosComprobante`. El campo `Configuracion.publicoMatricula`
+      sigue existiendo (se sigue pudiendo editar en Configuración — lo usa
+      la landing pública), solo dejó de imprimirse acá.
+- [x] **Título del documento**: `ComprobanteImpreso` ahora recibe un prop
+      `titulo` obligatorio, mostrado grande en navy junto al logo del
+      membrete (`.comp-titulo`) — cada caller pasa el suyo: "Factura"
+      (`PropiedadFichaDrawer.tsx`, modal de Factura), "Recibo" (mismo
+      archivo, modal de Recibo), "Liquidación de Alquiler"
+      (`PropietariosPage.tsx` y `AvisosPage.tsx`).
+- [x] **Condiciones de pago** agregadas al pie (`.comp-condiciones`,
+      dentro de `.comp-pie`, arriba del renglón de logo+contacto que ya
+      existía): texto fijo de horario/días de pago y referencia a la
+      cláusula octava del contrato, con nombre y dirección de la empresa
+      interpolados desde `Configuracion` (`empresaNombre`/
+      `empresaDireccion`) en vez de hardcodeados.
+- [x] **Caja con bordes en azul de marca** (`#1C4066`, tomado del membrete
+      oficial): `.liqcard` pasa a tener borde redondeado, `.liqhead` fondo
+      gris clarito con borde inferior, y cada `.liqline` (ítem/concepto)
+      su propio recuadro — mismo criterio visual del boceto ("Detalle de
+      Liquidación" con cada concepto en su caja). Scopeado a
+      `.comprobante .liqcard/.liqhead/.liqline` para NO afectar el
+      `.liqcard`/`.liqline` que se usa en pantalla en otras partes del
+      panel (ej. la vista previa editable de Liquidación en
+      `PropietariosPage.tsx`, que arma el mismo markup pero fuera de
+      `<ComprobanteImpreso>`).
+- [x] **Refactor importante en `global.css`**: todo el estilo visual
+      (colores/bordes/tipografía de `.comp-*`/`.liqcard`/`.liqline`) se
+      sacó de adentro de `@media print` a reglas normales — antes vivía
+      *solo* ahí, lo cual es un problema real porque
+      `lib/pdfComprobante.ts` (botón "📄 WhatsApp"/"Descargar PDF") usa
+      `html2canvas` para rasterizar el nodo `.comprobante`, y html2canvas
+      **no evalúa `@media print`** — con la matrícula ya se había
+      resuelto a mano reimplementando cada estilo con `Object.assign` en
+      JS (ver comentarios viejos en ese archivo), duplicando la fuente de
+      verdad. Con este cambio, sacar el estilo de `@media print` hace que
+      html2canvas lo agarre solo (mismo CSS, sin duplicar nada en JS) —
+      dentro de `@media print` solo queda lo que de verdad depende de
+      estar paginando una hoja física: `display` de los elementos
+      `printonly`, `position:fixed` de marca de agua/pie, tamaño de
+      página y saltos de hoja. `pdfComprobante.ts` se simplificó en línea
+      con esto: se sacó el bloque entero de `.comp-matricula` (ya no
+      existe el elemento) y los `Object.assign` de membrete/pie/logos
+      quedaron reducidos a solo `display`/`position` (lo que sí hace
+      falta forzar a mano para el clon).
+- [x] **Efecto colateral aceptado**: como la caja con bordes ya no está
+      scopeada a `@media print`, la vista previa en pantalla de Factura/
+      Liquidación/Recibo (el modal, antes de imprimir) también se ve con
+      el nuevo estilo — es consistente con que esos modales SON la vista
+      previa del documento impreso, no una UI aparte.
+- [~] **No verificado visualmente en navegador** (sin browser disponible
+      en este entorno) — sí se verificó `npx tsc --noEmit` y `npm run
+      build` limpios en `admin/`. Falta que el usuario confirme el look
+      real (título, cajas, párrafo de condiciones) en Factura, Liquidación
+      y Recibo antes de dar esto por cerrado del todo.
+
+### Follow-up mismo día: caja de datos + borde más grueso
+
+El usuario aclaró que quería el diseño "tal cual el PDF" — con la caja de
+datos arriba (Nombre Inquilino, Propiedad, Inicio/Fin de contrato, N°,
+Periodo, Vencimiento) y el borde de las cajas de conceptos más grueso y
+en azul (no negro), no solo el estilo general de la entrada de arriba.
+
+- [x] **`ComprobanteInfoBox.tsx`** (nuevo) — caja de dos columnas
+      rótulo/valor (`.comp-infobox`/`.comp-infocol`/`.comp-infofila`),
+      reusada por los tres comprobantes con su propio set de campos (no
+      comparten forma: Liquidación es un propietario con N propiedades,
+      no un contrato único):
+      - **Factura/Recibo**: Nombre Inquilino, Propiedad en Locación
+        (dirección), Inicio/Fin de Contrato | N°, Periodo, y Fecha de
+        Vencimiento (Factura, calculada con la nueva
+        `fechaVencimientoAlquiler()` en `lib/format.ts` — mismo criterio
+        que `FacturasService.calcularMora()` en el backend: día
+        `diaVencimientoAlquiler` de Configuración del propio mes de la
+        factura) o Fecha de Emisión (Recibo, es un comprobante de un pago
+        ya recibido, no tiene vencimiento).
+      - **Liquidación**: Nombre Propietario, Propiedades incluidas (los
+        nombres de `L.detalle` unidos por coma) | N° de Liquidación,
+        Periodo. Sin vencimiento (no existe ese concepto para este
+        comprobante).
+      - Debajo, título de sección `.comp-detalletitulo` ("Detalle de
+        Factura/Recibo/Liquidación") antes de la caja de ítems.
+- [x] **Contrato/dirección enhebrados sin pedir nada nuevo al backend**:
+      `FacturaModal`/`ReciboModal` (`PropiedadFichaDrawer.tsx`) suman
+      props opcionales `direccion`/`contratoInicio`/`contratoFin` — ya
+      venían en la respuesta de `GET /propiedades` y `GET /propiedades/:id`
+      (Prisma sin `select` devuelve todos los escalares), solo faltaba
+      pasarlos. Son opcionales porque `InquilinosPage.tsx` abre
+      `FacturaModal` con datos más livianos (`FilaCobro`) — ahí se
+      completan desde `propiedadFacturaDe` (la propiedad ya cacheada de
+      `GET /propiedades`), y se le sumó `contratoInicio`/`contratoFin` a
+      la interfaz `PropiedadDb` de esa página (el dato ya venía del
+      backend, solo faltaba tiparlo).
+- [x] **Borde más grueso**: `.comprobante .liqcard/.liqhead/.liqline`
+      pasan de 1–1.5px a 2px sólido `#1C4066` (mismo azul de marca, ya
+      usado en todo el comprobante — no había ningún borde negro real,
+      pero a 1px se leía casi negro en pantalla). `.comp-infobox` también
+      2px.
+
+## 2026-09-02 — Fix: "Esperado" no coincidía con el total al Emitir factura (faltaba la deuda arrastrada)
+
+Bug reportado por el usuario: "depto lukens" mostraba Esperado
+$1.731.230,56 en Cobros del mes, pero al abrir "Emitir factura" el total
+precargado era $2.231.230,56 — "completamente distinto".
+
+- [x] **Causa**: `montoRegularEstimadoDelMes()` (agregado el 2026-09-02
+      para la entrada de arriba "'Esperado' de Cobros del mes incluye
+      servicios") deliberadamente NO incluía la "Deuda arrastrada" —
+      la razón documentada entonces era "ya se refleja aparte en
+      Pendiente". Esa razón era incorrecta en la práctica:
+      `FacturasService.itemsPredeterminados()` (lo que realmente arma
+      "Emitir factura") SÍ agrega la deuda arrastrada de meses anteriores
+      (`CobrosService.deudaAcumulada()`) como un ítem más del total
+      sugerido — no es un cálculo aparte que se muestre solo en otro
+      lado, es un ítem editable dentro de la misma factura. Con
+      "depto lukens": agosto sin pagar ($500.000 de alquiler) +
+      septiembre nuevo ($1.731.230,56 de alquiler+servicios) =
+      $2.231.230,56 al emitir, mientras que Esperado se quedaba en
+      $1.731.230,56 (solo lo nuevo de septiembre).
+- [x] **Fix — `CobrosService.esperadoEstimado()`** (`cobros.service.ts`):
+      ahora suma `this.deudaAcumulada(propiedadId, mes).deuda` al
+      resultado de `montoRegularEstimadoDelMes()`, mismo criterio exacto
+      que usa `itemsPredeterminados()` (misma función `deudaAcumulada()`,
+      mismo `mes` de referencia) — no hizo falta tocar el archivo neutral
+      `common/monto-regular-mes.util.ts` ni pasar `CobrosService` ahí
+      (que hubiera reabierto el ciclo ya documentado): `deudaAcumulada()`
+      ya es un método de la propia clase `CobrosService`, se llama
+      directo con `this.`.
+- [x] **Verificado con curl** contra las 4 propiedades alquiladas reales
+      del mes 2026-09: `esperado` de `GET /cobros/mes/2026-09` ahora
+      coincide EXACTO, ítem por ítem, con la suma de
+      `GET /facturacion/propiedades/:id/items-predeterminados` para cada
+      una — con deuda arrastrada ("depto lukens": 2.231.230,56 vs.
+      2.231.230,56) y sin ella (las otras 3, sin cambios: 100.000,
+      960.000 y 1.644.000 respectivamente, confirmando que no se rompió
+      el caso sin deuda).
+- [~] **Nota de diseño para el futuro**: esto significa que "Esperado" ya
+      no es "solo lo nuevo de este mes" cuando hay deuda de meses
+      anteriores — es "lo que se le va a pedir al inquilino si se emite
+      la factura con los ítems sugeridos". Es el comportamiento correcto
+      para que no salte al emitir, pero implica que sumar "Esperado" de
+      varios meses consecutivos puede contar la misma deuda vieja más de
+      una vez (una vez en el mes que la arrastra, y de nuevo si en un mes
+      posterior TODAVÍA sigue sin pagarse) — mismo comportamiento que ya
+      tenía `itemsPredeterminados()` al sugerir el ítem, no es nuevo de
+      este fix.
+
 ## Cómo actualizar este archivo
 
 Cada vez que se implemente una conexión: marcarla `[x]`, agregar la fecha y
