@@ -21,6 +21,28 @@ export const SERVICIOS_OPCIONES: { key: ServicioFacturable; label: string }[] = 
   { key: 'SISTEMA_BIODIGESTOR', label: 'Sistema biodigestor' },
 ];
 
+// Qué servicios se pueden tildar según la modalidad de la propiedad —
+// pedido del usuario 2026-09-03: en Alquiler no tiene sentido ofrecer
+// Cloacas/Sistema biodigestor (no se facturan en la práctica en esa
+// modalidad), y en Venta el listado se limita a los servicios básicos
+// del inmueble (sin Expensas, Retributivas ni Gas envasado).
+export const SERVICIOS_OPCIONES_ALQUILER: { key: ServicioFacturable; label: string }[] = [
+  { key: 'EXPENSAS', label: 'Expensas ordinarias' },
+  { key: 'USINA', label: 'Luz (Usina)' },
+  { key: 'CAMUZZI', label: 'Gas (Camuzzi)' },
+  { key: 'OBRAS_SANITARIAS', label: 'Agua (Obras Sanitarias)' },
+  { key: 'RETRIBUTIVAS', label: 'Retributivas de Servicios' },
+  { key: 'GAS_ENVASADO', label: 'Gas envasado' },
+];
+
+export const SERVICIOS_OPCIONES_VENTA: { key: ServicioFacturable; label: string }[] = [
+  { key: 'USINA', label: 'Luz' },
+  { key: 'CAMUZZI', label: 'Gas' },
+  { key: 'OBRAS_SANITARIAS', label: 'Agua' },
+  { key: 'CLOACAS', label: 'Cloacas' },
+  { key: 'SISTEMA_BIODIGESTOR', label: 'Sistema biodigestor' },
+];
+
 // Datos fijos de cuenta de algunos servicios ("agregar propiedad" / "editar
 // datos"), reflejados automáticamente en la factura — ver comentario en
 // schema.prisma. Solo se muestran cuando el checkbox del servicio

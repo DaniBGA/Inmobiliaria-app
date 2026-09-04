@@ -180,6 +180,25 @@ enum ServicioFacturable {
   SISTEMA_BIODIGESTOR
 }
 
+// Quién se hace cargo de pagar los servicios trasladables de la propiedad
+// (§ pedido del usuario 2026-09-03) — cambia cómo se arma la Factura del
+// inquilino y la Liquidación del propietario, ver FacturasService y
+// LiquidacionesService:
+// - PROPIETARIO (default, comportamiento de siempre): el inquilino paga
+//   alquiler+servicios en una sola factura, y todo eso se le gira entero al
+//   propietario (menos honorarios) — el propietario paga los servicios por
+//   su cuenta con esa plata.
+// - INMOBILIARIA: mismo cobro al inquilino, pero la inmobiliaria retiene el
+//   importe de los servicios (los paga ella) antes de girarle el resto al
+//   propietario.
+// - INQUILINO: el inquilino paga los servicios directo a cada proveedor,
+//   por fuera de este sistema — ni siquiera se le facturan acá.
+enum ResponsablePagoServicios {
+  PROPIETARIO
+  INMOBILIARIA
+  INQUILINO
+}
+
 model Propietario {
   id        String   @id @default(uuid())
   nombre    String
@@ -235,6 +254,10 @@ model Propiedad {
   // enum ServicioFacturable) — no incluye "Alquiler" (siempre presente en
   // ALQUILER) ni "Deuda arrastrada" (siempre calculada, no es un servicio).
   serviciosHabilitados ServicioFacturable[] @default([EXPENSAS, USINA, CAMUZZI, OBRAS_SANITARIAS, RETRIBUTIVAS])
+
+  // Ver enum ResponsablePagoServicios — default PROPIETARIO para no cambiar
+  // el comportamiento de ninguna propiedad ya cargada.
+  responsablePagoServicios ResponsablePagoServicios @default(PROPIETARIO)
 
   // Datos fijos de cuenta de algunos servicios trasladables — se cargan una
   // sola vez en la propiedad (no en cada factura, a diferencia de
@@ -564,7 +587,23 @@ model LiquidacionPropiedad {
   // Honorarios de administración del mes, desglosados aparte de los
   // profesionales de arriba (ver Propiedad.honorariosAdministracion).
   honorariosAdministracion Decimal @default(0) @db.Decimal(14, 2)
+  // % y base sobre la que se calculó `honorariosAdministracion` de arriba,
+  // capturados al momento de emitir (igual criterio que `facturaNumero` de
+  // abajo) — hace falta guardarlos aparte porque cuando
+  // `ResponsablePagoServicios.INMOBILIARIA` el ítem "Alquiler" ni siquiera
+  // queda listado en el detalle (se reemplaza por "Importe total del
+  // periodo"), así que no se puede reconstruir esta base leyendo los ítems.
+  porcentajeHonorariosAdministracion Decimal @default(0) @db.Decimal(5, 2)
+  baseAlquilerHonorarios             Decimal @default(0) @db.Decimal(14, 2)
   neto                     Decimal @db.Decimal(14, 2)
+
+  // N° de la Factura del inquilino de esa propiedad para este mes, capturado
+  // al momento de emitir (no un lookup en vivo): igual criterio que
+  // `cobradoTotal`/`honorariosAdministracion` de arriba — el comprobante
+  // impreso de la liquidación queda fijo aunque después se reemitiera esa
+  // factura. `null` si el mes se liquidó sin que existiera factura emitida
+  // (se armó desde `itemsPredeterminados()`).
+  facturaNumero Int?
 
   liquidacionId String
   liquidacion   Liquidacion @relation(fields: [liquidacionId], references: [id], onDelete: Cascade)

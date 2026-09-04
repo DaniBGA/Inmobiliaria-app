@@ -1,12 +1,13 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { DestinoGasto, Prisma, PunitorioFrecuencia, PunitorioTipo } from '@prisma/client';
+import { DestinoGasto, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PropiedadesService } from '../propiedades/propiedades.service';
 import { GastosService } from '../gastos/gastos.service';
 import { CobrosService } from '../cobros/cobros.service';
 import { ConfiguracionService } from '../configuracion/configuracion.service';
-import { finDeMes, mesStringAFecha, sumarMeses } from '../common/fecha.util';
-import { SERVICIO_DESCRIPCION, SERVICIO_ORDEN, datosCuentaSuffix } from '../common/servicios-facturables.util';
+import { diasDeAtrasoEnMes, finDeMes, mesStringAFecha, primerDiaMes } from '../common/fecha.util';
+import { SERVICIO_DESCRIPCION, SERVICIO_ORDEN, datosCuentaSuffix, esServicioTrasladable } from '../common/servicios-facturables.util';
+import { calcularMontoMora } from '../common/mora.util';
 import { FacturaItemInputDto } from './dto/factura-item-input.dto';
 
 export interface ItemPredeterminado {
@@ -36,6 +37,7 @@ export class FacturasService {
       where: { id: propiedadId },
       select: {
         serviciosHabilitados: true,
+        responsablePagoServicios: true,
         punitorioFrecuencia: true,
         punitorioTipo: true,
         punitorioValor: true,
@@ -68,7 +70,13 @@ export class FacturasService {
     const items: ItemPredeterminado[] = [
       { descripcion: 'Alquiler', monto: rentaVigenteRaw != null ? Number(rentaVigenteRaw) : 0, orden: 0 },
     ];
-    const serviciosOrdenados = SERVICIO_ORDEN.filter((s) => propiedad.serviciosHabilitados.includes(s));
+    // Si el inquilino paga los servicios directo a cada proveedor (fuera de
+    // este sistema — ver enum ResponsablePagoServicios), no se le facturan
+    // acá: solo se le cobra el alquiler.
+    const serviciosOrdenados =
+      propiedad.responsablePagoServicios === 'INQUILINO'
+        ? []
+        : SERVICIO_ORDEN.filter((s) => propiedad.serviciosHabilitados.includes(s));
     serviciosOrdenados.forEach((servicio, i) => {
       const base = SERVICIO_DESCRIPCION[servicio];
       const descripcion = base + datosCuentaSuffix(servicio, propiedad);
@@ -107,14 +115,50 @@ export class FacturasService {
       items.push({ descripcion: 'Deuda arrastrada', monto: deuda, orden: items.length });
     }
 
-    // Mora (§5.6 — "cálculo automático de punitorios al registrar un pago
-    // fuera de término", antes pendiente de producción): se sugiere sobre
-    // el mes cerrado inmediatamente anterior, si el punitorio del contrato
-    // está configurado y ese mes se terminó pagando tarde. Igual que
-    // "Deuda arrastrada", es un ítem editable — no se fuerza.
-    const mora = await this.calcularMora(propiedadId, sumarMeses(mes, -1), propiedad);
+    // Mora acumulada (§5.6) sobre la misma ventana de 12 meses cerrados que
+    // "Deuda arrastrada" arriba (§ pedido del usuario 2026-09-04: antes solo
+    // se calculaba sobre el mes cerrado inmediato anterior, y encima solo si
+    // ya se había terminado de pagar — un inquilino que directamente nunca
+    // paga no generaba mora en ningún lado, por muchos meses que arrastrara).
+    // Ver `CobrosService.moraAcumulada()` para el detalle mes a mes. Igual
+    // que "Deuda arrastrada", es un ítem editable — no se fuerza.
+    const { mora, diasAtraso: diasAtrasoAcumulados } = await this.cobrosService.moraAcumulada(propiedadId, mes);
     if (mora > 0) {
-      items.push({ descripcion: 'Mora', monto: mora, orden: items.length });
+      items.push({
+        descripcion: `Mora acumulada (${diasAtrasoAcumulados} ${diasAtrasoAcumulados === 1 ? 'día' : 'días'} de atraso)`,
+        monto: mora,
+        orden: items.length,
+      });
+    }
+
+    // Recargo por mora del MES DE ESTA FACTURA (§ pedido del usuario
+    // 2026-09-03/04: tiene que estar en la factura del mes que corresponde,
+    // no aparecer recién en la del mes siguiente): si `mes` es el mes en
+    // curso o cualquier mes YA PASADO, ya venció su día de pago
+    // (Configuración) y no se cobró el alquiler completo, se sugiere este
+    // recargo. `diasDeAtrasoEnMes()` ya topea solo al último día de ESE
+    // mismo mes (si `mes` ya cerró, el tope termina siendo directamente ese
+    // último día; si es el mes en curso, sigue creciendo día a día hasta
+    // hoy). "Mora acumulada" de arriba sigue cubriendo los meses ANTERIORES
+    // a este — no se superponen. No aplica a un mes futuro (todavía no
+    // venció nada).
+    if (mes.getTime() <= primerDiaMes(new Date()).getTime()) {
+      const configuracion = await this.configuracionService.get();
+      const diasAtraso = diasDeAtrasoEnMes(mes, configuracion.diaVencimientoAlquiler);
+      if (diasAtraso > 0) {
+        const alquilerEsperado = rentaVigenteRaw != null ? Number(rentaVigenteRaw) : 0;
+        const cobradoEsteMes = await this.cobrosService.cobradoDelMes(propiedadId, mes);
+        if (cobradoEsteMes < alquilerEsperado) {
+          const recargo = calcularMontoMora(propiedad, alquilerEsperado, diasAtraso);
+          if (recargo > 0) {
+            items.push({
+              descripcion: `Recargo por mora (${diasAtraso} ${diasAtraso === 1 ? 'día' : 'días'} de atraso)`,
+              monto: recargo,
+              orden: items.length,
+            });
+          }
+        }
+      }
     }
 
     // Ítems sueltos que se hayan tipeado a mano en la factura anterior (un
@@ -140,86 +184,23 @@ export class FacturasService {
     return items;
   }
 
+  // "Mora" (sin "acumulada") queda por compatibilidad con facturas viejas
+  // ya emitidas antes de este cambio — sigue habiendo que excluirla de la
+  // resurrección de ítems sueltos de abajo.
   private static readonly ETIQUETAS_ESPECIALES = ['Alquiler', 'Deuda arrastrada', 'Mora'];
 
   private static esItemEspecial(descripcion: string): boolean {
-    if (FacturasService.ETIQUETAS_ESPECIALES.includes(descripcion)) return true;
-    return Object.values(SERVICIO_DESCRIPCION).some(
-      (base) => descripcion === base || descripcion.startsWith(`${base} (`),
+    return (
+      FacturasService.ETIQUETAS_ESPECIALES.includes(descripcion) ||
+      // "Recargo por mora"/"Mora acumulada" traen pegada la cantidad de
+      // días (ej. "Mora acumulada (21 días de atraso)"), así que no hay un
+      // match exacto posible — se recalculan solas cada vez, nunca hay que
+      // resucitar la de un mes anterior con un conteo de días que ya no es
+      // el de hoy.
+      descripcion.startsWith('Recargo por mora') ||
+      descripcion.startsWith('Mora acumulada') ||
+      esServicioTrasladable(descripcion)
     );
-  }
-
-  // Ver comentario de itemsPredeterminados(). Si el mes anterior todavía
-  // tiene saldo pendiente, no se puede determinar la mora todavía (no se
-  // sabe con qué pago ni en qué fecha se va a saldar) — se recalcula sola
-  // el mes en que efectivamente se termine de pagar.
-  private async calcularMora(
-    propiedadId: string,
-    mesAnterior: Date,
-    propiedad: {
-      punitorioFrecuencia: PunitorioFrecuencia | null;
-      punitorioTipo: PunitorioTipo | null;
-      punitorioValor: Prisma.Decimal | null;
-    },
-  ): Promise<number> {
-    if (!propiedad.punitorioTipo || propiedad.punitorioValor == null || Number(propiedad.punitorioValor) <= 0) {
-      return 0;
-    }
-
-    // Un inquilino recién cargado "al día" no debe mora por meses previos a
-    // su alta en el sistema (ver Inquilino.alDiaDesde).
-    const inquilino = await this.prisma.inquilino.findUnique({
-      where: { propiedadId },
-      select: { alDiaDesde: true },
-    });
-    if (inquilino?.alDiaDesde && mesAnterior.getTime() < inquilino.alDiaDesde.getTime()) return 0;
-
-    const esperadoRaw = await this.propiedadesService.rentaVigente(propiedadId, finDeMes(mesAnterior));
-    if (esperadoRaw == null) return 0;
-    const esperado = Number(esperadoRaw);
-
-    const cobrado = await this.cobrosService.cobradoDelMes(propiedadId, mesAnterior);
-    if (cobrado < esperado) return 0;
-
-    const ultimoPago = await this.prisma.pago.findFirst({
-      where: { propiedadId, mes: mesAnterior, anulado: false },
-      orderBy: { fecha: 'desc' },
-    });
-    if (!ultimoPago) return 0;
-
-    const configuracion = await this.configuracionService.get();
-    const vencimiento = new Date(
-      Date.UTC(mesAnterior.getUTCFullYear(), mesAnterior.getUTCMonth(), configuracion.diaVencimientoAlquiler),
-    );
-    const diasAtraso = Math.round((ultimoPago.fecha.getTime() - vencimiento.getTime()) / 86_400_000);
-    if (diasAtraso <= 0) return 0;
-
-    const base =
-      propiedad.punitorioTipo === 'PORCENTAJE'
-        ? esperado * (Number(propiedad.punitorioValor) / 100)
-        : Number(propiedad.punitorioValor);
-
-    // Frecuencia = cada cuánto se aplica el valor de arriba mientras dure
-    // el atraso — "DIA" multiplica por cada día atrasado (ej. §4 del
-    // pedido: mora de $20.000/día, pagó 3 días tarde → $60.000).
-    let unidades: number;
-    switch (propiedad.punitorioFrecuencia) {
-      case 'SEMANA':
-        unidades = Math.ceil(diasAtraso / 7);
-        break;
-      case 'MES':
-        unidades = Math.ceil(diasAtraso / 30);
-        break;
-      case 'UNICO':
-        unidades = 1;
-        break;
-      case 'DIA':
-      default:
-        unidades = diasAtraso;
-        break;
-    }
-
-    return Math.round(base * unidades * 100) / 100;
   }
 
   private facturaVigente(propiedadId: string, mes: Date) {

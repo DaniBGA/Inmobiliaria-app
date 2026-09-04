@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { EstadoCliente, TipoOperacionCliente } from '@prisma/client';
 import { ClientesService } from './clientes.service';
 import { CreateClienteDto } from './dto/create-cliente.dto';
@@ -13,15 +13,18 @@ import { RolUsuario } from '@prisma/client';
 export class ClientesController {
   constructor(private readonly clientesService: ClientesService) {}
 
-  // Abierto: Ventas y Carteles y Agenda lo usan para los dropdowns de
-  // cliente.
+  // Abierto a ADMIN y EQUIPO — un designado ve solo sus propios clientes
+  // (ver ClientesService.findAll); un ADMIN ve todo y puede filtrar por
+  // `delegadoId` para revisar la cartera de un integrante puntual.
   @Get()
   findAll(
+    @Req() req: any,
     @Query('q') q?: string,
     @Query('estado') estado?: EstadoCliente,
     @Query('tipoOperacion') tipoOperacion?: TipoOperacionCliente,
+    @Query('delegadoId') delegadoId?: string,
   ) {
-    return this.clientesService.findAll(q, estado, tipoOperacion);
+    return this.clientesService.findAll(req.user, q, estado, tipoOperacion, delegadoId);
   }
 
   @Get('stats-por-origen')
@@ -39,31 +42,23 @@ export class ClientesController {
   }
 
   @Get(':id')
-  @UseGuards(RolesGuard)
-  @Roles(RolUsuario.ADMIN)
-  findOne(@Param('id') id: string) {
-    return this.clientesService.findOne(id);
+  findOne(@Param('id') id: string, @Req() req: any) {
+    return this.clientesService.findOne(id, req.user);
   }
 
   @Post()
-  @UseGuards(RolesGuard)
-  @Roles(RolUsuario.ADMIN)
-  create(@Body() dto: CreateClienteDto) {
-    return this.clientesService.create(dto);
+  create(@Body() dto: CreateClienteDto, @Req() req: any) {
+    return this.clientesService.create(dto, req.user);
   }
 
   @Patch(':id')
-  @UseGuards(RolesGuard)
-  @Roles(RolUsuario.ADMIN)
-  update(@Param('id') id: string, @Body() dto: UpdateClienteDto) {
-    return this.clientesService.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: UpdateClienteDto, @Req() req: any) {
+    return this.clientesService.update(id, dto, req.user);
   }
 
   @Delete(':id')
-  @UseGuards(RolesGuard)
-  @Roles(RolUsuario.ADMIN)
-  remove(@Param('id') id: string) {
-    return this.clientesService.remove(id);
+  remove(@Param('id') id: string, @Req() req: any) {
+    return this.clientesService.remove(id, req.user);
   }
 
   @Patch(':id/restaurar')

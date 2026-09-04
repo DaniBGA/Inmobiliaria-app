@@ -18,6 +18,7 @@ import {
   PunitorioFrecuencia,
   PunitorioTipo,
   ServicioFacturable,
+  ResponsablePagoServicios,
 } from '@prisma/client';
 
 export class CreatePropiedadDto {
@@ -135,6 +136,14 @@ export class CreatePropiedadDto {
   @IsArray()
   @IsEnum(ServicioFacturable, { each: true })
   serviciosHabilitados?: ServicioFacturable[];
+
+  // Quién paga los servicios trasladables (ver enum en schema.prisma) —
+  // cambia cómo se arma la Factura del inquilino y la Liquidación del
+  // propietario (FacturasService/LiquidacionesService). Default PROPIETARIO
+  // si no se manda.
+  @IsOptional()
+  @IsEnum(ResponsablePagoServicios)
+  responsablePagoServicios?: ResponsablePagoServicios;
 
   // Datos fijos de cuenta de algunos servicios trasladables (ver comentario
   // en schema.prisma) — se reflejan automáticamente en la factura.

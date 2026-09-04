@@ -3,7 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
-import logo from '../images/logo.png';
+import logo from '../images/logo-comprobante-membrete.png';
 
 // Orden corregido según el documento funcional (§1): "Propietarios y
 // Liquidaciones" va inmediatamente después de "Inquilinos y Cobros" — en el
@@ -61,7 +61,7 @@ function useBadges(esEquipo: boolean) {
   };
 }
 
-const ITEMS_EQUIPO = new Set(['/ventas', '/agenda']);
+const ITEMS_EQUIPO = new Set(['/ventas', '/clientes', '/agenda']);
 
 export function Sidebar() {
   const [navmin, setNavmin] = useState(false);
@@ -114,10 +114,9 @@ export function Sidebar() {
       <div className={`navoverlay${navopen ? ' on' : ''}`} onClick={() => setNavopen(false)}></div>
       <aside className="sidebar">
         <div className="brand">
-          <div className="logo" style={{ background: '#fff', overflow: 'hidden', alignItems: 'flex-start' }}>
-            <img src={logo} alt="" style={{ width: 'auto', height: 45, display: 'block', margin: '0 auto' }} />
+          <div className="logo" style={{ background: '#fff', overflow: 'hidden', alignItems: 'center', width: 'auto', height: 'auto', padding: '4px 10px' }}>
+            <img src={logo} alt="Facundo Paris Propiedades" style={{ width: 'auto', height: 40, display: 'block', margin: '0 auto' }} />
           </div>
-          <span className="btxt">InmoGest</span>
         </div>
         <nav>
           {items.map((item) => {

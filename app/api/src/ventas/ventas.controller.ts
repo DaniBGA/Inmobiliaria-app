@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { EstadoVenta, TipoPropiedad } from '@prisma/client';
 import { VentasService } from './ventas.service';
 import { UpsertVentaDto } from './dto/upsert-venta.dto';
@@ -18,13 +18,13 @@ export class VentasController {
   constructor(private readonly ventasService: VentasService) {}
 
   @Get('ventas')
-  findAll(@Query('tipo') tipo?: TipoPropiedad, @Query('estado') estado?: EstadoVenta) {
-    return this.ventasService.findAll(tipo, estado);
+  findAll(@Req() req: any, @Query('tipo') tipo?: TipoPropiedad, @Query('estado') estado?: EstadoVenta) {
+    return this.ventasService.findAll(req.user, tipo, estado);
   }
 
   @Get('ventas/kpis')
-  kpis() {
-    return this.ventasService.kpis();
+  kpis(@Req() req: any) {
+    return this.ventasService.kpis(req.user);
   }
 
   @Get('ventas/:id')
@@ -44,42 +44,42 @@ export class VentasController {
   }
 
   @Post('ventas/:id/sena')
-  registrarSena(@Param('id') id: string, @Body() dto: RegistrarSenaDto) {
-    return this.ventasService.registrarSena(id, dto);
+  registrarSena(@Param('id') id: string, @Body() dto: RegistrarSenaDto, @Req() req: any) {
+    return this.ventasService.registrarSena(id, dto, req.user);
   }
 
   @Delete('ventas/:id/sena')
-  eliminarSena(@Param('id') id: string) {
-    return this.ventasService.eliminarSena(id);
+  eliminarSena(@Param('id') id: string, @Req() req: any) {
+    return this.ventasService.eliminarSena(id, req.user);
   }
 
   @Post('ventas/:id/cerrar')
-  cerrar(@Param('id') id: string, @Body() dto: CerrarVentaDto) {
-    return this.ventasService.cerrar(id, dto);
+  cerrar(@Param('id') id: string, @Body() dto: CerrarVentaDto, @Req() req: any) {
+    return this.ventasService.cerrar(id, dto, req.user);
   }
 
   @Delete('ventas/:id/cerrar')
-  deshacerCierre(@Param('id') id: string) {
-    return this.ventasService.deshacerCierre(id);
+  deshacerCierre(@Param('id') id: string, @Req() req: any) {
+    return this.ventasService.deshacerCierre(id, req.user);
   }
 
   @Post('ventas/:id/vender-por-terceros')
-  venderPorTerceros(@Param('id') id: string, @Body() dto: VenderPorTercerosDto) {
-    return this.ventasService.venderPorTerceros(id, dto);
+  venderPorTerceros(@Param('id') id: string, @Body() dto: VenderPorTercerosDto, @Req() req: any) {
+    return this.ventasService.venderPorTerceros(id, dto, req.user);
   }
 
   @Post('ventas/:id/interesados')
-  crearInteresado(@Param('id') id: string, @Body() dto: CreateInteresadoDto) {
-    return this.ventasService.crearInteresado(id, dto);
+  crearInteresado(@Param('id') id: string, @Body() dto: CreateInteresadoDto, @Req() req: any) {
+    return this.ventasService.crearInteresado(id, dto, req.user);
   }
 
   @Patch('interesados/:id')
-  editarInteresado(@Param('id') id: string, @Body() dto: UpdateInteresadoDto) {
-    return this.ventasService.editarInteresado(id, dto);
+  editarInteresado(@Param('id') id: string, @Body() dto: UpdateInteresadoDto, @Req() req: any) {
+    return this.ventasService.editarInteresado(id, dto, req.user);
   }
 
   @Delete('interesados/:id')
-  eliminarInteresado(@Param('id') id: string) {
-    return this.ventasService.eliminarInteresado(id);
+  eliminarInteresado(@Param('id') id: string, @Req() req: any) {
+    return this.ventasService.eliminarInteresado(id, req.user);
   }
 }

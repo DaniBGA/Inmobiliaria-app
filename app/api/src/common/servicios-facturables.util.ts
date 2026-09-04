@@ -38,6 +38,16 @@ export const SERVICIO_ORDEN: ServicioFacturable[] = [
   ServicioFacturable.SISTEMA_BIODIGESTOR,
 ];
 
+// true si `descripcion` corresponde a alguno de los servicios trasladables
+// de arriba (con o sin el sufijo de N° de cuenta pegado, ver
+// `datosCuentaSuffix()`) — usado por FacturasService (qué ítems no
+// resucitar de la factura anterior) y LiquidacionesService (qué ítems
+// retiene la inmobiliaria cuando ella es quien paga los servicios, ver
+// ResponsablePagoServicios en schema.prisma).
+export function esServicioTrasladable(descripcion: string): boolean {
+  return Object.values(SERVICIO_DESCRIPCION).some((base) => descripcion === base || descripcion.startsWith(`${base} (`));
+}
+
 // Datos fijos de cuenta (ver comentario en schema.prisma) para los
 // servicios que los tienen — se agregan a la descripción del ítem
 // predeterminado para que queden reflejados en la factura sin tener que

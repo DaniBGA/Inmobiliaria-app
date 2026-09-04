@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Req,
   UploadedFile,
   UseFilters,
   UseGuards,
@@ -30,14 +31,15 @@ import { RolUsuario } from '@prisma/client';
 export class PropiedadesController {
   constructor(private readonly propiedadesService: PropiedadesService) {}
 
-  // Lectura abierta: Ventas y Carteles (incl. un designado, rol EQUIPO)
-  // necesita ver la cartera completa. Las mutaciones de acá abajo son
+  // Lectura abierta a cualquier logueado — un ADMIN ve la cartera completa;
+  // un designado (rol EQUIPO) solo ve lo que le asignaron (ver
+  // PropiedadesService.findAll). Las mutaciones de acá abajo son
   // "editar/agregar propiedades" — un designado no puede tocarlas, solo
   // trabaja el pipeline de venta (interesados/seña/cierre/terceros, ver
   // ventas.controller.ts) sobre lo que ya existe.
   @Get()
-  findAll() {
-    return this.propiedadesService.findAll();
+  findAll(@Req() req: any) {
+    return this.propiedadesService.findAll(req.user);
   }
 
   @Get(':id')

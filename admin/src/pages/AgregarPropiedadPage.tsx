@@ -3,9 +3,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { PageHeader } from '../components/PageHeader';
-import { ServiciosCuentaInputs, SERVICIOS_OPCIONES, type ServicioFacturable } from '../components/ServiciosCuentaInputs';
+import {
+  ServiciosCuentaInputs,
+  SERVICIOS_OPCIONES_ALQUILER,
+  SERVICIOS_OPCIONES_VENTA,
+  type ServicioFacturable,
+} from '../components/ServiciosCuentaInputs';
 import { SeccionGuia } from '../components/SeccionGuia';
 import { ORIGEN_LABEL, type OrigenCliente } from '../lib/clienteEnums';
+import { RESPONSABLE_PAGO_SERVICIOS_LABEL, RESPONSABLE_PAGO_SERVICIOS_HINT } from '../lib/responsablePagoServicios';
 
 type Modalidad = 'ALQUILER' | 'VENTA';
 type IndiceAjuste = '' | 'IPC' | 'ICL';
@@ -63,6 +69,9 @@ export function AgregarPropiedadPage() {
     'OBRAS_SANITARIAS',
     'RETRIBUTIVAS',
   ]);
+  const [responsablePagoServicios, setResponsablePagoServicios] = useState<'PROPIETARIO' | 'INMOBILIARIA' | 'INQUILINO'>(
+    'PROPIETARIO',
+  );
   const [obrasSanitariasNumeroCuenta, setObrasSanitariasNumeroCuenta] = useState('');
   const [camuzziNumeroCuenta, setCamuzziNumeroCuenta] = useState('');
   const [retributivasNumeroCuenta, setRetributivasNumeroCuenta] = useState('');
@@ -203,6 +212,7 @@ export function AgregarPropiedadPage() {
         // Los servicios (luz, gas, etc.) se cargan para cualquier tipo y
         // modalidad — antes solo se guardaban del lado de alquiler.
         serviciosHabilitados: servicios,
+        responsablePagoServicios: modalidad === 'ALQUILER' ? responsablePagoServicios : undefined,
         obrasSanitariasNumeroCuenta: servicios.includes('OBRAS_SANITARIAS')
           ? obrasSanitariasNumeroCuenta.trim() || undefined
           : undefined,
@@ -566,7 +576,7 @@ export function AgregarPropiedadPage() {
                 <div className="fg full">
                   <label>Servicios que se facturan</label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 18px', marginTop: 4 }}>
-                    {SERVICIOS_OPCIONES.map((s) => (
+                    {SERVICIOS_OPCIONES_ALQUILER.map((s) => (
                       <label className="chk" key={s.key}>
                         <input type="checkbox" checked={servicios.includes(s.key)} onChange={() => toggleServicio(s.key)} />
                         <span>{s.label}</span>
@@ -588,6 +598,22 @@ export function AgregarPropiedadPage() {
                     wrapperStyle={{ display: 'flex', flexWrap: 'wrap', gap: '10px 18px', marginTop: 10 }}
                     fieldStyle={{ minWidth: 160 }}
                   />
+                </div>
+                <div className="fg full">
+                  <label>¿Quién paga los servicios?</label>
+                  <select
+                    value={responsablePagoServicios}
+                    onChange={(e) => setResponsablePagoServicios(e.target.value as typeof responsablePagoServicios)}
+                  >
+                    {Object.entries(RESPONSABLE_PAGO_SERVICIOS_LABEL).map(([v, l]) => (
+                      <option key={v} value={v}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                  <small style={{ display: 'block', marginTop: 4, color: 'var(--muted)' }}>
+                    {RESPONSABLE_PAGO_SERVICIOS_HINT[responsablePagoServicios]}
+                  </small>
                 </div>
               </div>
               <div className="cfgnote">
@@ -624,7 +650,7 @@ export function AgregarPropiedadPage() {
                 <div className="fg full">
                   <label>Servicios</label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 18px', marginTop: 4 }}>
-                    {SERVICIOS_OPCIONES.map((s) => (
+                    {SERVICIOS_OPCIONES_VENTA.map((s) => (
                       <label className="chk" key={s.key}>
                         <input type="checkbox" checked={servicios.includes(s.key)} onChange={() => toggleServicio(s.key)} />
                         <span>{s.label}</span>

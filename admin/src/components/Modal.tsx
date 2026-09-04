@@ -24,7 +24,10 @@ export function Modal({ open, onClose, title, width = 520, children }: ModalProp
     <div className="modal on">
       <div className="overlay on" style={{ zIndex: 110 }} onClick={onClose}></div>
       <div className="modalcard" style={{ width: `min(${width}px, 100%)` }}>
-        <h2>{title}</h2>
+        {/* `noprint`: este título es de la ventana modal, no del comprobante
+            — al imprimir (Factura/Recibo/Liquidación) solo debe quedar el
+            membrete propio de `ComprobanteImpreso.tsx`, arriba del logo. */}
+        <h2 className="noprint">{title}</h2>
         {children}
       </div>
     </div>,

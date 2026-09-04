@@ -1,5 +1,14 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { EstadoVenta, Moneda, MonedaVenta, OrigenMovimientoCaja, Prisma, TipoMovimientoCaja, TipoPropiedad } from '@prisma/client';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  EstadoVenta,
+  Moneda,
+  MonedaVenta,
+  OrigenMovimientoCaja,
+  Prisma,
+  RolUsuario,
+  TipoMovimientoCaja,
+  TipoPropiedad,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CajaService } from '../caja/caja.service';
 import { ConfiguracionService } from '../configuracion/configuracion.service';
@@ -16,6 +25,8 @@ const INCLUDE_FICHA = {
   interesados: { include: { cliente: true }, orderBy: { updatedAt: 'desc' as const } },
 };
 
+type UsuarioRequest = { id: string; rol: RolUsuario; integranteEquipoId: string | null };
+
 @Injectable()
 export class VentasService {
   constructor(
@@ -24,11 +35,17 @@ export class VentasService {
     private readonly configuracionService: ConfiguracionService,
   ) {}
 
-  findAll(tipoPropiedad?: TipoPropiedad, estado?: EstadoVenta) {
+  // Un designado (EQUIPO) solo ve/trabaja el pipeline de las propiedades
+  // que el admin le asignó (mismo criterio que PropiedadesService.findAll,
+  // pedido del usuario 2026-09-04).
+  findAll(usuario: UsuarioRequest, tipoPropiedad?: TipoPropiedad, estado?: EstadoVenta) {
     return this.prisma.venta.findMany({
       where: {
         estado,
-        propiedad: tipoPropiedad ? { tipo: tipoPropiedad } : undefined,
+        propiedad: {
+          tipo: tipoPropiedad,
+          designadoId: usuario.rol === RolUsuario.EQUIPO ? usuario.integranteEquipoId : undefined,
+        },
       },
       include: INCLUDE_FICHA,
       orderBy: { createdAt: 'desc' },
@@ -39,6 +56,22 @@ export class VentasService {
     const venta = await this.prisma.venta.findUnique({ where: { id }, include: INCLUDE_FICHA });
     if (!venta) throw new NotFoundException('Venta no encontrada.');
     return venta;
+  }
+
+  // Un designado (EQUIPO) no puede operar sobre la venta de una propiedad
+  // que no le fue asignada, aunque sepa el id — protege contra un JWT
+  // robado usado directo contra la API (mismo criterio que
+  // AgendaService.assertPropietario).
+  private async assertPropietario(ventaId: string, usuario: UsuarioRequest) {
+    if (usuario.rol !== RolUsuario.EQUIPO) return;
+    const venta = await this.prisma.venta.findUnique({
+      where: { id: ventaId },
+      select: { propiedad: { select: { designadoId: true } } },
+    });
+    if (!venta) throw new NotFoundException('Venta no encontrada.');
+    if (venta.propiedad.designadoId !== usuario.integranteEquipoId) {
+      throw new ForbiddenException('No podés operar sobre una propiedad que no te fue designada.');
+    }
   }
 
   // §2.3: alta o edición de la ficha de venta de una propiedad (1:1).
@@ -98,7 +131,8 @@ export class VentasService {
   // sirve tanto para registrar la seña por primera vez como para corregirla
   // después (Ventas y Carteles muestra "Editar seña" en vez de "Registrar
   // seña" una vez que ya está reservada).
-  async registrarSena(id: string, dto: RegistrarSenaDto) {
+  async registrarSena(id: string, dto: RegistrarSenaDto, usuario: UsuarioRequest) {
+    await this.assertPropietario(id, usuario);
     return this.prisma.$transaction(async (tx) => {
       const venta = await this.lockVenta(tx, id);
 
@@ -122,7 +156,8 @@ export class VentasService {
 
   // Corrige un error de carga: quita la seña registrada (borra el ingreso en
   // Caja) y vuelve la venta a "Publicada" — simétrico de registrarSena.
-  async eliminarSena(id: string) {
+  async eliminarSena(id: string, usuario: UsuarioRequest) {
+    await this.assertPropietario(id, usuario);
     return this.prisma.$transaction(async (tx) => {
       const venta = await this.lockVenta(tx, id);
       if (venta.estado !== EstadoVenta.RESERVADA) {
@@ -150,7 +185,8 @@ export class VentasService {
   // patrón que registrarSena): este endpoint también sirve para corregir un
   // precio final o una fecha de cierre mal cargados, sin duplicar el
   // ingreso en Caja.
-  async cerrar(id: string, dto: CerrarVentaDto) {
+  async cerrar(id: string, dto: CerrarVentaDto, usuario: UsuarioRequest) {
+    await this.assertPropietario(id, usuario);
     const configuracion = await this.configuracionService.get();
 
     return this.prisma.$transaction(async (tx) => {
@@ -199,7 +235,8 @@ export class VentasService {
 
   // Corrige un error de carga: deshace el cierre (borra la comisión en Caja)
   // y vuelve la venta a "Reservada" — simétrico de eliminarSena.
-  async deshacerCierre(id: string) {
+  async deshacerCierre(id: string, usuario: UsuarioRequest) {
+    await this.assertPropietario(id, usuario);
     return this.prisma.$transaction(async (tx) => {
       const venta = await this.lockVenta(tx, id);
       if (venta.estado !== EstadoVenta.VENDIDA) {
@@ -220,7 +257,8 @@ export class VentasService {
 
   // §2.3: "Vendida por terceros" — no genera comisión ni honorarios
   // potenciales, la gestionó otra inmobiliaria o fue venta directa.
-  venderPorTerceros(id: string, dto: VenderPorTercerosDto) {
+  async venderPorTerceros(id: string, dto: VenderPorTercerosDto, usuario: UsuarioRequest) {
+    await this.assertPropietario(id, usuario);
     return this.prisma.venta.update({
       where: { id },
       data: {
@@ -236,13 +274,15 @@ export class VentasService {
   // (que usan el % propio de cada propiedad), este indicador agregado usa
   // explícitamente el % de Configuración sobre las NO vendidas, convertido
   // a USD al dólar de referencia solo para este indicador.
-  async kpis() {
+  async kpis(usuario: UsuarioRequest) {
+    const propiedad =
+      usuario.rol === RolUsuario.EQUIPO ? { designadoId: usuario.integranteEquipoId } : undefined;
     const [enVenta, reservadas, interesadosActivos, noVendidas, configuracion] = await Promise.all([
-      this.prisma.venta.count({ where: { estado: EstadoVenta.PUBLICADA } }),
-      this.prisma.venta.count({ where: { estado: EstadoVenta.RESERVADA } }),
-      this.prisma.interesadoVenta.count({ where: { etapa: { not: 'DESCARTADO' } } }),
+      this.prisma.venta.count({ where: { estado: EstadoVenta.PUBLICADA, propiedad } }),
+      this.prisma.venta.count({ where: { estado: EstadoVenta.RESERVADA, propiedad } }),
+      this.prisma.interesadoVenta.count({ where: { etapa: { not: 'DESCARTADO' }, venta: { propiedad } } }),
       this.prisma.venta.findMany({
-        where: { estado: { notIn: [EstadoVenta.VENDIDA, EstadoVenta.VENDIDA_POR_TERCEROS] } },
+        where: { estado: { notIn: [EstadoVenta.VENDIDA, EstadoVenta.VENDIDA_POR_TERCEROS] }, propiedad },
       }),
       this.configuracionService.get(),
     ]);
@@ -261,15 +301,30 @@ export class VentasService {
     return { enVenta, reservadas, interesadosActivos, comisionPotencial };
   }
 
+  // Un designado (EQUIPO) no puede tocar el interesado de una venta que no
+  // le fue asignada, aunque sepa el id del interesado — mismo criterio que
+  // assertPropietario, resuelto acá vía su venta.
+  private async assertPropietarioDeInteresado(interesadoId: string, usuario: UsuarioRequest) {
+    if (usuario.rol !== RolUsuario.EQUIPO) return;
+    const interesado = await this.prisma.interesadoVenta.findUnique({
+      where: { id: interesadoId },
+      select: { ventaId: true },
+    });
+    if (!interesado) throw new NotFoundException('Interesado no encontrado.');
+    await this.assertPropietario(interesado.ventaId, usuario);
+  }
+
   // Interesados (pipeline: consulta → visita → negociación → reserva → descartado)
-  crearInteresado(ventaId: string, dto: CreateInteresadoDto) {
+  async crearInteresado(ventaId: string, dto: CreateInteresadoDto, usuario: UsuarioRequest) {
+    await this.assertPropietario(ventaId, usuario);
     return this.prisma.interesadoVenta.create({
       data: { ventaId, ...dto },
       include: { cliente: true },
     });
   }
 
-  editarInteresado(id: string, dto: UpdateInteresadoDto) {
+  async editarInteresado(id: string, dto: UpdateInteresadoDto, usuario: UsuarioRequest) {
+    await this.assertPropietarioDeInteresado(id, usuario);
     return this.prisma.interesadoVenta.update({
       where: { id },
       data: dto,
@@ -277,7 +332,8 @@ export class VentasService {
     });
   }
 
-  eliminarInteresado(id: string) {
+  async eliminarInteresado(id: string, usuario: UsuarioRequest) {
+    await this.assertPropietarioDeInteresado(id, usuario);
     return this.prisma.interesadoVenta.delete({ where: { id } });
   }
 }

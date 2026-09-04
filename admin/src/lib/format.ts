@@ -43,6 +43,22 @@ export function formatDate(fecha: string | Date | null | undefined): string {
   return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
 }
 
+// Duración del contrato en meses, para mostrar "N° factura 9/24" en el
+// comprobante de liquidación. Los contratos de esta inmobiliaria van de
+// `contratoInicio` a un `contratoFin` que es el día ANTERIOR al aniversario
+// de N meses (ej. 01/01/2026 a 31/12/2027 = 24 meses) — por eso se le suma
+// un día a `contratoFin` antes de restar los calendarios: así el resultado
+// da el N exacto en vez de quedar corrido en 1 (contando el mes de inicio
+// dos veces) o mal redondeado (dividiendo por días).
+export function mesesContrato(contratoInicio: string | Date | null, contratoFin: string | Date | null): number | null {
+  if (!contratoInicio || !contratoFin) return null;
+  const inicio = typeof contratoInicio === 'string' ? new Date(contratoInicio) : contratoInicio;
+  const finMasUnDia = new Date(typeof contratoFin === 'string' ? new Date(contratoFin) : contratoFin);
+  finMasUnDia.setUTCDate(finMasUnDia.getUTCDate() + 1);
+  const meses = (finMasUnDia.getUTCFullYear() - inicio.getUTCFullYear()) * 12 + (finMasUnDia.getUTCMonth() - inicio.getUTCMonth());
+  return meses > 0 ? meses : null;
+}
+
 export function mesActualStr(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -74,5 +90,5 @@ export function mesLabel(mesStr: string): string {
 }
 
 export function hoyLabel(): string {
-  return new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+  return new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 }

@@ -7,10 +7,23 @@ import { GastosService } from '../gastos/gastos.service';
 import { ConfiguracionService } from '../configuracion/configuracion.service';
 import { CreatePagoDto } from './dto/create-pago.dto';
 import { UpdatePagoDto } from './dto/update-pago.dto';
-import { fechaAMesString, finDeMes, mesCerrado, mesStringAFecha, primerDiaMes, ultimosMesesCerrados } from '../common/fecha.util';
+import {
+  diasDeAtrasoEnMes,
+  fechaAMesString,
+  finDeMes,
+  mesCerrado,
+  mesStringAFecha,
+  primerDiaMes,
+  ultimosMesesCerrados,
+} from '../common/fecha.util';
 import { montoRegularEstimadoDelMes } from '../common/monto-regular-mes.util';
+import { calcularMontoMora } from '../common/mora.util';
 
-export type EstadoCobro = 'PAGADO' | 'PENDIENTE' | 'IMPAGO' | 'NO_CORRESPONDE';
+// IMPAGO_CON_MORA (§ pedido del usuario 2026-09-03): el mes en curso (no
+// cerrado todavía) pasó su día de vencimiento sin cobrarse del todo — del 1
+// al `diaVencimientoAlquiler` es PENDIENTE, de ahí en adelante y hasta que
+// cierre el mes es esto. IMPAGO sigue siendo solo para meses ya CERRADOS.
+export type EstadoCobro = 'PAGADO' | 'PENDIENTE' | 'IMPAGO' | 'IMPAGO_CON_MORA' | 'NO_CORRESPONDE';
 
 const VENTANA_DEUDA_MESES = 12; // §5.4
 
@@ -56,10 +69,27 @@ export class CobrosService {
     mes: Date,
     esperado: number | null,
     cobrado: number,
+    diaVencimientoAlquiler: number,
+    tieneMoraConfigurada: boolean,
+    ahora: Date = new Date(),
   ): EstadoCobro {
     if (esperado == null) return 'NO_CORRESPONDE';
     if (cobrado >= esperado) return 'PAGADO';
-    return mesCerrado(mes) ? 'IMPAGO' : 'PENDIENTE';
+
+    // "Pasó el vencimiento" = el mes ya cerró (venció hace rato, sin dudas)
+    // O es el mes en curso pero ya se pasó `diaVencimientoAlquiler` — antes
+    // de eso sigue PENDIENTE (dentro del plazo); un mes futuro nunca lo
+    // pasa (ni siquiera arrancó todavía).
+    const cerrado = mesCerrado(mes, ahora);
+    const esMesActual = mes.getTime() === primerDiaMes(ahora).getTime();
+    const pasoVencimiento = cerrado || (esMesActual && diasDeAtrasoEnMes(mes, diaVencimientoAlquiler, ahora) > 0);
+    if (!pasoVencimiento) return 'PENDIENTE';
+
+    // § pedido del usuario 2026-09-04: "Impago con mora" solo si la
+    // propiedad realmente tiene punitorio configurado (si no, no hay mora
+    // que cobrar — queda como "Impago" nomás, esté cerrado o sea el mes en
+    // curso ya vencido).
+    return tieneMoraConfigurada ? 'IMPAGO_CON_MORA' : 'IMPAGO';
   }
 
   // "Esperado" de un mes sin factura emitida todavía — alquiler + servicios
@@ -97,7 +127,10 @@ export class CobrosService {
   // ya se emitió).
   async resumenMes(mesStr: string) {
     const mes = mesStringAFecha(mesStr);
-    const propiedades = await this.propiedadesAlquiladas();
+    const [propiedades, configuracion] = await Promise.all([
+      this.propiedadesAlquiladas(),
+      this.configuracionService.get(),
+    ]);
 
     const filas = await Promise.all(
       propiedades.map(async (p) => {
@@ -119,6 +152,7 @@ export class CobrosService {
           orderBy: { fecha: 'asc' },
         });
         const cobrado = pagos.reduce((acc, pago) => acc + Number(pago.monto), 0);
+        const tieneMoraConfigurada = !!p.punitorioTipo && p.punitorioValor != null && Number(p.punitorioValor) > 0;
         return {
           propiedadId: p.id,
           propiedadNombre: p.nombre,
@@ -127,7 +161,7 @@ export class CobrosService {
           esperado,
           cobrado,
           pendiente: esperado != null ? Math.max(esperado - cobrado, 0) : 0,
-          estado: this.calcularEstado(mes, esperado, cobrado),
+          estado: this.calcularEstado(mes, esperado, cobrado, configuracion.diaVencimientoAlquiler, tieneMoraConfigurada),
           pagos,
         };
       }),
@@ -284,6 +318,80 @@ export class CobrosService {
     }
 
     return { deuda, mesesImpagos };
+  }
+
+  // Mora acumulada sobre la MISMA ventana de 12 meses cerrados que
+  // `deudaAcumulada()` (§ pedido del usuario 2026-09-04: antes la mora solo
+  // se calculaba sobre el mes inmediato anterior, y encima únicamente si ya
+  // se había terminado de pagar — un inquilino que directamente nunca paga
+  // no generaba mora en ningún lado, aunque acumulara meses de atraso). Por
+  // cada mes de la ventana:
+  // - si terminó pagándose (cobrado >= esperado), la mora sale de los días
+  //   reales entre el vencimiento y el ÚLTIMO pago de ese mes (mismo
+  //   criterio que antes tenía en solitario `FacturasService.calcularMora()`).
+  // - si sigue sin pagarse (mes ya cerrado, nunca se saldó), sale de los
+  //   días entre el vencimiento y el ÚLTIMO día de ese mes — un mes cerrado
+  //   no puede seguir acumulando más días de los que tuvo (esa lógica es la
+  //   misma que usa `diasDeAtrasoEnMes()` para el mes todavía en curso).
+  // No incluye el mes en curso: ese lo cubre por separado el ítem "Recargo
+  // por mora" de `FacturasService.itemsPredeterminados()`, que sigue
+  // sumando día a día mientras el mes sigue abierto.
+  async moraAcumulada(propiedadId: string, ahora: Date = new Date()) {
+    const propiedad = await this.prisma.propiedad.findUnique({
+      where: { id: propiedadId },
+      select: { punitorioTipo: true, punitorioValor: true, punitorioFrecuencia: true },
+    });
+    if (!propiedad?.punitorioTipo || propiedad.punitorioValor == null || Number(propiedad.punitorioValor) <= 0) {
+      return { mora: 0, mesesConMora: 0, diasAtraso: 0 };
+    }
+
+    const configuracion = await this.configuracionService.get();
+    const hoy = new Date();
+    const referencia = ahora.getTime() > hoy.getTime() ? hoy : ahora;
+    const alDiaDesde = await this.alDiaDesde(propiedadId);
+    const meses = ultimosMesesCerrados(VENTANA_DEUDA_MESES, referencia).filter(
+      (mes) => !alDiaDesde || mes.getTime() >= alDiaDesde.getTime(),
+    );
+
+    const porMes = await Promise.all(
+      meses.map(async (mes) => {
+        const esperadoRaw = await this.propiedadesService.rentaVigente(propiedadId, finDeMes(mes));
+        if (esperadoRaw == null) return { monto: 0, dias: 0 };
+        const esperado = Number(esperadoRaw);
+        const cobrado = await this.cobradoDelMes(propiedadId, mes);
+
+        const vencimiento = new Date(
+          Date.UTC(mes.getUTCFullYear(), mes.getUTCMonth(), configuracion.diaVencimientoAlquiler),
+        );
+        let diasAtraso: number;
+        if (cobrado >= esperado) {
+          const ultimoPago = await this.prisma.pago.findFirst({
+            where: { propiedadId, mes, anulado: false },
+            orderBy: { fecha: 'desc' },
+          });
+          if (!ultimoPago) return { monto: 0, dias: 0 };
+          diasAtraso = Math.round((ultimoPago.fecha.getTime() - vencimiento.getTime()) / 86_400_000);
+        } else {
+          diasAtraso = Math.floor((finDeMes(mes).getTime() - vencimiento.getTime()) / 86_400_000);
+        }
+        if (diasAtraso <= 0) return { monto: 0, dias: 0 };
+
+        return { monto: calcularMontoMora(propiedad, esperado, diasAtraso), dias: diasAtraso };
+      }),
+    );
+
+    let mora = 0;
+    let mesesConMora = 0;
+    let diasAtraso = 0;
+    for (const m of porMes) {
+      if (m.monto > 0) {
+        mora += m.monto;
+        diasAtraso += m.dias;
+        mesesConMora++;
+      }
+    }
+
+    return { mora, mesesConMora, diasAtraso };
   }
 
   // Detalle mes a mes de lo pendiente (deuda + mes en curso si todavía no se

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
+import { useAuth } from '../auth/AuthContext';
 import { PageHeader } from '../components/PageHeader';
 import { Modal } from '../components/Modal';
 import { MultiDonut } from '../components/charts/MultiDonut';
@@ -104,8 +105,15 @@ function iniciales(nombre: string) {
 
 export function ClientesPage() {
   const qc = useQueryClient();
+  const { usuario } = useAuth();
+  // Un designado (rol EQUIPO) solo ve sus propios clientes (filtrado server-
+  // side, ver ClientesService.findAll) — el gráfico de origen y el
+  // historial de eliminados son vistas "de toda la cartera" que no le
+  // corresponden, y sus endpoints son ADMIN-only (devolverían 403).
+  const esEquipo = usuario?.rol === 'EQUIPO';
   const [busqueda, setBusqueda] = useState('');
   const [filtroTipo, setFiltroTipo] = useState<'todos' | TipoOperacionCliente>('todos');
+  const [filtroDesignado, setFiltroDesignado] = useState('');
   const [modal, setModal] = useState<'new' | Cliente | null>(null);
   const [verEliminados, setVerEliminados] = useState(false);
 
@@ -116,6 +124,7 @@ export function ClientesPage() {
   const origenStats = useQuery({
     queryKey: ['clientes', 'stats-por-origen'],
     queryFn: () => api.get<OrigenStat[]>('/clientes/stats-por-origen'),
+    enabled: !esEquipo,
   });
   const delegados = useQuery({
     queryKey: ['integrantes-equipo'],
@@ -142,6 +151,7 @@ export function ClientesPage() {
 
   let lista = clientes.data ?? [];
   if (filtroTipo !== 'todos') lista = lista.filter((c) => c.tipoOperacion === filtroTipo);
+  if (filtroDesignado) lista = lista.filter((c) => c.delegadoId === filtroDesignado);
   const q = busqueda.toLowerCase();
   if (q) {
     lista = lista.filter((c) =>
@@ -186,27 +196,29 @@ export function ClientesPage() {
             ],
           ]}
         />
-        <div className="panel" style={{ marginBottom: 22 }}>
-          <h3>ORIGEN DE LOS CLIENTES</h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 28, flexWrap: 'wrap' }}>
-            <MultiDonut
-              slices={(origenStats.data ?? []).map((s) => ({
-                label: ORIGEN_LABEL[s.origen],
-                valor: s.cantidad,
-                color: ORIGEN_COLOR[s.origen],
-              }))}
-            />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1, minWidth: 180 }}>
-              {(origenStats.data ?? []).map((s) => (
-                <div key={s.origen} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
-                  <i style={{ width: 8, height: 8, borderRadius: 99, background: ORIGEN_COLOR[s.origen], flexShrink: 0, display: 'inline-block' }}></i>
-                  <span style={{ flex: 1, color: 'var(--ink2)' }}>{ORIGEN_LABEL[s.origen]}</span>
-                  <span style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{s.cantidad}</span>
-                </div>
-              ))}
+        {!esEquipo && (
+          <div className="panel" style={{ marginBottom: 22 }}>
+            <h3>ORIGEN DE LOS CLIENTES</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 28, flexWrap: 'wrap' }}>
+              <MultiDonut
+                slices={(origenStats.data ?? []).map((s) => ({
+                  label: ORIGEN_LABEL[s.origen],
+                  valor: s.cantidad,
+                  color: ORIGEN_COLOR[s.origen],
+                }))}
+              />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1, minWidth: 180 }}>
+                {(origenStats.data ?? []).map((s) => (
+                  <div key={s.origen} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
+                    <i style={{ width: 8, height: 8, borderRadius: 99, background: ORIGEN_COLOR[s.origen], flexShrink: 0, display: 'inline-block' }}></i>
+                    <span style={{ flex: 1, color: 'var(--ink2)' }}>{ORIGEN_LABEL[s.origen]}</span>
+                    <span style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{s.cantidad}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         <div className="tablewrap" style={{ marginBottom: 22 }}>
           <div className="searchbar">
@@ -227,10 +239,26 @@ export function ClientesPage() {
               <option value="VENDER">Quiere vender</option>
               <option value="PROPIETARIO_ALQUILER">Propietario/a de propiedad en alquiler</option>
             </select>
+            {!esEquipo && (
+              <select
+                value={filtroDesignado}
+                onChange={(e) => setFiltroDesignado(e.target.value)}
+                style={{ border: '1px solid var(--border)', borderRadius: 9, padding: '9px 12px', background: 'var(--bg)', fontSize: 13 }}
+              >
+                <option value="">Todos los designados</option>
+                {(delegados.data ?? []).map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.nombre}
+                  </option>
+                ))}
+              </select>
+            )}
             <span style={{ flex: 1 }}></span>
-            <button className="btn-sm" onClick={() => setVerEliminados(true)}>
-              Historial de eliminados
-            </button>
+            {!esEquipo && (
+              <button className="btn-sm" onClick={() => setVerEliminados(true)}>
+                Historial de eliminados
+              </button>
+            )}
             <button className="btn-sm solid" onClick={() => setModal('new')}>
               + Nuevo cliente
             </button>
@@ -332,6 +360,7 @@ export function ClientesPage() {
         <ClienteModal
           cliente={modal === 'new' ? null : modal}
           delegados={delegados.data ?? []}
+          esEquipo={esEquipo}
           onClose={() => setModal(null)}
           onSaved={() => {
             setModal(null);
@@ -442,11 +471,13 @@ function HistorialEliminadosModal({ onClose, onChange }: { onClose: () => void; 
 function ClienteModal({
   cliente,
   delegados,
+  esEquipo,
   onClose,
   onSaved,
 }: {
   cliente: Cliente | null;
   delegados: Delegado[];
+  esEquipo: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -575,17 +606,19 @@ function ClienteModal({
               <label>Presupuesto hasta</label>
               <input type="number" min={0} step="0.01" value={montoHasta} onChange={(e) => setMontoHasta(e.target.value)} placeholder="Opcional" />
             </div>
-            <div className="fg">
-              <label>Delegado / designado</label>
-              <select value={delegadoId} onChange={(e) => setDelegadoId(e.target.value)}>
-                <option value="">— Sin asignar —</option>
-                {delegados.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {!esEquipo && (
+              <div className="fg">
+                <label>Delegado / designado</label>
+                <select value={delegadoId} onChange={(e) => setDelegadoId(e.target.value)}>
+                  <option value="">— Sin asignar —</option>
+                  {delegados.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.nombre}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="fg full">
               <label>Detalle de lo que busca</label>
               <input value={detalle} onChange={(e) => setDetalle(e.target.value)} placeholder="Opcional" />

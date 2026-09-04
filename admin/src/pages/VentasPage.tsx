@@ -10,7 +10,7 @@ import { honorariosLabel, resolverPorcentajeHonorarios, type TipoHonorarios } fr
 import { FotosPropiedad, type FotoPropiedadItem } from '../components/FotosPropiedad';
 import { FotoHeroPropiedad } from '../components/FotoHeroPropiedad';
 import { SeccionGuia } from '../components/SeccionGuia';
-import { SERVICIOS_OPCIONES, type ServicioFacturable } from '../components/ServiciosCuentaInputs';
+import { SERVICIOS_OPCIONES_VENTA, type ServicioFacturable } from '../components/ServiciosCuentaInputs';
 import { ESTADO_VENTA_LABEL, ESTADO_VENTA_CLASE, type EstadoVenta } from '../lib/ventaEnums';
 
 type EtapaInteresado = 'CONSULTA' | 'VISITA' | 'NEGOCIACION' | 'RESERVA' | 'DESCARTADO';
@@ -1060,7 +1060,7 @@ function SaleModal({
         <>
           <div className="secttl">SERVICIOS QUE SE FACTURAN</div>
           <div className="formgrid" style={{ marginBottom: 4 }}>
-            {SERVICIOS_OPCIONES.map((s) => (
+            {SERVICIOS_OPCIONES_VENTA.map((s) => (
               <div className="fg" key={s.key} style={{ minWidth: 0 }}>
                 <label className="chk">
                   <input type="checkbox" checked={servicios.includes(s.key)} onChange={() => toggleServicio(s.key)} />

@@ -29,6 +29,14 @@ export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: 
   clon.style.background = '#ffffff';
   clon.style.padding = '30px 34px';
   clon.style.boxSizing = 'border-box';
+  // El pie va pegado al borde inferior de la ÚLTIMA hoja, no flotando
+  // después del contenido con aire de sobra debajo (pedido del usuario
+  // 2026-09-03) — se resuelve con flexbox (`margin-top:auto` en el pie,
+  // ver más abajo) más forzar la altura del clon a un múltiplo exacto de
+  // una hoja A4 antes de rasterizar (ver más abajo, después de armar
+  // `pie`), calculado en base al contenido real.
+  clon.style.display = 'flex';
+  clon.style.flexDirection = 'column';
 
   const marcaAgua = clon.querySelector<HTMLElement>('.comp-marcaagua');
   if (marcaAgua) {
@@ -52,9 +60,21 @@ export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: 
   if (membrete) {
     Object.assign(membrete.style, { display: 'flex', position: 'relative', zIndex: '1' });
   }
+  // Las condiciones de pago (§ pedido del usuario 2026-09-03) quedaron
+  // sueltas entre el contenido y el pie, no adentro de `.comp-pie` — igual
+  // que el membrete/pie, dependen de `@media print` para mostrarse y
+  // html2canvas no la evalúa.
+  const condiciones = clon.querySelector<HTMLElement>('.comp-condiciones');
+  if (condiciones) {
+    Object.assign(condiciones.style, { display: 'block', position: 'relative', zIndex: '1' });
+  }
   const pie = clon.querySelector<HTMLElement>('.comp-pie');
   if (pie) {
-    Object.assign(pie.style, { display: 'flex', marginTop: '40px', position: 'relative', zIndex: '1' });
+    // `margin-top:auto` (contenedor flex-column): empuja el pie hasta el
+    // final de la altura del clon, sea cual sea — el aire que antes quedaba
+    // como espacio en blanco DEBAJO del pie pasa a quedar ARRIBA de él
+    // (entre el contenido y el pie), que es donde tiene que estar.
+    Object.assign(pie.style, { display: 'flex', marginTop: 'auto', paddingTop: '18px', position: 'relative', zIndex: '1' });
   }
 
   const cuerpo = clon.querySelector<HTMLElement>('.liqcard');
@@ -64,6 +84,21 @@ export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: 
 
   document.body.appendChild(clon);
   try {
+    const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+
+    // Se mide el contenido YA con el pie de imprimir visible pero antes de
+    // estirar nada, y se redondea para arriba al múltiplo de una hoja A4
+    // completa (en la misma escala de 780px de ancho que se va a
+    // rasterizar) — así el `margin-top:auto` de arriba deja el pie pegado
+    // exactamente al borde inferior de la ÚLTIMA hoja, en vez de flotando
+    // a mitad de página con aire de sobra debajo.
+    const alturaPaginaEnClon = pageHeight * (780 / pageWidth);
+    const alturaContenido = clon.scrollHeight;
+    const paginas = Math.max(1, Math.ceil(alturaContenido / alturaPaginaEnClon));
+    clon.style.height = `${paginas * alturaPaginaEnClon}px`;
+
     // `scale: 1.5` (no 2) + JPEG en vez de PNG: un PNG sin pérdida a escala
     // 2x de una página con texto+degradados terminaba pesando 10 MB+ por
     // comprobante — nada razonable para adjuntar en WhatsApp. JPEG calidad
@@ -71,18 +106,19 @@ export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: 
     // JPEG no soporta transparencia) baja esto a un rango normal (cientos
     // de KB) sin pérdida visible de nitidez en el texto.
     const canvas = await html2canvas(clon, { scale: 1.5, backgroundColor: '#ffffff' });
-    const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
     const imgWidth = pageWidth;
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
     const imgData = canvas.toDataURL('image/jpeg', 0.92);
 
+    // Tolerancia de 1pt: al forzar `clon.style.height` a un múltiplo exacto
+    // de página (arriba), el redondeo a píxel entero del canvas rasterizado
+    // deja un resto ínfimo (fracciones de punto) que con `> 0` alcanzaba
+    // para disparar una página extra casi en blanco al final del PDF.
     let alturaRestante = imgHeight;
     let y = 0;
     pdf.addImage(imgData, 'JPEG', 0, y, imgWidth, imgHeight);
     alturaRestante -= pageHeight;
-    while (alturaRestante > 0) {
+    while (alturaRestante > 1) {
       y = alturaRestante - imgHeight;
       pdf.addPage();
       pdf.addImage(imgData, 'JPEG', 0, y, imgWidth, imgHeight);

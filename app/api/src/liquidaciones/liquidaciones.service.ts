@@ -7,6 +7,7 @@ import { ConfiguracionService } from '../configuracion/configuracion.service';
 import { CajaService } from '../caja/caja.service';
 import { mesStringAFecha } from '../common/fecha.util';
 import { resolverPorcentajeHonorariosAdministracion } from '../common/honorarios.util';
+import { esServicioTrasladable } from '../common/servicios-facturables.util';
 import { LiquidacionDetalleInputDto } from './dto/liquidacion-detalle-input.dto';
 
 @Injectable()
@@ -40,11 +41,16 @@ export class LiquidacionesService {
     return Promise.all(
       propiedades.map(async (propiedad) => {
         const itemsOverride = overridePorPropiedad?.get(propiedad.id);
+        // Se busca la factura del mes SIEMPRE (no solo cuando no hay
+        // override) porque `facturaNumero` de abajo la necesita igual
+        // aunque el usuario haya editado los ítems a mano antes de emitir
+        // — es el flujo normal desde `LiquidacionModal`, que siempre manda
+        // `detalleInput`.
+        const factura = await this.facturasService.obtenerDelMes(propiedad.id, mesStr);
         let items: { descripcion: string; monto: number; numeroLiquidacion?: string }[];
         if (itemsOverride) {
           items = itemsOverride;
         } else {
-          const factura = await this.facturasService.obtenerDelMes(propiedad.id, mesStr);
           items = factura
             ? factura.items.map((it) => ({
                 descripcion: it.descripcion,
@@ -91,11 +97,44 @@ export class LiquidacionesService {
         const honorariosAdministracion =
           Math.round(baseAlquiler * (porcentajeHonorariosAdministracion / 100) * 100) / 100;
 
-        const neto = cobradoTotal - gastosAbsorbidos - honorariosAdministracion;
+        // Si la inmobiliaria es quien paga los servicios (§ pedido del
+        // usuario 2026-09-03, ver enum ResponsablePagoServicios): retiene
+        // ese importe antes de girarle el resto al propietario — no se le
+        // gira nada de lo que va a usar para pagarle a cada proveedor.
+        // Con PROPIETARIO (default) o INQUILINO no hay nada que retener acá:
+        // en INQUILINO ni siquiera existen esos ítems (ver
+        // `itemsPredeterminados()`), y con PROPIETARIO los servicios se le
+        // giran enteros junto con el alquiler, como siempre.
+        const esInmobiliariaResponsable = propiedad.responsablePagoServicios === 'INMOBILIARIA';
+        const serviciosTotal = esInmobiliariaResponsable
+          ? items.reduce((acc, it) => (esServicioTrasladable(it.descripcion) ? acc + Number(it.monto) : acc), 0)
+          : 0;
+
+        const neto = cobradoTotal - gastosAbsorbidos - honorariosAdministracion - serviciosTotal;
+
+        // Ítems para el COMPROBANTE de la liquidación (lo que se persiste e
+        // imprime) — distintos de `items` de abajo, que siguen siendo los
+        // reales de la Factura del inquilino (esos no se tocan: los usa
+        // también la vista previa editable de `LiquidacionModal`, y hay que
+        // poder reenviarlos tal cual al emitir). Con INMOBILIARIA
+        // responsable, se reemplaza "Alquiler" por el total cobrado y cada
+        // servicio pasa a listarse restando, para que quede clara la plata
+        // que la inmobiliaria retiene. Deuda arrastrada/Mora/ítems sueltos
+        // no se listan aparte acá porque ya quedan incluidos en ese total
+        // (listarlos de nuevo duplicaría visualmente el monto).
+        const itemsParaComprobante = esInmobiliariaResponsable
+          ? [
+              { descripcion: 'Importe total del periodo', monto: cobradoTotal, numeroLiquidacion: undefined as string | undefined },
+              ...items
+                .filter((it) => esServicioTrasladable(it.descripcion))
+                .map((it) => ({ descripcion: it.descripcion, monto: -Number(it.monto), numeroLiquidacion: it.numeroLiquidacion })),
+            ]
+          : items;
 
         return {
           propiedadId: propiedad.id,
           propiedadNombre: propiedad.nombre,
+          facturaNumero: factura?.numero ?? null,
           cobradoTotal,
           gastosAbsorbidos,
           gastosDetalle,
@@ -106,8 +145,10 @@ export class LiquidacionesService {
           // antes de emitir, con la misma fórmula que usa el backend.
           porcentajeHonorarios: 0,
           porcentajeHonorariosAdministracion,
+          baseAlquilerHonorarios: baseAlquiler,
           neto,
           items,
+          itemsParaComprobante,
         };
       }),
     );
@@ -187,13 +228,21 @@ export class LiquidacionesService {
           detalle: {
             create: detalle.map((d) => ({
               propiedadId: d.propiedadId,
+              facturaNumero: d.facturaNumero,
               cobradoTotal: d.cobradoTotal,
               gastosAbsorbidos: d.gastosAbsorbidos,
               honorarios: d.honorarios,
               honorariosAdministracion: d.honorariosAdministracion,
+              porcentajeHonorariosAdministracion: d.porcentajeHonorariosAdministracion,
+              baseAlquilerHonorarios: d.baseAlquilerHonorarios,
               neto: d.neto,
+              // `itemsParaComprobante`, no `items`: son los reales de la
+              // Factura del inquilino solo cuando ResponsablePagoServicios
+              // es PROPIETARIO o INQUILINO; con INMOBILIARIA ya vienen
+              // reemplazados por "Importe total del periodo" + servicios en
+              // negativo (ver `calcularDetalle()`).
               items: {
-                create: d.items.map((it, idx) => ({
+                create: d.itemsParaComprobante.map((it, idx) => ({
                   descripcion: it.descripcion,
                   monto: it.monto,
                   numeroLiquidacion: it.numeroLiquidacion,

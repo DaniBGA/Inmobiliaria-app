@@ -51,3 +51,21 @@ export function ultimosMesesCerrados(cantidad: number, ahora: Date = new Date())
   }
   return meses;
 }
+
+// Días de atraso del alquiler del MES EN CURSO respecto de `diaVencimiento`
+// de ese mismo mes — tope en el último día del propio mes: si el calendario
+// ya pasó a otro mes sin pagarse, acá deja de sumar (ese saldo pasa a ser
+// "Deuda arrastrada" del mes siguiente, no más días de mora de este).
+// Distinto de `FacturasService.calcularMora()`, que es retrospectivo sobre
+// un mes YA CERRADO y efectivamente pagado (compara contra la fecha real
+// del pago, no contra "hoy") — esto es para el mes que todavía sigue
+// abierto e impago, usado tanto para el estado "Impago con mora" (§ pedido
+// del usuario 2026-09-03) como para el ítem "Recargo por mora" que se
+// sugiere al abrir la factura de ese mismo mes.
+export function diasDeAtrasoEnMes(mes: Date, diaVencimiento: number, ahora: Date = new Date()): number {
+  const vencimiento = new Date(Date.UTC(mes.getUTCFullYear(), mes.getUTCMonth(), diaVencimiento));
+  const tope = finDeMes(mes);
+  const limite = ahora.getTime() < tope.getTime() ? ahora : tope;
+  const dias = Math.floor((limite.getTime() - vencimiento.getTime()) / 86_400_000);
+  return dias > 0 ? dias : 0;
+}

@@ -1,4 +1,4 @@
-import { formatMoney } from '../lib/format';
+import { formatMoney, mesesContrato } from '../lib/format';
 import { ComprobanteInfoBox } from './ComprobanteInfoBox';
 
 export interface LiquidacionItem {
@@ -14,14 +14,17 @@ export interface GastoDetalle {
 
 export interface LiquidacionDetalle {
   propiedadId: string;
+  facturaNumero: number | null;
   cobradoTotal: number | string;
   gastosAbsorbidos: number | string;
   gastos: GastoDetalle[];
   honorarios: number | string;
   honorariosAdministracion: number | string;
+  porcentajeHonorariosAdministracion: number | string;
+  baseAlquilerHonorarios: number | string;
   neto: number | string;
   items: LiquidacionItem[];
-  propiedad: { nombre: string };
+  propiedad: { nombre: string; contratoInicio: string | null; contratoFin: string | null };
 }
 
 export interface Liquidacion {
@@ -57,10 +60,7 @@ export function LiquidacionComprobanteBody({
           { label: 'Nombre Propietario', valor: propietarioNombre },
           { label: 'Propiedades incluidas', valor: propiedades },
         ]}
-        derecha={[
-          { label: 'Número de Liquidación', valor: String(L.numero) },
-          { label: 'Periodo', valor: mesTexto },
-        ]}
+        derecha={[{ label: 'Periodo', valor: mesTexto }]}
       />
       <div className="comp-detalletitulo">Detalle de Liquidación</div>
       <div className="liqcard" style={{ boxShadow: 'none' }}>
@@ -80,22 +80,41 @@ export function LiquidacionComprobanteBody({
       </div>
       <div className="liqbody">
         {L.detalle.map((d) => (
-          <div key={d.propiedadId}>
+          <div className="comp-propgrupo" key={d.propiedadId}>
             <div className="liqline pos">
               <span className="ld">
                 <b>{d.propiedad.nombre}</b>
+                {d.facturaNumero != null && (
+                  <small style={{ color: 'var(--muted)' }}>
+                    {' '}
+                    · Numero factura {d.facturaNumero}
+                    {(() => {
+                      const meses = mesesContrato(d.propiedad.contratoInicio, d.propiedad.contratoFin);
+                      return meses != null ? `/${meses}` : '';
+                    })()}
+                  </small>
+                )}
               </span>
               <span className="lv">{formatMoney(d.cobradoTotal)}</span>
             </div>
-            {d.items.map((it, i) => (
-              <div className="liqline" key={i}>
-                <span className="ld" style={{ paddingLeft: 16 }}>
-                  {it.descripcion}
-                  {it.numeroLiquidacion && <small style={{ color: 'var(--muted)' }}> · Liq N° {it.numeroLiquidacion}</small>}
-                </span>
-                <span className="lv">{formatMoney(it.monto)}</span>
-              </div>
-            ))}
+            {d.items.map((it, i) => {
+              // Cuando la inmobiliaria paga los servicios (§ pedido del
+              // usuario 2026-09-03), el backend manda esos ítems en
+              // negativo — se muestran restando, igual criterio visual que
+              // los gastos absorbidos de abajo.
+              const monto = Number(it.monto);
+              const esNegativo = monto < 0;
+              return (
+                <div className={`liqline${esNegativo ? ' neg' : ''}`} key={i}>
+                  <span className="ld" style={{ paddingLeft: 16 }}>
+                    {esNegativo && '↳ '}
+                    {it.descripcion}
+                    {it.numeroLiquidacion && <small style={{ color: 'var(--muted)' }}> · Liq N° {it.numeroLiquidacion}</small>}
+                  </span>
+                  <span className="lv">{esNegativo ? `− ${formatMoney(Math.abs(monto))}` : formatMoney(monto)}</span>
+                </div>
+              );
+            })}
             {d.gastos.map((g, i) => (
               <div className="liqline neg" key={i}>
                 <span className="ld" style={{ paddingLeft: 16 }}>
@@ -104,21 +123,23 @@ export function LiquidacionComprobanteBody({
                 <span className="lv">− {formatMoney(g.monto)}</span>
               </div>
             ))}
+            {/* Por propiedad, no un total combinado (pedido del usuario
+                2026-09-03): cada una puede tener un % de honorarios de
+                administración distinto, mezclarlas en una sola línea no
+                dejaba ver cuánto le correspondía a cuál. */}
+            {Number(d.honorariosAdministracion) > 0 && (
+              <div className="liqline neg">
+                <span className="ld" style={{ paddingLeft: 16 }}>
+                  ↳ Honorarios de administración ({Number(d.porcentajeHonorariosAdministracion)}% del alquiler:{' '}
+                  {formatMoney(d.baseAlquilerHonorarios)})
+                </span>
+                <span className="lv">− {formatMoney(d.honorariosAdministracion)}</span>
+              </div>
+            )}
           </div>
         ))}
         {L.detalle.length > 0 && (
           <>
-            {L.detalle.some((d) => Number(d.honorariosAdministracion) > 0) && (
-              <div className="liqline neg">
-                <span className="ld">
-                  Honorarios de administración
-                  <small>según el % de cada propiedad</small>
-                </span>
-                <span className="lv">
-                  − {formatMoney(L.detalle.reduce((s, d) => s + Number(d.honorariosAdministracion), 0))}
-                </span>
-              </div>
-            )}
             <div className="liqline tot">
               <span className="ld">Total a liquidar</span>
               <span className="lv" style={{ color: neto >= 0 ? 'var(--green)' : 'var(--red)' }}>

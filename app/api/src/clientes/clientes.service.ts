@@ -1,9 +1,11 @@
-import { Injectable } from '@nestjs/common';
-import { EstadoCliente, OrigenCliente, TipoOperacionCliente } from '@prisma/client';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { EstadoCliente, OrigenCliente, RolUsuario, TipoOperacionCliente } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AgendaService } from '../agenda/agenda.service';
 import { CreateClienteDto } from './dto/create-cliente.dto';
 import { UpdateClienteDto } from './dto/update-cliente.dto';
+
+type UsuarioRequest = { id: string; rol: RolUsuario; integranteEquipoId: string | null };
 
 @Injectable()
 export class ClientesService {
@@ -14,12 +16,24 @@ export class ClientesService {
 
   // §2.6: buscador simple + filtro por estado/tipo de operación. Nunca
   // incluye los borrados de forma blanda (ver `eliminar`/`historialEliminados`).
-  findAll(q?: string, estado?: EstadoCliente, tipoOperacion?: TipoOperacionCliente) {
+  // Un designado (rol EQUIPO) solo ve los clientes que el admin le asignó
+  // (delegadoId propio) — nunca la cartera completa. Un ADMIN ve todo, y
+  // puede además filtrar por un designado puntual con `delegadoId` (§ pedido
+  // del usuario 2026-09-04: poder elegir a alguien del equipo y ver solo lo
+  // suyo).
+  findAll(
+    usuario: UsuarioRequest,
+    q?: string,
+    estado?: EstadoCliente,
+    tipoOperacion?: TipoOperacionCliente,
+    delegadoId?: string,
+  ) {
     return this.prisma.cliente.findMany({
       where: {
         eliminadoEn: null,
         estado,
         tipoOperacion,
+        delegadoId: usuario.rol === RolUsuario.EQUIPO ? usuario.integranteEquipoId : delegadoId,
         nombre: q ? { contains: q, mode: 'insensitive' } : undefined,
       },
       include: { delegado: true },
@@ -38,9 +52,22 @@ export class ClientesService {
     });
   }
 
+  // Un designado (EQUIPO) no puede tocar/ver el cliente de otro, aunque
+  // sepa el id — mismo motivo que AgendaService.assertPropietario: protege
+  // contra un JWT robado usado directo contra la API.
+  private async assertPropietario(id: string, usuario: UsuarioRequest) {
+    if (usuario.rol !== RolUsuario.EQUIPO) return;
+    const cliente = await this.prisma.cliente.findUnique({ where: { id } });
+    if (!cliente) throw new NotFoundException('Cliente no encontrado.');
+    if (cliente.delegadoId !== usuario.integranteEquipoId) {
+      throw new ForbiddenException('No podés acceder a un cliente que no te fue designado.');
+    }
+  }
+
   // §2.6: la ficha muestra el próximo evento agendado (evento pendiente más
   // cercano) — un solo lugar donde se resuelve, no un campo duplicado.
-  async findOne(id: string) {
+  async findOne(id: string, usuario: UsuarioRequest) {
+    await this.assertPropietario(id, usuario);
     const cliente = await this.prisma.cliente.findUniqueOrThrow({
       where: { id },
       include: { delegado: true, interesadoVentas: { include: { venta: true } } },
@@ -49,18 +76,36 @@ export class ClientesService {
     return { ...cliente, proximoEvento };
   }
 
-  create(dto: CreateClienteDto) {
-    return this.prisma.cliente.create({ data: dto });
+  // El delegado de un cliente creado por un designado (EQUIPO) sale siempre
+  // del JWT, nunca de lo que mande el cliente HTTP (pedido del usuario
+  // 2026-09-04: "que solo lo pueda ver el designado que lo creó") — mismo
+  // criterio que AgendaService.crear con `usuarioId`. `usuario` es opcional
+  // porque el form de contacto de la landing pública (public.controller.ts)
+  // crea clientes sin sesión — ahí simplemente no hay delegado.
+  create(dto: CreateClienteDto, usuario?: UsuarioRequest) {
+    return this.prisma.cliente.create({
+      data: {
+        ...dto,
+        delegadoId: usuario?.rol === RolUsuario.EQUIPO ? usuario.integranteEquipoId : dto.delegadoId,
+      },
+    });
   }
 
-  update(id: string, dto: UpdateClienteDto) {
-    return this.prisma.cliente.update({ where: { id }, data: dto });
+  // Un designado no puede reasignar su cliente a otra persona del equipo —
+  // se ignora cualquier `delegadoId` que mande en el body.
+  async update(id: string, dto: UpdateClienteDto, usuario: UsuarioRequest) {
+    await this.assertPropietario(id, usuario);
+    return this.prisma.cliente.update({
+      where: { id },
+      data: { ...dto, delegadoId: usuario.rol === RolUsuario.EQUIPO ? usuario.integranteEquipoId : dto.delegadoId },
+    });
   }
 
   // Borrado blando: no borra la fila, solo la saca de las listas normales.
   // Recuperable desde el historial hasta que alguien la borre "de forma
-  // definitiva" ahí mismo.
-  remove(id: string) {
+  // definitiva" ahí mismo (ADMIN-only, ver controller).
+  async remove(id: string, usuario: UsuarioRequest) {
+    await this.assertPropietario(id, usuario);
     return this.prisma.cliente.update({ where: { id }, data: { eliminadoEn: new Date() } });
   }
 

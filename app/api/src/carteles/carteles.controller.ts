@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { CartelesService } from './carteles.service';
 import { CreateCartelDto } from './dto/create-cartel.dto';
 import { UpdateCartelDto } from './dto/update-cartel.dto';
@@ -13,13 +13,13 @@ export class CartelesController {
   constructor(private readonly cartelesService: CartelesService) {}
 
   @Get()
-  findAll() {
-    return this.cartelesService.findAll();
+  findAll(@Req() req: any) {
+    return this.cartelesService.findAll(req.user);
   }
 
   @Get('kpis')
-  kpis() {
-    return this.cartelesService.kpis();
+  kpis(@Req() req: any) {
+    return this.cartelesService.kpis(req.user);
   }
 
   @Post()

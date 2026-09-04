@@ -7,6 +7,7 @@ import { PageHeader } from '../components/PageHeader';
 import { Modal } from '../components/Modal';
 import { ComprobanteImpreso } from '../components/ComprobanteImpreso';
 import { LiquidacionComprobanteBody, type Liquidacion, type GastoDetalle, type LiquidacionItem } from '../components/LiquidacionComprobante';
+import { descargarPdfComprobante } from '../lib/pdfComprobante';
 import { formatMoney, mesActualStr, mesLabel, sumarMesesStr } from '../lib/format';
 import { splitDescripcionCuenta, combinarDescripcionCuenta, esServicioConCuenta } from '../lib/itemServicioCuenta';
 import { SeccionGuia } from '../components/SeccionGuia';
@@ -449,6 +450,23 @@ function LiquidacionModal({
   const L = generar.data;
   const comprobanteRef = useRef<HTMLDivElement>(null);
   const { enviando: enviandoWhatsapp, enviar: enviarComprobante } = useEnviarComprobantePorWhatsapp();
+  const [descargando, setDescargando] = useState(false);
+
+  // "Imprimir" (§ pedido del usuario 2026-09-03) dejó de abrir el diálogo
+  // nativo del navegador: `window.print()` deja el membrete propio pero el
+  // navegador le suma SU PROPIO encabezado/pie (URL de la página, fecha,
+  // "1/2") que no se puede sacar por CSS. Se descarga un PDF limpio con el
+  // mismo generador que ya usa WhatsApp — el usuario lo abre e imprime ESE
+  // archivo si necesita papel, sin el agregado del navegador.
+  async function descargarPdf() {
+    if (!L || !comprobanteRef.current) return;
+    setDescargando(true);
+    try {
+      await descargarPdfComprobante(comprobanteRef.current, `Liquidacion ${L.numero} - ${propietario.nombre}.pdf`);
+    } finally {
+      setDescargando(false);
+    }
+  }
 
   async function enviarPorWhatsapp() {
     if (!L) return;
@@ -629,8 +647,8 @@ function LiquidacionModal({
                 {enviandoWhatsapp ? 'Generando PDF…' : '📄 WhatsApp'}
               </button>
             )}
-            <button className="btn-dark" onClick={() => window.print()}>
-              ▤ Imprimir
+            <button className="btn-dark" disabled={descargando} onClick={descargarPdf}>
+              {descargando ? 'Generando PDF…' : '⬇ Descargar PDF'}
             </button>
           </div>
         </>

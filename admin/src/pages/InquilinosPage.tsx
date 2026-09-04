@@ -28,7 +28,7 @@ interface FilaCobro {
   esperado: number | null;
   cobrado: number;
   pendiente: number;
-  estado: 'PAGADO' | 'PENDIENTE' | 'IMPAGO' | 'NO_CORRESPONDE';
+  estado: 'PAGADO' | 'PENDIENTE' | 'IMPAGO' | 'IMPAGO_CON_MORA' | 'NO_CORRESPONDE';
   pagos: Pago[];
 }
 
@@ -49,6 +49,10 @@ const ESTADO_LABEL: Record<FilaCobro['estado'], { texto: string; clase: string }
   PAGADO: { texto: 'Pagado', clase: 'pagado' },
   PENDIENTE: { texto: 'Pendiente', clase: 'pendiente' },
   IMPAGO: { texto: 'Impago', clase: 'impago' },
+  // Mes en curso, ya pasado el día de vencimiento y todavía sin cobrarse
+  // del todo (pedido del usuario 2026-09-03) — distinto de "Impago" (ese
+  // sigue siendo solo para meses ya cerrados).
+  IMPAGO_CON_MORA: { texto: 'Impago con mora', clase: 'impago-mora' },
   NO_CORRESPONDE: { texto: '—', clase: '' },
 };
 

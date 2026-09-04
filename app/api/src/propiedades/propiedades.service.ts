@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, RolUsuario } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { existsSync, mkdirSync } from 'fs';
 import { unlink, writeFile } from 'fs/promises';
@@ -28,8 +28,17 @@ const INCLUDE_FICHA = {
 export class PropiedadesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  findAll() {
+  // Un designado (rol EQUIPO) solo puede llegar a este endpoint desde
+  // Ventas y Carteles o Agenda (únicas rutas que tiene habilitadas) — en
+  // ambas, lo único que le compete es la cartera en venta que el admin le
+  // asignó (pedido del usuario 2026-09-04: "que solo puedan ver las
+  // propiedades en venta que ellos son designados para la muestra").
+  findAll(usuario?: { rol: RolUsuario; integranteEquipoId: string | null }) {
     return this.prisma.propiedad.findMany({
+      where:
+        usuario?.rol === RolUsuario.EQUIPO
+          ? { modalidad: 'VENTA', designadoId: usuario.integranteEquipoId }
+          : undefined,
       include: {
         propietario: true,
         inquilino: true,

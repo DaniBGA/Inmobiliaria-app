@@ -12,8 +12,14 @@ import { FotosPropiedad, type FotoPropiedadItem } from './FotosPropiedad';
 import { FotoHeroPropiedad } from './FotoHeroPropiedad';
 import { ComprobanteImpreso } from './ComprobanteImpreso';
 import { ComprobanteInfoBox } from './ComprobanteInfoBox';
-import { ServiciosCuentaInputs, SERVICIOS_OPCIONES, type ServicioFacturable } from './ServiciosCuentaInputs';
+import { descargarPdfComprobante } from '../lib/pdfComprobante';
+import { ServiciosCuentaInputs, SERVICIOS_OPCIONES_ALQUILER, type ServicioFacturable } from './ServiciosCuentaInputs';
 import { splitDescripcionCuenta, combinarDescripcionCuenta, esServicioConCuenta } from '../lib/itemServicioCuenta';
+import {
+  RESPONSABLE_PAGO_SERVICIOS_LABEL,
+  RESPONSABLE_PAGO_SERVICIOS_HINT,
+  type ResponsablePagoServicios,
+} from '../lib/responsablePagoServicios';
 
 type Modalidad = 'ALQUILER' | 'VENTA';
 type IndiceAjuste = 'IPC' | 'ICL' | null;
@@ -72,6 +78,7 @@ interface PropiedadFicha {
   caracterEspecial: boolean;
   heroPortadaUrl: string | null;
   serviciosHabilitados: ServicioFacturable[];
+  responsablePagoServicios: ResponsablePagoServicios;
   obrasSanitariasNumeroCuenta: string | null;
   camuzziNumeroCuenta: string | null;
   retributivasNumeroCuenta: string | null;
@@ -1091,6 +1098,9 @@ function EditarDatosGeneralesModal({
   const [superficieCubierta, setSuperficieCubierta] = useState(String(propiedad.superficieCubierta ?? ''));
   const [descripcion, setDescripcion] = useState(propiedad.descripcion ?? '');
   const [servicios, setServicios] = useState<ServicioFacturable[]>(propiedad.serviciosHabilitados ?? []);
+  const [responsablePagoServicios, setResponsablePagoServicios] = useState<ResponsablePagoServicios>(
+    propiedad.responsablePagoServicios ?? 'PROPIETARIO',
+  );
   const [obrasSanitariasNumeroCuenta, setObrasSanitariasNumeroCuenta] = useState(propiedad.obrasSanitariasNumeroCuenta ?? '');
   const [camuzziNumeroCuenta, setCamuzziNumeroCuenta] = useState(propiedad.camuzziNumeroCuenta ?? '');
   const [retributivasNumeroCuenta, setRetributivasNumeroCuenta] = useState(propiedad.retributivasNumeroCuenta ?? '');
@@ -1122,6 +1132,7 @@ function EditarDatosGeneralesModal({
         descripcion: descripcion.trim() || undefined,
         caracterEspecial,
         serviciosHabilitados: propiedad.modalidad === 'ALQUILER' ? servicios : undefined,
+        responsablePagoServicios: propiedad.modalidad === 'ALQUILER' ? responsablePagoServicios : undefined,
         obrasSanitariasNumeroCuenta:
           propiedad.modalidad === 'ALQUILER' && servicios.includes('OBRAS_SANITARIAS')
             ? obrasSanitariasNumeroCuenta.trim() || null
@@ -1219,7 +1230,7 @@ function EditarDatosGeneralesModal({
         <>
           <div className="secttl">SERVICIOS QUE SE FACTURAN</div>
           <div className="formgrid" style={{ marginBottom: 4 }}>
-            {SERVICIOS_OPCIONES.map((s) => (
+            {SERVICIOS_OPCIONES_ALQUILER.map((s) => (
               <div className="fg" key={s.key} style={{ minWidth: 0 }}>
                 <label className="chk">
                   <input type="checkbox" checked={servicios.includes(s.key)} onChange={() => toggleServicio(s.key)} />
@@ -1244,6 +1255,22 @@ function EditarDatosGeneralesModal({
             wrapperStyle={{ marginBottom: 4 }}
             fieldStyle={{ minWidth: 0 }}
           />
+          <div className="fg full" style={{ marginBottom: 4 }}>
+            <label>¿Quién paga los servicios?</label>
+            <select
+              value={responsablePagoServicios}
+              onChange={(e) => setResponsablePagoServicios(e.target.value as typeof responsablePagoServicios)}
+            >
+              {Object.entries(RESPONSABLE_PAGO_SERVICIOS_LABEL).map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </select>
+            <small style={{ display: 'block', marginTop: 4, color: 'var(--muted)' }}>
+              {RESPONSABLE_PAGO_SERVICIOS_HINT[responsablePagoServicios]}
+            </small>
+          </div>
 
           <div className="secttl">MORA POR ATRASO</div>
           <div className="formgrid" style={{ marginBottom: 4 }}>
@@ -1661,8 +1688,18 @@ export function FacturaModal({
           return [base, cuenta];
         }),
       );
-      setItems(
-        facturaExistente.data.items.map((it) => {
+      // "Recargo por mora"/"Mora acumulada" (§ pedido del usuario
+      // 2026-09-04) traen pegados los días de atraso, que siguen corriendo
+      // día a día — si esta factura ya estaba emitida, el ítem guardado
+      // queda congelado con los días de cuando se emitió. Se sacan acá los
+      // que hubiera y se agregan los de `predeterminados` (recién
+      // recalculados), igual criterio que ya se usa arriba para refrescar
+      // el N° de cuenta/usuario de los servicios contra el valor actual.
+      const esItemMora = (descripcion: string) =>
+        descripcion.startsWith('Recargo por mora') || descripcion.startsWith('Mora acumulada');
+      const itemsFactura = facturaExistente.data.items
+        .filter((it) => !esItemMora(it.descripcion))
+        .map((it) => {
           const { base, cuenta } = splitDescripcionCuenta(it.descripcion);
           return {
             descripcion: base,
@@ -1670,8 +1707,16 @@ export function FacturaModal({
             monto: String(it.monto),
             numeroLiquidacion: it.numeroLiquidacion ?? '',
           };
-        }),
-      );
+        });
+      const itemsMoraFrescos = (predeterminados.data ?? [])
+        .filter((it) => esItemMora(it.descripcion))
+        .map((it) => ({
+          descripcion: it.descripcion,
+          cuenta: '',
+          monto: it.monto ? String(it.monto) : '',
+          numeroLiquidacion: it.numeroLiquidacion ?? '',
+        }));
+      setItems([...itemsFactura, ...itemsMoraFrescos]);
       setNumeroFactura(String(facturaExistente.data.numero));
       return;
     }
@@ -1756,6 +1801,23 @@ export function FacturaModal({
   const F = emitir.data;
   const comprobanteRef = useRef<HTMLDivElement>(null);
   const { enviando: enviandoWhatsapp, enviar: enviarComprobante } = useEnviarComprobantePorWhatsapp();
+  const [descargando, setDescargando] = useState(false);
+
+  // "Imprimir" (§ pedido del usuario 2026-09-03) dejó de abrir el diálogo
+  // nativo del navegador: `window.print()` deja el membrete propio pero el
+  // navegador le suma SU PROPIO encabezado/pie (URL de la página, fecha,
+  // "1/2") que no se puede sacar por CSS. Se descarga un PDF limpio con el
+  // mismo generador que ya usa WhatsApp — el usuario lo abre e imprime ESE
+  // archivo si necesita papel, sin el agregado del navegador.
+  async function descargarPdf() {
+    if (!F || !comprobanteRef.current) return;
+    setDescargando(true);
+    try {
+      await descargarPdfComprobante(comprobanteRef.current, `Factura ${F.numero} - ${propiedadNombre}.pdf`);
+    } finally {
+      setDescargando(false);
+    }
+  }
 
   async function enviarPorWhatsapp() {
     if (!F || !inquilino) return;
@@ -1969,8 +2031,8 @@ export function FacturaModal({
                 {enviandoWhatsapp ? 'Generando PDF…' : '📄 WhatsApp'}
               </button>
             )}
-            <button className="btn-dark" onClick={() => window.print()}>
-              ▤ Imprimir
+            <button className="btn-dark" disabled={descargando} onClick={descargarPdf}>
+              {descargando ? 'Generando PDF…' : '⬇ Descargar PDF'}
             </button>
           </div>
         </>
@@ -2017,6 +2079,21 @@ function ReciboModal({
   }, []);
 
   const R = generar.data;
+  const comprobanteRef = useRef<HTMLDivElement>(null);
+  const [descargando, setDescargando] = useState(false);
+
+  // Ver comentario equivalente en FacturaModal: "Imprimir" descarga un PDF
+  // limpio en vez de abrir el diálogo nativo del navegador (que agrega su
+  // propio encabezado/pie con la URL y el número de página).
+  async function descargarPdf() {
+    if (!R || !comprobanteRef.current) return;
+    setDescargando(true);
+    try {
+      await descargarPdfComprobante(comprobanteRef.current, `Recibo ${R.numero} - ${propiedadNombre}.pdf`);
+    } finally {
+      setDescargando(false);
+    }
+  }
 
   return (
     <Modal open onClose={onClose} title={`Recibo — ${propiedadNombre}`} width={520}>
@@ -2026,7 +2103,7 @@ function ReciboModal({
       )}
       {R && (
         <>
-          <ComprobanteImpreso cfg={cfg} titulo="Recibo">
+          <ComprobanteImpreso cfg={cfg} titulo="Recibo" ref={comprobanteRef}>
             <ComprobanteInfoBox
               izquierda={[
                 { label: 'Nombre Inquilino', valor: inquilino?.nombre ?? '—' },
@@ -2067,8 +2144,8 @@ function ReciboModal({
             <button className="btn-ghost" onClick={onClose}>
               Cerrar
             </button>
-            <button className="btn-dark" onClick={() => window.print()}>
-              ▤ Imprimir
+            <button className="btn-dark" disabled={descargando} onClick={descargarPdf}>
+              {descargando ? 'Generando PDF…' : '⬇ Descargar PDF'}
             </button>
           </div>
         </>

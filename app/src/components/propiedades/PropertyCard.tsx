@@ -199,7 +199,6 @@ export function PropertyCard({ propiedad }: { propiedad: PropiedadPublica }) {
     propiedad.modalidad === 'VENTA' ? formatPrecio(propiedad.precio, propiedad.moneda) : formatMoney(propiedad.montoAlquilerVigente);
   const specs = specsDe(propiedad);
   const whatsapp = contactoInfo.data?.whatsapp;
-  const mensaje = `Hola! Me interesa la propiedad "${propiedad.nombre}" (${propiedad.direccion}).`;
 
   return (
     <article className="property-card">
@@ -239,20 +238,15 @@ export function PropertyCard({ propiedad }: { propiedad: PropiedadPublica }) {
         <div className="property-actions">
           <button
             type="button"
-            className="property-detail-btn"
+            className="property-cta"
             onClick={() => {
               irAFoto(indice);
               setDetalleAbierto(true);
             }}
           >
-            Ver detalle
+            <span>Consultar</span>
+            <span>→</span>
           </button>
-          {whatsapp && (
-            <a className="property-cta" href={waLink(whatsapp, mensaje)} target="_blank" rel="noopener noreferrer">
-              <span>Consultar</span>
-              <span>→</span>
-            </a>
-          )}
         </div>
       </div>
 

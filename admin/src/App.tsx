@@ -34,10 +34,12 @@ export default function App() {
     return <LoginPage />;
   }
 
-  // Un designado (rol EQUIPO) solo puede ver "Ventas y Carteles" y
-  // "Agenda" — el resto de las páginas dependen de endpoints que ahora
-  // devuelven 403 para ese rol (ver el gating agregado en los controllers
-  // del backend), así que ni siquiera tiene sentido renderizarlas.
+  // Un designado (rol EQUIPO) solo puede ver "Ventas y Carteles",
+  // "Clientes" (pedido del usuario 2026-09-04: los que el admin le designa,
+  // más los que crea él mismo) y "Agenda" — el resto de las páginas
+  // dependen de endpoints que ahora devuelven 403 para ese rol (ver el
+  // gating agregado en los controllers del backend), así que ni siquiera
+  // tiene sentido renderizarlas.
   const esEquipo = usuario.rol === 'EQUIPO';
   const soloAdmin = (el: JSX.Element) => (esEquipo ? <Navigate to="/ventas" replace /> : el);
 
@@ -51,7 +53,7 @@ export default function App() {
         <Route path="/ventas" element={<VentasPage />} />
         <Route path="/caja" element={soloAdmin(<CajaPage />)} />
         <Route path="/incidencias" element={soloAdmin(<IncidenciasPage />)} />
-        <Route path="/clientes" element={soloAdmin(<ClientesPage />)} />
+        <Route path="/clientes" element={<ClientesPage />} />
         <Route path="/agenda" element={<AgendaPage />} />
         <Route path="/avisos" element={soloAdmin(<AvisosPage />)} />
         <Route path="/configuracion" element={soloAdmin(<ConfiguracionPage />)} />

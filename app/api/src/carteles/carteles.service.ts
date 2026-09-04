@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { EstadoCartel } from '@prisma/client';
+import { EstadoCartel, RolUsuario } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCartelDto } from './dto/create-cartel.dto';
 import { UpdateCartelDto } from './dto/update-cartel.dto';
 
 const MS_POR_DIA = 1000 * 60 * 60 * 24;
+
+type UsuarioRequest = { id: string; rol: RolUsuario; integranteEquipoId: string | null };
 
 @Injectable()
 export class CartelesService {
@@ -24,8 +26,18 @@ export class CartelesService {
     return { ...cartel, diasEnLaCalle };
   }
 
-  async findAll() {
+  // Un designado (EQUIPO) solo ve los carteles de sus propias propiedades en
+  // venta — mismo criterio que Ventas y Carteles en general (pedido del
+  // usuario 2026-09-04). El campo "designado" en la práctica solo se carga
+  // para propiedades en venta (ver VentasPage.tsx), así que esto no le
+  // oculta carteles de alquiler que en los hechos ya nadie tiene asignados.
+  async findAll(usuario?: UsuarioRequest) {
+    const where =
+      usuario?.rol === RolUsuario.EQUIPO
+        ? { propiedad: { modalidad: 'VENTA' as const, designadoId: usuario.integranteEquipoId } }
+        : undefined;
     const carteles = await this.prisma.cartel.findMany({
+      where,
       include: { propiedad: true },
       orderBy: { createdAt: 'desc' },
     });
@@ -74,20 +86,26 @@ export class CartelesService {
   // ventas publicadas como alquileres vacantes (sin inquilino) — el cartel
   // acompaña el ciclo comercial de cualquier propiedad publicada, no solo
   // las de venta.
-  async kpis() {
+  async kpis(usuario?: UsuarioRequest) {
+    const esEquipo = usuario?.rol === RolUsuario.EQUIPO;
+    const cartelWhere = esEquipo
+      ? { propiedad: { modalidad: 'VENTA' as const, designadoId: usuario!.integranteEquipoId } }
+      : undefined;
     const [colocados, aPedido, retirados] = await Promise.all([
-      this.prisma.cartel.count({ where: { tipoCartel: EstadoCartel.COLOCADO } }),
-      this.prisma.cartel.count({ where: { tipoCartel: EstadoCartel.A_PEDIDO } }),
-      this.prisma.cartel.count({ where: { tipoCartel: EstadoCartel.RETIRADO } }),
+      this.prisma.cartel.count({ where: { ...cartelWhere, tipoCartel: EstadoCartel.COLOCADO } }),
+      this.prisma.cartel.count({ where: { ...cartelWhere, tipoCartel: EstadoCartel.A_PEDIDO } }),
+      this.prisma.cartel.count({ where: { ...cartelWhere, tipoCartel: EstadoCartel.RETIRADO } }),
     ]);
 
     const propiedadesPublicadas = await this.prisma.propiedad.findMany({
-      where: {
-        OR: [
-          { modalidad: 'VENTA', venta: { publicada: true } },
-          { modalidad: 'ALQUILER', inquilino: null },
-        ],
-      },
+      where: esEquipo
+        ? { modalidad: 'VENTA', designadoId: usuario!.integranteEquipoId, venta: { publicada: true } }
+        : {
+            OR: [
+              { modalidad: 'VENTA', venta: { publicada: true } },
+              { modalidad: 'ALQUILER', inquilino: null },
+            ],
+          },
       include: { carteles: { where: { tipoCartel: { not: EstadoCartel.RETIRADO } } } },
     });
     const publicadasSinCartel = propiedadesPublicadas.filter((p) => p.carteles.length === 0).length;
