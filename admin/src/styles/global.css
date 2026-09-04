@@ -699,9 +699,9 @@ textarea.avmsg:focus{outline:2px solid var(--indigo);border-color:transparent;ba
    clon. Colores tomados directo del membrete oficial (PDF de liquidación):
    el azul marino de la marca no es ninguno de los grises/tintas que ya usa
    el resto del panel, así que va aparte en vez de reusar `--ink`/`--muted`. */
-.comp-membrete{align-items:flex-end;gap:18px;border-bottom:1.5px solid #1C4066;padding-bottom:10px;margin-bottom:18px}
-.comp-logo{height:52px;width:auto}
-.comp-datos{font-size:10.5px;line-height:1.7;color:#767676}
+.comp-membrete{align-items:center;gap:18px;border-bottom:1.5px solid #1C4066;padding-bottom:10px;margin-bottom:18px}
+.comp-logo{height:74px;width:auto;flex-shrink:0}
+.comp-datos{font-size:7.5px;line-height:1.5;color:#767676;align-self:flex-end}
 .comp-direccion{color:#767676;font-weight:400}
 .comp-contacto{color:#767676}
 /* Título del documento, a la derecha del membrete (el spacer `flex:1` entre

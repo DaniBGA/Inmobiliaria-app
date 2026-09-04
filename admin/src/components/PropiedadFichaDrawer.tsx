@@ -1979,7 +1979,7 @@ export function FacturaModal({
 
       {F && (
         <>
-          <ComprobanteImpreso cfg={cfg} titulo="Factura" ref={comprobanteRef}>
+          <ComprobanteImpreso cfg={cfg} titulo="Liquidación" ref={comprobanteRef}>
             <ComprobanteInfoBox
               izquierda={[
                 { label: 'Nombre Inquilino', valor: inquilino?.nombre ?? '—' },
@@ -1988,7 +1988,7 @@ export function FacturaModal({
                 { label: 'Finalización de Contrato', valor: formatDate(contratoFin) },
               ]}
               derecha={[
-                { label: 'Número de Factura', valor: String(F.numero) },
+                { label: 'Número de Liquidación', valor: String(F.numero) },
                 { label: 'Periodo', valor: mesLabel(mes) },
                 {
                   label: 'Fecha de Vencimiento',
@@ -1996,11 +1996,11 @@ export function FacturaModal({
                 },
               ]}
             />
-            <div className="comp-detalletitulo">Detalle de Factura</div>
+            <div className="comp-detalletitulo">Detalle de Liquidación</div>
             <div className="liqcard" style={{ boxShadow: 'none' }}>
               <div className="liqhead">
                 <div>
-                  <h4>Factura N° {F.numero}</h4>
+                  <h4>Liquidación N° {F.numero}</h4>
                   <div className="lsub">{mesLabel(mes)}</div>
                 </div>
                 <span className="spacer"></span>

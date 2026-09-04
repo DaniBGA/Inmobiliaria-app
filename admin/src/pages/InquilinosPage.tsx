@@ -355,12 +355,12 @@ export function InquilinosPage() {
                         {p.direccion} · {TIPO_LABEL[p.tipo] ?? p.tipo}
                       </div>
                     </div>
-                    <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                      <span className={`badge ${p.alquilerPublicado ? 'publicada' : 'pausada'}`}>
-                        {p.alquilerPublicado ? 'Publicada' : 'Sin publicar'}
-                      </span>
+                    <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
                       <span className={`badge ${p.inquilino ? 'alquilada' : 'sin_alquilar'}`}>
                         {p.inquilino ? 'Alquilada' : 'Sin alquilar'}
+                      </span>
+                      <span className={`badge ${p.alquilerPublicado ? 'publicada' : 'pausada'}`}>
+                        {p.alquilerPublicado ? 'Publicada' : 'Sin publicar'}
                       </span>
                     </span>
                   </div>
