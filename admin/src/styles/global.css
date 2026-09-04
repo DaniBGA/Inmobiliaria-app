@@ -473,7 +473,8 @@ textarea.avmsg:focus{outline:2px solid var(--indigo);border-color:transparent;ba
 .badge.vendida{background:var(--green-soft);color:var(--green)}
 .badge.pausada{background:var(--bg2);color:var(--ink2)}
 .badge.vendida_por_terceros{background:var(--bg2);color:var(--ink2)}
-.badge.alquilada{background:var(--bg2);color:var(--ink2)}
+.badge.alquilada{background:var(--bg2);color:var(--green)}
+.badge.sin_alquilar{background:var(--bg2);color:var(--ink2)}
 .intlist{margin-top:14px;border-top:1px solid var(--border2);padding-top:12px}
 .intlist .ih{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--muted);font-weight:700;margin-bottom:8px}
 .intitem{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;font-size:12.5px}

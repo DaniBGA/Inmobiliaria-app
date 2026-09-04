@@ -57,8 +57,9 @@ export const ComprobanteImpreso = forwardRef<
         <div className="comp-membrete printonly">
           <img className="comp-logo" src={logoMembrete} alt="" />
           <div className="comp-datos">
-            {cfg?.empresaDireccion && <div className="comp-direccion">{cfg.empresaDireccion}</div>}
-            {cfg?.empresaContacto && <div className="comp-contacto">{cfg.empresaContacto}</div>}
+            San Martín 1198 Esq. Alsina <br />
+            Administración alquileres: 249-4656667 / 249-4615141 <br />
+            Lunes a viernes de 8:30 a 12hs.
           </div>
           <span style={{ flex: 1 }} />
           <div className="comp-titulo">{titulo}</div>
@@ -70,9 +71,9 @@ export const ComprobanteImpreso = forwardRef<
             usuario 2026-09-03) — más grande y en el azul de marca en vez del
             gris chico que tenía antes como parte del membrete del pie. */}
         <div className="comp-condiciones printonly">
-          Los pagos son en efectivo y se abonan sin excepción en la inmobiliaria {cfg?.empresaNombre || 'Facundo París Propiedades'}
-          {cfg?.empresaDireccion ? `, sito en ${cfg.empresaDireccion}` : ''}, de Administración de Alquileres, lunes a viernes de
-          8:30 a 12hs.
+          Le recordamos que los pagos deberán realizarse en efectivo y abonarse, sin excepción, 
+          en la Inmobiliaria Facundo Paris Propiedades, ubicada en San Martín 1198 Esq. Alsina, 
+          Administración de Alquileres, de lunes a viernes en el horario de 8:30 a 12:00 hs.
         </div>
 
         <div className="comp-pie printonly">
@@ -81,16 +82,15 @@ export const ComprobanteImpreso = forwardRef<
             {cfg?.empresaDireccion && <div className="comp-piedireccion">{cfg.empresaDireccion}</div>}
             {cfg?.empresaContacto &&
               (() => {
-                const { telefono, email } = splitContacto(cfg.empresaContacto);
                 return (
                   <div className="comp-piecontacto">
-                    {telefono && (
+                    {(
                       <div className="comp-pietelefono">
                         <img className="comp-iconwsp" src={logoWhatsapp} alt="" />
-                        {telefono}
+                        249-4656667 / 249-4615141
                       </div>
                     )}
-                    {email && <div className="comp-pieemail">{email}</div>}
+                    {<div className="comp-pieemail">facundoparispropiedades@gmail.com</div>}
                   </div>
                 );
               })()}
