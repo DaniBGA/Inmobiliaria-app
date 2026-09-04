@@ -69,12 +69,17 @@ interface PropiedadDb extends PropiedadParaAlquilar {
   montoAlquilerVigente: string | number | null;
   alquilerPublicado: boolean;
   propietario: { nombre: string } | null;
-  designado: { nombre: string } | null;
   honorariosAdministracion: boolean;
   honorariosAdministracionPorcentaje: string | number | null;
   contratoInicio: string | null;
   contratoFin: string | null;
+  indice: 'IPC' | 'ICL' | null;
+  frecuenciaAumentoMeses: number | null;
 }
+
+// Mismos períodos que ofrece `AgregarPropiedadPage.tsx`/`AlquilarPropiedadModal.tsx`
+// al cargar el contrato — acá solo para mostrar la etiqueta en la tarjeta.
+const FREQ_LABEL: Record<number, string> = { 1: 'mensual', 3: 'trimestral', 6: 'semestral', 12: 'anual' };
 
 const TIPO_LABEL: Record<string, string> = {
   CASA: 'Casa',
@@ -362,26 +367,30 @@ export function InquilinosPage() {
                   </div>
                 </div>
                 <div className="sbody">
-                  {ocupada && (
-                    <div className="srow">
-                      <span>Inquilino</span>
-                      <b>{p.inquilino!.nombre}</b>
-                    </div>
-                  )}
                   <div className="srow">
-                    <span>Vacante</span>
-                    <b>{ocupada ? 'No tiene vacante' : 'Tiene vacante'}</b>
-                  </div>
-                  <div className="srow">
-                    <span>Propietario</span>
-                    <b>{p.propietario?.nombre ?? '—'}</b>
-                  </div>
-                  <div className="srow">
-                    <span>La muestra</span>
+                    <span>Inquilino</span>
                     <b>
-                      {p.designado?.nombre ?? (
-                        <span style={{ color: 'var(--muted)', fontWeight: 600 }}>sin designar</span>
+                      {ocupada ? (
+                        p.inquilino!.nombre
+                      ) : (
+                        <span style={{ color: 'var(--muted)', fontWeight: 600 }}>sin inquilino</span>
                       )}
+                    </b>
+                  </div>
+                  <div className="srow">
+                    <span>Inicio de contrato</span>
+                    <b>{formatDate(p.contratoInicio)}</b>
+                  </div>
+                  <div className="srow">
+                    <span>Fin de contrato</span>
+                    <b>{formatDate(p.contratoFin)}</b>
+                  </div>
+                  <div className="srow">
+                    <span>Frecuencia / Índice</span>
+                    <b>
+                      {p.frecuenciaAumentoMeses && p.indice
+                        ? `${FREQ_LABEL[p.frecuenciaAumentoMeses] ?? `${p.frecuenciaAumentoMeses} meses`} · ${p.indice}`
+                        : '—'}
                     </b>
                   </div>
                 </div>

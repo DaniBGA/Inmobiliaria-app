@@ -3755,6 +3755,24 @@ precargado era $2.231.230,56 — "completamente distinto".
       tenía `itemsPredeterminados()` al sugerir el ítem, no es nuevo de
       este fix.
 
+## 2026-09-04 — Tarjetas de "Inquilinos y Cobros": datos de contrato en vez de Vacante/Propietario/La muestra
+
+Pedido del usuario (con captura de las tarjetas): que las 4 líneas de abajo
+de cada tarjeta sean Inquilino, Inicio de contrato, Fin de contrato y
+Frecuencia de ajuste/Índice — antes eran Inquilino (solo si ocupada),
+Vacante, Propietario y La muestra.
+
+- [x] **`InquilinosPage.tsx`** — `PropiedadDb` suma `indice`/
+      `frecuenciaAumentoMeses` (ya venían de `GET /propiedades`, solo
+      faltaba tiparlos, mismo caso que `contratoInicio`/`contratoFin`
+      agregado el 2026-09-02) y se sacó el `designado` que quedó sin uso.
+      Las 4 filas de `.sbody` pasan a: Inquilino (o "sin inquilino" en
+      gris si está vacante, en vez de ocultar la fila entera como antes),
+      Inicio/Fin de contrato (`formatDate`, "—" si no hay), y "Frecuencia
+      / Índice" combinados en una sola línea ("trimestral · IPC"), con un
+      `FREQ_LABEL` local igual al que ya usa `PropiedadFichaDrawer.tsx`
+      para la misma frecuencia.
+
 ## Cómo actualizar este archivo
 
 Cada vez que se implemente una conexión: marcarla `[x]`, agregar la fecha y
