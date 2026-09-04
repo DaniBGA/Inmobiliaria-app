@@ -99,16 +99,17 @@ export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: 
     const paginas = Math.max(1, Math.ceil(alturaContenido / alturaPaginaEnClon));
     clon.style.height = `${paginas * alturaPaginaEnClon}px`;
 
-    // `scale: 1.5` (no 2) + JPEG en vez de PNG: un PNG sin pérdida a escala
-    // 2x de una página con texto+degradados terminaba pesando 10 MB+ por
+    // `scale: 2.5` + JPEG en vez de PNG: un PNG sin pérdida a esta escala de
+    // una página con texto+degradados terminaría pesando varios MB por
     // comprobante — nada razonable para adjuntar en WhatsApp. JPEG calidad
-    // .92 sobre fondo blanco opaco (por eso `backgroundColor:'#ffffff'`,
-    // JPEG no soporta transparencia) baja esto a un rango normal (cientos
-    // de KB) sin pérdida visible de nitidez en el texto.
-    const canvas = await html2canvas(clon, { scale: 1.5, backgroundColor: '#ffffff' });
+    // .95 sobre fondo blanco opaco (por eso `backgroundColor:'#ffffff'`,
+    // JPEG no soporta transparencia) mantiene el archivo en un rango
+    // razonable (menos de 1-2 MB) con mucha más nitidez que la escala 1.5
+    // de antes (pedido del usuario 2026-09-04: "se ven un poco pixeladas").
+    const canvas = await html2canvas(clon, { scale: 2.5, backgroundColor: '#ffffff' });
     const imgWidth = pageWidth;
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
-    const imgData = canvas.toDataURL('image/jpeg', 0.92);
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
 
     // Tolerancia de 1pt: al forzar `clon.style.height` a un múltiplo exacto
     // de página (arriba), el redondeo a píxel entero del canvas rasterizado
