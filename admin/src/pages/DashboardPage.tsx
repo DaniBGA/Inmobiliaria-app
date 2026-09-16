@@ -45,7 +45,7 @@ interface FilaCobro {
   inquilino: Inquilino | null;
   esperado: number | null;
   cobrado: number;
-  estado: 'PAGADO' | 'PENDIENTE' | 'IMPAGO' | 'NO_CORRESPONDE';
+  estado: 'PAGADO' | 'PENDIENTE' | 'IMPAGO' | 'IMPAGO_CON_MORA' | 'NO_CORRESPONDE';
 }
 
 interface ResumenMes {
@@ -62,6 +62,7 @@ const ESTADO_LABEL: Record<FilaCobro['estado'], { texto: string; clase: string }
   PAGADO: { texto: 'Pagado', clase: 'activo' },
   PENDIENTE: { texto: 'No pagado', clase: 'vencido' },
   IMPAGO: { texto: 'No pagado', clase: 'vencido' },
+  IMPAGO_CON_MORA: { texto: 'Impago con mora', clase: 'impago-mora' },
   NO_CORRESPONDE: { texto: '—', clase: '' },
 };
 

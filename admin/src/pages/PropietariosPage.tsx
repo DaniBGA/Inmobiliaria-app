@@ -37,7 +37,7 @@ interface Propiedad {
 
 interface FilaCobro {
   propiedadId: string;
-  estado: 'PAGADO' | 'PENDIENTE' | 'IMPAGO' | 'NO_CORRESPONDE';
+  estado: 'PAGADO' | 'PENDIENTE' | 'IMPAGO' | 'IMPAGO_CON_MORA' | 'NO_CORRESPONDE';
 }
 
 interface ResumenMes {
@@ -69,6 +69,16 @@ interface ItemEditable {
   numeroLiquidacion: string;
 }
 
+// Total de servicios de TODAS las propiedades del propietario (incluidas
+// las que alquila la inmobiliaria — § corregido 2026-09-16, ver comentario
+// en LiquidacionAjusteServicio en schema.prisma) — se cargan a mano cada
+// vez, sin propiedad ni factura detrás, más simples que `ItemEditable` (sin
+// cuenta ni N° de liquidación, que no aplican acá).
+interface AjusteEditable {
+  descripcion: string;
+  monto: string;
+}
+
 // Estado binario del mes en curso (mismo criterio que Panel General e
 // Inquilinos y Cobros). El boceto usa acá una taxonomía más fina
 // (activo/alerta/vencido/porvencer) que depende de días de alerta
@@ -78,6 +88,7 @@ const ESTADO_LABEL: Record<FilaCobro['estado'], { texto: string; clase: string }
   PAGADO: { texto: 'Pagado', clase: 'activo' },
   PENDIENTE: { texto: 'No pagado', clase: 'vencido' },
   IMPAGO: { texto: 'No pagado', clase: 'vencido' },
+  IMPAGO_CON_MORA: { texto: 'No pagado', clase: 'vencido' },
   NO_CORRESPONDE: { texto: '—', clase: '' },
 };
 
@@ -393,6 +404,7 @@ function LiquidacionModal({
   });
 
   const [itemsPorPropiedad, setItemsPorPropiedad] = useState<Record<string, ItemEditable[]> | null>(null);
+  const [ajustesServicios, setAjustesServicios] = useState<AjusteEditable[]>([]);
 
   useEffect(() => {
     if (preview.data && itemsPorPropiedad === null) {
@@ -435,6 +447,9 @@ function LiquidacionModal({
               numeroLiquidacion: it.numeroLiquidacion.trim() || undefined,
             })),
         })),
+        ajustesServicios: ajustesServicios
+          .filter((a) => a.descripcion.trim())
+          .map((a) => ({ descripcion: a.descripcion.trim(), monto: Number(a.monto) || 0 })),
       }),
     // Generar la liquidación crea un movimiento automático en Caja
     // (LIQUIDACION_PROPIETARIO) y puede aparecer en Avisos ("liquidación
@@ -498,6 +513,16 @@ function LiquidacionModal({
     });
   }
 
+  function actualizarAjuste(idx: number, campo: keyof AjusteEditable, valor: string) {
+    setAjustesServicios((prev) => prev.map((a, i) => (i === idx ? { ...a, [campo]: valor } : a)));
+  }
+  function agregarAjuste() {
+    setAjustesServicios((prev) => [...prev, { descripcion: '', monto: '' }]);
+  }
+  function quitarAjuste(idx: number) {
+    setAjustesServicios((prev) => prev.filter((_, i) => i !== idx));
+  }
+
   // Mismo cálculo que `LiquidacionesService.calcularDetalle()` en el
   // backend, para que el total que se ve acá mientras se edita coincida con
   // el que va a quedar guardado al emitir. Los honorarios profesionales no
@@ -512,11 +537,17 @@ function LiquidacionModal({
     return Math.round(alquiler * (pct / 100) * 100) / 100;
   }
 
-  const netoEditable = (preview.data ?? []).reduce((acc, d) => {
+  const sumaAlquileresEditable = (preview.data ?? []).reduce((acc, d) => {
     const items = itemsPorPropiedad?.[d.propiedadId] ?? [];
-    const cobrado = items.reduce((s, it) => s + (Number(it.monto) || 0), 0);
-    return acc + (cobrado - d.gastosAbsorbidos - honorariosDe(d.porcentajeHonorariosAdministracion, items));
+    return acc + items.reduce((s, it) => s + (Number(it.monto) || 0), 0);
   }, 0);
+  const totalAjustesServicios = ajustesServicios.reduce((acc, a) => acc + (Number(a.monto) || 0), 0);
+  const netoEditable =
+    (preview.data ?? []).reduce((acc, d) => {
+      const items = itemsPorPropiedad?.[d.propiedadId] ?? [];
+      const cobrado = items.reduce((s, it) => s + (Number(it.monto) || 0), 0);
+      return acc + (cobrado - d.gastosAbsorbidos - honorariosDe(d.porcentajeHonorariosAdministracion, items));
+    }, 0) - totalAjustesServicios;
 
   return (
     <Modal open onClose={onClose} title={`Liquidación — ${propietario.nombre} (${mesLabel(mes)})`} width={620}>
@@ -611,12 +642,49 @@ function LiquidacionModal({
             );
           })}
           {preview.data.length > 0 && (
-            <div className="liqline tot">
-              <span className="ld">Total a liquidar</span>
-              <span className="lv" style={{ color: netoEditable >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                {formatMoney(netoEditable)}
-              </span>
-            </div>
+            <>
+              <div className="liqline" style={{ marginTop: 4 }}>
+                <span className="ld">Suma de alquileres (todas las propiedades)</span>
+                <span className="lv">{formatMoney(sumaAlquileresEditable)}</span>
+              </div>
+
+              <div className="fg full" style={{ marginTop: 14, marginBottom: 4 }}>
+                <label>Servicios a descontar (total de todas las propiedades, opcional)</label>
+              </div>
+              <div className="itemlist">
+                {ajustesServicios.map((a, idx) => (
+                  <div className="itemrow" key={idx}>
+                    <input
+                      className="itemdesc"
+                      value={a.descripcion}
+                      onChange={(e) => actualizarAjuste(idx, 'descripcion', e.target.value)}
+                      placeholder="Ej: Obras Sanitarias (todas las propiedades)"
+                    />
+                    <input
+                      className="itemmonto"
+                      type="number"
+                      step="0.01"
+                      placeholder="0"
+                      value={a.monto}
+                      onChange={(e) => actualizarAjuste(idx, 'monto', e.target.value)}
+                    />
+                    <button className="btn-sm ghostred" onClick={() => quitarAjuste(idx)} title="Quitar">
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button className="btn-sm" style={{ marginTop: 8 }} onClick={agregarAjuste}>
+                + Agregar servicio a descontar
+              </button>
+
+              <div className="liqline tot" style={{ marginTop: 14 }}>
+                <span className="ld">Total a liquidar</span>
+                <span className="lv" style={{ color: netoEditable >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                  {formatMoney(netoEditable)}
+                </span>
+              </div>
+            </>
           )}
           <div className="btnrow noprint">
             <button className="btn-ghost" onClick={onClose}>

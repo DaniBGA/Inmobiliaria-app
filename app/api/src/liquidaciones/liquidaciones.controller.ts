@@ -28,7 +28,7 @@ export class LiquidacionesController {
     @Param('mes') mes: string,
     @Body() dto: GenerarLiquidacionDto,
   ) {
-    return this.liquidacionesService.generar(propietarioId, mes, dto?.detalle);
+    return this.liquidacionesService.generar(propietarioId, mes, dto?.detalle, dto?.ajustesServicios);
   }
 
   @Delete(':id')

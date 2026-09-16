@@ -97,20 +97,18 @@ export class LiquidacionesService {
         const honorariosAdministracion =
           Math.round(baseAlquiler * (porcentajeHonorariosAdministracion / 100) * 100) / 100;
 
-        // Si la inmobiliaria es quien paga los servicios (§ pedido del
-        // usuario 2026-09-03, ver enum ResponsablePagoServicios): retiene
-        // ese importe antes de girarle el resto al propietario — no se le
-        // gira nada de lo que va a usar para pagarle a cada proveedor.
-        // Con PROPIETARIO (default) o INQUILINO no hay nada que retener acá:
-        // en INQUILINO ni siquiera existen esos ítems (ver
-        // `itemsPredeterminados()`), y con PROPIETARIO los servicios se le
-        // giran enteros junto con el alquiler, como siempre.
+        // Si la inmobiliaria es quien paga los servicios (ver enum
+        // ResponsablePagoServicios) se siguen mostrando por separado en el
+        // comprobante como referencia (ver `itemsParaComprobante` abajo),
+        // pero YA NO restan de `neto` (§ pedido del usuario 2026-09-16): el
+        // único descuento real de servicios es el que se carga a mano en
+        // `ajustesServicios` (ver `generar()`), que cubre el total de TODAS
+        // las propiedades del propietario (incluidas las alquiladas por la
+        // inmobiliaria) en un solo lugar — antes se restaban acá Y de nuevo
+        // en `ajustesServicios`, duplicando el descuento.
         const esInmobiliariaResponsable = propiedad.responsablePagoServicios === 'INMOBILIARIA';
-        const serviciosTotal = esInmobiliariaResponsable
-          ? items.reduce((acc, it) => (esServicioTrasladable(it.descripcion) ? acc + Number(it.monto) : acc), 0)
-          : 0;
 
-        const neto = cobradoTotal - gastosAbsorbidos - honorariosAdministracion - serviciosTotal;
+        const neto = cobradoTotal - gastosAbsorbidos - honorariosAdministracion;
 
         // Ítems para el COMPROBANTE de la liquidación (lo que se persiste e
         // imprime) — distintos de `items` de abajo, que siguen siendo los
@@ -118,16 +116,19 @@ export class LiquidacionesService {
         // también la vista previa editable de `LiquidacionModal`, y hay que
         // poder reenviarlos tal cual al emitir). Con INMOBILIARIA
         // responsable, se reemplaza "Alquiler" por el total cobrado y cada
-        // servicio pasa a listarse restando, para que quede clara la plata
-        // que la inmobiliaria retiene. Deuda arrastrada/Mora/ítems sueltos
-        // no se listan aparte acá porque ya quedan incluidos en ese total
-        // (listarlos de nuevo duplicaría visualmente el monto).
+        // servicio se lista aparte, en positivo (§ corregido 2026-09-16: ya
+        // no restan de `neto`, así que tampoco se muestran en rojo/restando
+        // en el comprobante — quedan como referencia informativa, igual que
+        // el monto de "Importe total del periodo" ya los incluye). Deuda
+        // arrastrada/Mora/ítems sueltos no se listan aparte acá porque ya
+        // quedan incluidos en ese total (listarlos de nuevo duplicaría
+        // visualmente el monto).
         const itemsParaComprobante = esInmobiliariaResponsable
           ? [
               { descripcion: 'Importe total del periodo', monto: cobradoTotal, numeroLiquidacion: undefined as string | undefined },
               ...items
                 .filter((it) => esServicioTrasladable(it.descripcion))
-                .map((it) => ({ descripcion: it.descripcion, monto: -Number(it.monto), numeroLiquidacion: it.numeroLiquidacion })),
+                .map((it) => ({ descripcion: it.descripcion, monto: Number(it.monto), numeroLiquidacion: it.numeroLiquidacion })),
             ]
           : items;
 
@@ -161,7 +162,12 @@ export class LiquidacionesService {
     return this.calcularDetalle(propietarioId, mesStr);
   }
 
-  async generar(propietarioId: string, mesStr: string, detalleInput?: LiquidacionDetalleInputDto[]) {
+  async generar(
+    propietarioId: string,
+    mesStr: string,
+    detalleInput?: LiquidacionDetalleInputDto[],
+    ajustesServiciosInput?: { descripcion: string; monto: number }[],
+  ) {
     const propietario = await this.prisma.propietario.findUnique({
       where: { id: propietarioId },
     });
@@ -173,7 +179,17 @@ export class LiquidacionesService {
       : undefined;
     const detalle = await this.calcularDetalle(propietarioId, mesStr, overridePorPropiedad);
 
-    const netoAGirar = detalle.reduce((acc, d) => acc + d.neto, 0);
+    // Suma bruta de todo lo cobrado (sin descuentos) — referencia fija que
+    // se muestra en el comprobante y NO cambia con `ajustesServicios` de
+    // abajo (§ pedido del usuario 2026-09-15).
+    const sumaAlquileres = detalle.reduce((acc, d) => acc + d.cobradoTotal, 0);
+    const ajustesServicios = (ajustesServiciosInput ?? []).filter((a) => a.descripcion.trim());
+    const totalAjustesServicios = ajustesServicios.reduce((acc, a) => acc + Number(a.monto), 0);
+    // Único descuento real de servicios (§ corregido 2026-09-16): resta
+    // directo acá, sobre el total combinado — `d.neto` de `calcularDetalle()`
+    // ya NO resta servicios por su cuenta (ver comentario ahí), aunque el
+    // comprobante los siga mostrando como referencia por propiedad.
+    const netoAGirar = detalle.reduce((acc, d) => acc + d.neto, 0) - totalAjustesServicios;
     // Lo único que la inmobiliaria retiene de una liquidación es el
     // honorario de administración — el neto girado al propietario es plata
     // suya, no tiene sentido registrarlo como un movimiento propio de Caja
@@ -224,7 +240,15 @@ export class LiquidacionesService {
           numero,
           fecha: new Date(),
           netoAGirar,
+          sumaAlquileres,
           movimientoCajaId,
+          ajustesServicios: {
+            create: ajustesServicios.map((a, idx) => ({
+              descripcion: a.descripcion.trim(),
+              monto: a.monto,
+              orden: idx,
+            })),
+          },
           detalle: {
             create: detalle.map((d) => ({
               propiedadId: d.propiedadId,
@@ -267,6 +291,7 @@ export class LiquidacionesService {
               propiedad: true,
             },
           },
+          ajustesServicios: { orderBy: { orden: 'asc' } },
         },
       });
 
@@ -297,6 +322,7 @@ export class LiquidacionesService {
             propiedad: true,
           },
         },
+        ajustesServicios: { orderBy: { orden: 'asc' } },
       },
     });
   }

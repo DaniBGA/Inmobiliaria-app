@@ -27,10 +27,17 @@ export interface LiquidacionDetalle {
   propiedad: { nombre: string; contratoInicio: string | null; contratoFin: string | null };
 }
 
+export interface AjusteServicio {
+  descripcion: string;
+  monto: number | string;
+}
+
 export interface Liquidacion {
   numero: number;
   netoAGirar: number | string;
+  sumaAlquileres: number | string;
   detalle: LiquidacionDetalle[];
+  ajustesServicios: AjusteServicio[];
 }
 
 function iniciales(nombre: string) {
@@ -140,6 +147,23 @@ export function LiquidacionComprobanteBody({
         ))}
         {L.detalle.length > 0 && (
           <>
+            <div className="liqline" style={{ marginTop: 4 }}>
+              <span className="ld">Suma de alquileres (todas las propiedades)</span>
+              <span className="lv">{formatMoney(L.sumaAlquileres)}</span>
+            </div>
+            {L.ajustesServicios.length > 0 && (
+              <>
+                <div className="fg full" style={{ margin: '10px 0 2px' }}>
+                  <label>Servicios a descontar (total de todas las propiedades)</label>
+                </div>
+                {L.ajustesServicios.map((a, i) => (
+                  <div className="liqline neg" key={i}>
+                    <span className="ld">↳ {a.descripcion}</span>
+                    <span className="lv">− {formatMoney(Math.abs(Number(a.monto)))}</span>
+                  </div>
+                ))}
+              </>
+            )}
             <div className="liqline tot">
               <span className="ld">Total a liquidar</span>
               <span className="lv" style={{ color: neto >= 0 ? 'var(--green)' : 'var(--red)' }}>

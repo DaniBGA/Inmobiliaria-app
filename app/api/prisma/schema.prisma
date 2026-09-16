@@ -556,10 +556,18 @@ model Liquidacion {
   fecha      DateTime
   netoAGirar Decimal  @db.Decimal(14, 2)
 
+  // Suma de `cobradoTotal` de todas las propiedades alquiladas (bruto, antes
+  // de gastos/honorarios/ajustes) — pedido del usuario 2026-09-15: una
+  // referencia fija que se muestra en el comprobante y NO se ve afectada por
+  // `ajustesServicios` de abajo, a diferencia de `netoAGirar`. Capturada al
+  // emitir, igual criterio que `LiquidacionPropiedad.facturaNumero`.
+  sumaAlquileres Decimal @default(0) @db.Decimal(14, 2)
+
   propietarioId String
   propietario   Propietario @relation(fields: [propietarioId], references: [id], onDelete: Cascade)
 
-  detalle LiquidacionPropiedad[]
+  detalle          LiquidacionPropiedad[]
+  ajustesServicios LiquidacionAjusteServicio[]
 
   // Egreso automático en Caja (§3.4)
   movimientoCajaId String?         @unique
@@ -651,6 +659,31 @@ model LiquidacionGasto {
 
   @@index([liquidacionPropiedadId])
   @@map("liquidacion_gastos")
+}
+
+// Total de servicios (obras sanitarias, luz, etc.) que la inmobiliaria paga
+// por TODAS las propiedades del propietario — tanto las que administra en
+// alquiler como las que no (§ pedido del usuario 2026-09-15, corregido
+// 2026-09-16: el nombre original, "servicios de OTRAS propiedades", era
+// engañoso — es el total combinado, no un extra aparte). Se carga a mano
+// cada mes al emitir (sin Propiedad ni Factura detrás, "a mano cada mes"
+// confirmado con el usuario) y resta directo de `Liquidacion.netoAGirar` —
+// es el ÚNICO descuento real de servicios: el desglose por-propiedad que se
+// ve cuando ResponsablePagoServicios es INMOBILIARIA (ver
+// `LiquidacionesService.calcularDetalle()`) quedó como referencia visual en
+// el comprobante, ya no resta de `LiquidacionPropiedad.neto` — restaba dos
+// veces (ahí y acá) antes de este cambio.
+model LiquidacionAjusteServicio {
+  id          String  @id @default(uuid())
+  descripcion String
+  monto       Decimal @db.Decimal(14, 2)
+  orden       Int     @default(0)
+
+  liquidacionId String
+  liquidacion   Liquidacion @relation(fields: [liquidacionId], references: [id], onDelete: Cascade)
+
+  @@index([liquidacionId])
+  @@map("liquidacion_ajustes_servicios")
 }
 
 // ─────────────────────────────────────────────────────────────────────────
