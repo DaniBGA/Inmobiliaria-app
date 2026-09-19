@@ -30,6 +30,7 @@ export interface LiquidacionDetalle {
 export interface AjusteServicio {
   descripcion: string;
   monto: number | string;
+  numeroLiquidacion?: string | null;
 }
 
 export interface Liquidacion {
@@ -86,8 +87,17 @@ export function LiquidacionComprobanteBody({
         </div>
       </div>
       <div className="liqbody">
-        {L.detalle.map((d) => (
-          <div className="comp-propgrupo" key={d.propiedadId}>
+        {L.detalle.map((d, i) => (
+          // La separación visual entre propiedades es una clase propia, no
+          // un combinador de hermano adyacente (`+`, como antes) — el
+          // paginado del PDF (`pdfComprobante.ts`) inserta un `<div>`
+          // espaciador ANTES de cada propiedad (salvo la primera) para
+          // forzarla al inicio de una hoja nueva, y eso rompía el
+          // combinador (ya no eran hermanos directos): la propiedad perdía
+          // su margen/borde superior recién al insertarse el espaciador,
+          // corriéndose unos px de donde se la había medido y dejando un
+          // corte visible entre hojas (pedido del usuario 2026-09-19).
+          <div className={`comp-propgrupo${i > 0 ? ' comp-propgrupo-sep' : ''}`} key={d.propiedadId}>
             <div className="liqline pos">
               <span className="ld">
                 <b>{d.propiedad.nombre}</b>
@@ -146,7 +156,7 @@ export function LiquidacionComprobanteBody({
           </div>
         ))}
         {L.detalle.length > 0 && (
-          <>
+          <div className="comp-totalesgrupo">
             <div className="liqline" style={{ marginTop: 4 }}>
               <span className="ld">Suma de alquileres (todas las propiedades)</span>
               <span className="lv">{formatMoney(L.sumaAlquileres)}</span>
@@ -158,7 +168,10 @@ export function LiquidacionComprobanteBody({
                 </div>
                 {L.ajustesServicios.map((a, i) => (
                   <div className="liqline neg" key={i}>
-                    <span className="ld">↳ {a.descripcion}</span>
+                    <span className="ld">
+                      ↳ {a.descripcion}
+                      {a.numeroLiquidacion && <small style={{ color: 'var(--muted)' }}> · Liq N° {a.numeroLiquidacion}</small>}
+                    </span>
                     <span className="lv">− {formatMoney(Math.abs(Number(a.monto)))}</span>
                   </div>
                 ))}
@@ -170,7 +183,7 @@ export function LiquidacionComprobanteBody({
                 {formatMoney(neto)}
               </span>
             </div>
-          </>
+          </div>
         )}
       </div>
       </div>

@@ -758,7 +758,7 @@ textarea.avmsg:focus{outline:2px solid var(--indigo);border-color:transparent;ba
 /* Separación entre cada propiedad de una Liquidación (pedido del usuario
    2026-09-03: "se ven todas juntas y tienden a confundir") — una línea
    divisoria + aire extra antes de cada propiedad, salvo la primera. */
-.comp-propgrupo + .comp-propgrupo{margin-top:20px;padding-top:18px;border-top:1.5px dashed #1C4066}
+.comp-propgrupo-sep{margin-top:20px;padding-top:18px;border-top:1.5px dashed #1C4066}
 
 /* Impresión: el boceto imprimía un documento aparte (#printInvoice); acá no
    hay generación de PDF todavía (pendiente de una fase posterior), así que

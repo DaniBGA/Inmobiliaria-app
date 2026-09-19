@@ -69,14 +69,31 @@ interface ItemEditable {
   numeroLiquidacion: string;
 }
 
+// Mismas descripciones base que `SERVICIO_DESCRIPCION` en el backend
+// (`common/servicios-facturables.util.ts`) — usado para reconocer, entre los
+// ítems de cada propiedad, cuáles son servicios (y no Alquiler/Deuda
+// arrastrada/Mora/ítems sueltos) al precargar "Servicios a descontar" con
+// los que se repiten en TODAS las propiedades de la liquidación.
+const SERVICIOS_BASE = new Set([
+  'Expensas del mes',
+  'Usina',
+  'Camuzzi',
+  'Obras Sanitarias',
+  'Retributivas de Servicios',
+  'Cloacas',
+  'Gas envasado',
+  'Sistema biodigestor',
+]);
+
 // Total de servicios de TODAS las propiedades del propietario (incluidas
 // las que alquila la inmobiliaria — § corregido 2026-09-16, ver comentario
 // en LiquidacionAjusteServicio en schema.prisma) — se cargan a mano cada
-// vez, sin propiedad ni factura detrás, más simples que `ItemEditable` (sin
-// cuenta ni N° de liquidación, que no aplican acá).
+// vez, sin propiedad ni factura detrás, más simple que `ItemEditable` (sin
+// cuenta, que no aplica acá).
 interface AjusteEditable {
   descripcion: string;
   monto: string;
+  numeroLiquidacion: string;
 }
 
 // Estado binario del mes en curso (mismo criterio que Panel General e
@@ -428,6 +445,39 @@ function LiquidacionModal({
         });
       }
       setItemsPorPropiedad(inicial);
+
+      // Precarga de "Servicios a descontar" (pedido del usuario 2026-09-19):
+      // solo los servicios que están en TODAS las propiedades de esta
+      // liquidación, no alcanza con que los tenga alguna — si una propiedad
+      // no factura "Usina" y otra sí, no se agrega solo. El monto arranca
+      // vacío a propósito: acá va el total combinado de TODAS las
+      // propiedades del propietario, incluidas las que la inmobiliaria no
+      // administra en alquiler — precargarlo ya con solo la suma de estas
+      // podría hacer que se emita incompleto si el usuario no lo nota.
+      const serviciosPorPropiedad = preview.data.map(
+        (d) =>
+          new Map(
+            d.items
+              .map((it) => ({ base: splitDescripcionCuenta(it.descripcion).base, numeroLiquidacion: it.numeroLiquidacion ?? '' }))
+              .filter((it) => SERVICIOS_BASE.has(it.base))
+              .map((it) => [it.base, it.numeroLiquidacion] as const),
+          ),
+      );
+      const comunes =
+        serviciosPorPropiedad.length > 0
+          ? [...serviciosPorPropiedad[0].keys()].filter((s) => serviciosPorPropiedad.every((m) => m.has(s)))
+          : [];
+      setAjustesServicios(
+        comunes.map((descripcion) => {
+          // Si todas las propiedades cargaron el mismo N° de liquidación
+          // para este servicio puntual, se precarga solo (pedido del
+          // usuario 2026-09-19) — si alguna lo tiene distinto o vacío, se
+          // deja en blanco para no adivinar.
+          const numeros = serviciosPorPropiedad.map((m) => m.get(descripcion) ?? '');
+          const mismoNumero = numeros[0] !== '' && numeros.every((n) => n === numeros[0]);
+          return { descripcion, monto: '', numeroLiquidacion: mismoNumero ? numeros[0] : '' };
+        }),
+      );
     }
     // Solo precarga la primera vez que llega la vista previa; después el
     // usuario es dueño del estado.
@@ -449,7 +499,11 @@ function LiquidacionModal({
         })),
         ajustesServicios: ajustesServicios
           .filter((a) => a.descripcion.trim())
-          .map((a) => ({ descripcion: a.descripcion.trim(), monto: Number(a.monto) || 0 })),
+          .map((a) => ({
+            descripcion: a.descripcion.trim(),
+            monto: Number(a.monto) || 0,
+            numeroLiquidacion: a.numeroLiquidacion.trim() || undefined,
+          })),
       }),
     // Generar la liquidación crea un movimiento automático en Caja
     // (LIQUIDACION_PROPIETARIO) y puede aparecer en Avisos ("liquidación
@@ -517,7 +571,13 @@ function LiquidacionModal({
     setAjustesServicios((prev) => prev.map((a, i) => (i === idx ? { ...a, [campo]: valor } : a)));
   }
   function agregarAjuste() {
-    setAjustesServicios((prev) => [...prev, { descripcion: '', monto: '' }]);
+    setAjustesServicios((prev) => [
+      ...prev,
+      // El N° de liquidación de un servicio suele repetirse igual en todos
+      // los del mismo mes (pedido del usuario 2026-09-19) — se precarga del
+      // último renglón cargado para no tener que retipearlo cada vez.
+      { descripcion: '', monto: '', numeroLiquidacion: prev[prev.length - 1]?.numeroLiquidacion ?? '' },
+    ]);
   }
   function quitarAjuste(idx: number) {
     setAjustesServicios((prev) => prev.filter((_, i) => i !== idx));
@@ -667,6 +727,14 @@ function LiquidacionModal({
                       placeholder="0"
                       value={a.monto}
                       onChange={(e) => actualizarAjuste(idx, 'monto', e.target.value)}
+                    />
+                    <input
+                      className="itemliq"
+                      inputMode="numeric"
+                      placeholder="Liq"
+                      title="Número de liquidación"
+                      value={a.numeroLiquidacion}
+                      onChange={(e) => actualizarAjuste(idx, 'numeroLiquidacion', e.target.value.replace(/\D/g, ''))}
                     />
                     <button className="btn-sm ghostred" onClick={() => quitarAjuste(idx)} title="Quitar">
                       ✕

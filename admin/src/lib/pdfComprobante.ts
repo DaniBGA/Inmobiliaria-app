@@ -95,6 +95,48 @@ export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: 
     // exactamente al borde inferior de la ÚLTIMA hoja, en vez de flotando
     // a mitad de página con aire de sobra debajo.
     const alturaPaginaEnClon = pageHeight * (780 / pageWidth);
+
+    // Paginado "a mano" (pedido del usuario 2026-09-19): como el PDF sale
+    // de rebanar una sola imagen larga en franjas de una hoja cada una (ver
+    // el bucle de `pdf.addImage` más abajo), por default esa rebanada corta
+    // a la mitad cualquier cosa que caiga justo en el borde — en una
+    // Liquidación con varias propiedades, el corte podía partir el bloque
+    // de una propiedad en dos hojas. Antes de rasterizar, se insertan
+    // separadores en blanco para forzar que cada `.comp-propgrupo` (cada
+    // propiedad) arranque siempre en una hoja nueva, y que el bloque final
+    // de totales (`.comp-totalesgrupo`) se empuje entero a la hoja
+    // siguiente si no entra completo en lo que queda de la actual — no se
+    // fuerza siempre a una hoja nueva porque la mayoría de las veces sí
+    // entra debajo de la última propiedad.
+    const origenY = clon.getBoundingClientRect().top;
+    const posicionEnClon = (el: HTMLElement) => el.getBoundingClientRect().top - origenY;
+    // Empuja `el` hacia abajo (con un `<div>` espaciador insertado antes)
+    // hasta que su borde superior caiga justo al arrancar la próxima hoja.
+    function empujarAHojaNueva(el: HTMLElement) {
+      const top = posicionEnClon(el);
+      const resto = top % alturaPaginaEnClon;
+      if (resto <= 1) return; // ya arranca (o casi) al principio de una hoja
+      const espaciador = document.createElement('div');
+      espaciador.style.height = `${alturaPaginaEnClon - resto}px`;
+      espaciador.style.flexShrink = '0';
+      el.parentElement?.insertBefore(espaciador, el);
+    }
+    const paginaDe = (y: number) => Math.floor(y / alturaPaginaEnClon);
+
+    const grupos = clon.querySelectorAll<HTMLElement>('.comp-propgrupo');
+    grupos.forEach((grupo, i) => {
+      if (i === 0) return; // la primera propiedad ya comparte hoja con el membrete/info, no hace falta empujarla
+      empujarAHojaNueva(grupo);
+    });
+    const totales = clon.querySelector<HTMLElement>('.comp-totalesgrupo');
+    if (totales) {
+      const top = posicionEnClon(totales);
+      const bottom = top + totales.getBoundingClientRect().height;
+      if (paginaDe(top) !== paginaDe(bottom - 1)) {
+        empujarAHojaNueva(totales);
+      }
+    }
+
     const alturaContenido = clon.scrollHeight;
     const paginas = Math.max(1, Math.ceil(alturaContenido / alturaPaginaEnClon));
     clon.style.height = `${paginas * alturaPaginaEnClon}px`;

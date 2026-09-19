@@ -166,7 +166,7 @@ export class LiquidacionesService {
     propietarioId: string,
     mesStr: string,
     detalleInput?: LiquidacionDetalleInputDto[],
-    ajustesServiciosInput?: { descripcion: string; monto: number }[],
+    ajustesServiciosInput?: { descripcion: string; monto: number; numeroLiquidacion?: string }[],
   ) {
     const propietario = await this.prisma.propietario.findUnique({
       where: { id: propietarioId },
@@ -246,6 +246,7 @@ export class LiquidacionesService {
             create: ajustesServicios.map((a, idx) => ({
               descripcion: a.descripcion.trim(),
               monto: a.monto,
+              numeroLiquidacion: a.numeroLiquidacion?.trim() || undefined,
               orden: idx,
             })),
           },

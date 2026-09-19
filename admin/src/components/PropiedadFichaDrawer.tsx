@@ -1794,8 +1794,16 @@ export function FacturaModal({
     // la factura recién emitida en caché como "no existe" (la consulta de
     // más arriba corrió antes de emitir), sin invalidar quedaría sirviendo
     // ese `null` viejo un instante y precargando de cero otra vez — la
-    // razón original de este arreglo.
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['factura-mes', propiedadId, mes] }),
+    // razón original de este arreglo. También invalida lo que depende del
+    // monto/estado de esta factura fuera de este modal (pedido del usuario
+    // 2026-09-19: antes había que recargar la página para verlo reflejado
+    // en Inquilinos y Cobros).
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['factura-mes', propiedadId, mes] });
+      qc.invalidateQueries({ queryKey: ['cobros'] });
+      qc.invalidateQueries({ queryKey: ['propiedades'] });
+      qc.invalidateQueries({ queryKey: ['avisos'] });
+    },
   });
 
   const F = emitir.data;

@@ -674,10 +674,15 @@ model LiquidacionGasto {
 // el comprobante, ya no resta de `LiquidacionPropiedad.neto` — restaba dos
 // veces (ahí y acá) antes de este cambio.
 model LiquidacionAjusteServicio {
-  id          String  @id @default(uuid())
-  descripcion String
-  monto       Decimal @db.Decimal(14, 2)
-  orden       Int     @default(0)
+  id                String  @id @default(uuid())
+  descripcion       String
+  monto             Decimal @db.Decimal(14, 2)
+  // N° de liquidación del propio servicio (ej. de la factura de la
+  // prestadora) — pedido del usuario 2026-09-19: suele repetirse igual en
+  // todos los servicios de un mismo mes, así que el front lo precarga del
+  // último renglón cargado.
+  numeroLiquidacion String?
+  orden             Int     @default(0)
 
   liquidacionId String
   liquidacion   Liquidacion @relation(fields: [liquidacionId], references: [id], onDelete: Cascade)

@@ -17,9 +17,9 @@ export class GenerarLiquidacionDto {
   // las alquiladas por la inmobiliaria, ver comentario en
   // LiquidacionAjusteServicio en schema.prisma) — se cargan a mano cada vez,
   // sin Propiedad ni Factura detrás (reusa FacturaItemInputDto por
-  // descripción+monto; `numeroLiquidacion` no aplica acá y se ignora si
-  // viene). Restan directo de `netoAGirar`; es el único descuento real de
-  // servicios, sin tocar el `neto` de ninguna propiedad puntual.
+  // descripción+monto+N° de liquidación del servicio, § pedido del usuario
+  // 2026-09-19). Restan directo de `netoAGirar`; es el único descuento real
+  // de servicios, sin tocar el `neto` de ninguna propiedad puntual.
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
