@@ -67,6 +67,7 @@ interface PropiedadDb extends PropiedadParaAlquilar {
   tipo: string;
   inquilino: { nombre: string; telefono: string | null; email: string | null } | null;
   montoAlquilerVigente: string | number | null;
+  historialAumentos: { monto: string | number }[];
   alquilerPublicado: boolean;
   propietario: { nombre: string } | null;
   honorariosAdministracion: boolean;
@@ -339,6 +340,10 @@ export function InquilinosPage() {
           )}
           {alquileresVisibles.map((p) => {
             const ocupada = !!p.inquilino;
+            // Último renglón del historial, no `montoAlquilerVigente` (§
+            // pedido del usuario 2026-09-30: ver comentario en
+            // PropiedadesService.findAll()).
+            const montoActual = p.historialAumentos[0]?.monto ?? p.montoAlquilerVigente;
             return (
               <div
                 className="salecard"
@@ -365,7 +370,7 @@ export function InquilinosPage() {
                     </span>
                   </div>
                   <div className="sprice">
-                    {p.montoAlquilerVigente != null ? formatMoney(p.montoAlquilerVigente) : 'Consultar'}
+                    {montoActual != null ? formatMoney(montoActual) : 'Consultar'}
                     <small>ARS/mes</small>
                   </div>
                 </div>

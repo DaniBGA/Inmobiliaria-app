@@ -45,6 +45,13 @@ export class PropiedadesService {
         designado: true,
         venta: true,
         fotos: { orderBy: { orden: 'asc' } },
+        // Solo el último renglón (§ pedido del usuario 2026-09-30): las
+        // tarjetas de "Propiedades en alquiler" tienen que mostrar el monto
+        // del aumento más reciente cargado, no `montoAlquilerVigente` (que
+        // es a-la-fecha-de-hoy y no refleja un aumento ya cargado con fecha
+        // futura) — ese campo sigue siendo la fuente correcta para
+        // Cobros/Facturas/Liquidaciones, así que no se toca.
+        historialAumentos: { orderBy: [{ fecha: 'desc' }, { createdAt: 'desc' }], take: 1 },
       },
       orderBy: { nombre: 'asc' },
     });

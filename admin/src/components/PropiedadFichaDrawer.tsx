@@ -6,7 +6,7 @@ import { useConfiguracion } from '../hooks/useConfiguracion';
 import { useEnviarComprobantePorWhatsapp } from '../hooks/useEnviarComprobantePorWhatsapp';
 import { ESTADO_VENTA_LABEL, ESTADO_VENTA_CLASE, type EstadoVenta } from '../lib/ventaEnums';
 import { Modal } from './Modal';
-import { formatMoney, formatUsd, formatDate, mesActualStr, mesLabel, parseMontoArgentino, fechaVencimientoAlquiler } from '../lib/format';
+import { formatMoney, formatUsd, formatDate, mesActualStr, sumarMesesStr, mesLabel, parseMontoArgentino, fechaVencimientoAlquiler } from '../lib/format';
 import { resolverPorcentajeHonorariosAdministracion, type TipoHonorarios } from '../lib/honorarios';
 import { FotosPropiedad, type FotoPropiedadItem } from './FotosPropiedad';
 import { FotoHeroPropiedad } from './FotoHeroPropiedad';
@@ -408,6 +408,12 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
 
   const historial = p?.historialAumentos ?? [];
   const montoInicial = historial.length ? historial[historial.length - 1].monto : null;
+  // "Monto actual" (§ pedido del usuario 2026-09-30): siempre el último
+  // renglón cargado en el historial, no el vigente-a-la-fecha-de-hoy que
+  // devuelve `rentaVigente` — si ya se cargó un aumento futuro, el
+  // historial lo lista como aplicado y el monto actual tiene que
+  // coincidir con eso.
+  const montoActual = historial.length ? Number(historial[0].monto) : montoVigente;
   // Vista de "Historial de aumentos" (§ pedido del usuario): un único
   // timeline cronológico ascendente (más viejo arriba) que combina lo ya
   // aplicado con lo que falta — `historial` en sí queda en orden desc
@@ -474,7 +480,7 @@ export function PropiedadFichaDrawer({ propiedadId, onClose }: { propiedadId: st
                     </div>
                     <div className="f">
                       <b>Monto actual</b>
-                      <span className="big">{montoVigente ? formatMoney(montoVigente) : '—'}</span>
+                      <span className="big">{montoActual ? formatMoney(montoActual) : '—'}</span>
                     </div>
                     <div className="f">
                       <b>Inicio de contrato</b>
@@ -1617,7 +1623,27 @@ export function FacturaModal({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
-  const mes = mesProp ?? mesActualStr();
+  const mesActual = mesActualStr();
+  // Si no vino un mes explícito (arranque "normal" desde el botón "Emitir
+  // factura" de la ficha, no desde el navegador de mes de "Inquilinos y
+  // Cobros"), primero hay que saber si el mes en curso ya tiene factura
+  // emitida — si la tiene, se arranca directo en el mes siguiente (pedido
+  // del usuario 2026-09-30): no tiene sentido volver a ofrecer el mes que
+  // ya se facturó.
+  const facturaMesActualQuery = useQuery({
+    queryKey: ['factura-mes', propiedadId, mesActual],
+    queryFn: () => api.get<Factura | null>(`/facturacion/propiedades/${propiedadId}/facturas/${mesActual}`),
+    enabled: mesProp === undefined,
+  });
+  const mesResuelto =
+    mesProp !== undefined
+      ? mesProp
+      : facturaMesActualQuery.isSuccess
+      ? facturaMesActualQuery.data
+        ? sumarMesesStr(mesActual, 1)
+        : mesActual
+      : null;
+  const mes = mesResuelto ?? mesActual;
 
   // Mismo queryKey que ya usa el drawer padre: React Query dedupea y sirve
   // del caché, no dispara un segundo pedido de red.
@@ -1633,6 +1659,7 @@ export function FacturaModal({
   const facturaExistente = useQuery({
     queryKey: ['factura-mes', propiedadId, mes],
     queryFn: () => api.get<Factura | null>(`/facturacion/propiedades/${propiedadId}/facturas/${mes}`),
+    enabled: mesResuelto !== null,
   });
 
   // Ítems predeterminados (§3.5: alquiler vigente + servicios habilitados,
@@ -1863,7 +1890,7 @@ export function FacturaModal({
   // ya tiene factura propia — su propio `isPending` no sirve solo para
   // decidir si mostrar "Cargando…".
   const cargandoItems = facturaExistente.isPending || (facturaExistente.isSuccess && predeterminados.isPending);
-  const errorItems = facturaExistente.isError || predeterminados.isError;
+  const errorItems = facturaMesActualQuery.isError || facturaExistente.isError || predeterminados.isError;
 
   return (
     <Modal open onClose={onClose} title={`Factura — ${propiedadNombre}`} width={620}>
