@@ -96,37 +96,64 @@ export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: 
     // a mitad de página con aire de sobra debajo.
     const alturaPaginaEnClon = pageHeight * (780 / pageWidth);
 
-    // Paginado "a mano" (pedido del usuario 2026-09-19): como el PDF sale
-    // de rebanar una sola imagen larga en franjas de una hoja cada una (ver
+    // Paginado "a mano" (pedido del usuario 2026-09-19, regla de cuántas
+    // propiedades por hoja actualizada 2026-09-30): como el PDF sale de
+    // rebanar una sola imagen larga en franjas de una hoja cada una (ver
     // el bucle de `pdf.addImage` más abajo), por default esa rebanada corta
     // a la mitad cualquier cosa que caiga justo en el borde — en una
     // Liquidación con varias propiedades, el corte podía partir el bloque
     // de una propiedad en dos hojas. Antes de rasterizar, se insertan
     // separadores en blanco para forzar que cada `.comp-propgrupo` (cada
-    // propiedad) arranque siempre en una hoja nueva, y que el bloque final
-    // de totales (`.comp-totalesgrupo`) se empuje entero a la hoja
-    // siguiente si no entra completo en lo que queda de la actual — no se
-    // fuerza siempre a una hoja nueva porque la mayoría de las veces sí
+    // propiedad) arranque en una hoja nueva cada 3 propiedades, y que el
+    // bloque final de totales (`.comp-totalesgrupo`) se empuje entero a la
+    // hoja siguiente si no entra completo en lo que queda de la actual — no
+    // se fuerza siempre a una hoja nueva porque la mayoría de las veces sí
     // entra debajo de la última propiedad.
     const origenY = clon.getBoundingClientRect().top;
     const posicionEnClon = (el: HTMLElement) => el.getBoundingClientRect().top - origenY;
     // Empuja `el` hacia abajo (con un `<div>` espaciador insertado antes)
-    // hasta que su borde superior caiga justo al arrancar la próxima hoja.
+    // hasta que su borde superior caiga justo al arrancar la próxima hoja,
+    // más un margen extra (pedido del usuario 2026-09-30: el resumen
+    // quedaba pegado al borde de arriba al saltar de hoja) — la hoja 1 ya
+    // tiene ese aire gracias al padding propio del clon (`30px 34px`, ver
+    // más arriba), pero una hoja 2+ armada acá "a mano" no lo hereda solo
+    // por rebanar la imagen larga en franjas.
+    const MARGEN_SALTO_HOJA = 30;
     function empujarAHojaNueva(el: HTMLElement) {
       const top = posicionEnClon(el);
       const resto = top % alturaPaginaEnClon;
       if (resto <= 1) return; // ya arranca (o casi) al principio de una hoja
       const espaciador = document.createElement('div');
-      espaciador.style.height = `${alturaPaginaEnClon - resto}px`;
+      espaciador.style.height = `${alturaPaginaEnClon - resto + MARGEN_SALTO_HOJA}px`;
       espaciador.style.flexShrink = '0';
       el.parentElement?.insertBefore(espaciador, el);
     }
     const paginaDe = (y: number) => Math.floor(y / alturaPaginaEnClon);
 
+    // Hasta 3 propiedades por hoja (pedido del usuario 2026-09-30, reemplaza
+    // la regla anterior de "una propiedad = una hoja"): se fuerza una hoja
+    // nueva cada 3 propiedades, sea cual sea su altura real — así el
+    // paginado queda predecible en vez de depender de cuántas entrarían a
+    // ojo. El resumen de liquidación (`.comp-totalesgrupo`, más abajo) no
+    // se fuerza a una hoja aparte: si el grupo final tiene 1 o 2
+    // propiedades sobra lugar y queda en la misma hoja; si tiene 3, no
+    // entra y cae solo a la siguiente (misma lógica de "empujar si no
+    // entra entero" que ya usa el resumen).
     const grupos = clon.querySelectorAll<HTMLElement>('.comp-propgrupo');
     grupos.forEach((grupo, i) => {
       if (i === 0) return; // la primera propiedad ya comparte hoja con el membrete/info, no hace falta empujarla
-      empujarAHojaNueva(grupo);
+      if (i % 3 === 0) {
+        empujarAHojaNueva(grupo);
+        return;
+      }
+      // Salvaguarda para el caso raro de una propiedad tan larga que igual
+      // quedaría cortada dentro de su grupo de 3 (p. ej. muchos servicios
+      // cargados) — mismo chequeo que ya usa el resumen más abajo.
+      const top = posicionEnClon(grupo);
+      const bottom = top + grupo.getBoundingClientRect().height;
+      if (paginaDe(top) !== paginaDe(bottom - 1)) {
+        empujarAHojaNueva(grupo);
+      }
     });
     const totales = clon.querySelector<HTMLElement>('.comp-totalesgrupo');
     if (totales) {

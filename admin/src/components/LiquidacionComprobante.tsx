@@ -1,5 +1,4 @@
 import { formatMoney, mesesContrato } from '../lib/format';
-import { ComprobanteInfoBox } from './ComprobanteInfoBox';
 
 export interface LiquidacionItem {
   descripcion: string;
@@ -41,15 +40,22 @@ export interface Liquidacion {
   ajustesServicios: AjusteServicio[];
 }
 
-function iniciales(nombre: string) {
-  return nombre.split(' ').filter(Boolean).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
-}
-
 // Cuerpo de la liquidación YA EMITIDA (no la vista previa editable, que
 // sigue viviendo aparte en `PropietariosPage.tsx::LiquidacionModal`) — mismo
 // markup usado en dos lugares reales: el modal de Propietarios (visible en
 // pantalla) y `AvisosPage.tsx` (invisible, solo para generar el PDF que
 // descarga el botón "Descargar PDF" de la tarjeta "Liquidación lista").
+//
+// Diseño propio (pedido del usuario 2026-09-30, "Nuevo Modelo" — mockup de
+// referencia adjunto): caja de datos en 3 columnas, banner "Neto a girar" y
+// tarjetas de propiedad con franja de color en vez del recuadro con avatar
+// de antes. Usa clases EXCLUSIVAS (`comp-liq*`), no `.liqcard`/`.liqline` —
+// esas las sigue usando el detalle de Factura/Recibo en
+// `PropiedadFichaDrawer.tsx`, que no cambia. `comp-propgrupo`/
+// `comp-totalesgrupo` se mantienen como clases marcadoras (sin estilo
+// propio) porque `lib/pdfComprobante.ts` las usa para el paginado — ver
+// comentario ahí (hasta 3 propiedades por hoja, resumen a la hoja
+// siguiente si no entra).
 export function LiquidacionComprobanteBody({
   propietarioNombre,
   mesTexto,
@@ -60,133 +66,115 @@ export function LiquidacionComprobanteBody({
   L: Liquidacion;
 }) {
   const neto = Number(L.netoAGirar);
-  const propiedades = L.detalle.map((d) => d.propiedad.nombre).join(', ') || '—';
+  const honorariosTotal = L.detalle.reduce((acc, d) => acc + Number(d.honorariosAdministracion), 0);
   return (
     <>
-      <ComprobanteInfoBox
-        izquierda={[
-          { label: 'Nombre Propietario', valor: propietarioNombre },
-          { label: 'Propiedades incluidas', valor: propiedades },
-        ]}
-        derecha={[{ label: 'Periodo', valor: mesTexto }]}
-      />
-      <div className="comp-detalletitulo">Detalle de Liquidación</div>
-      <div className="liqcard" style={{ boxShadow: 'none' }}>
-      <div className="liqhead">
-        <div className="avatar">{iniciales(propietarioNombre)}</div>
+      <div className="comp-liqinfo">
+        <div className="comp-liqinfo-col">
+          <span className="k">Propietario</span>
+          <span className="v">{propietarioNombre}</span>
+        </div>
+        <div className="comp-liqinfo-col">
+          <span className="k">Período</span>
+          <span className="v">{mesTexto}</span>
+        </div>
+        <div className="comp-liqinfo-col">
+          <span className="k">Propiedades</span>
+          <span className="v">
+            {L.detalle.length} {L.detalle.length === 1 ? 'unidad' : 'unidades'}
+          </span>
+        </div>
+      </div>
+
+      <div className="comp-liqneto">
         <div>
-          <h4>{propietarioNombre}</h4>
-          <div className="lsub">
-            Liquidación N° {L.numero} · {L.detalle.length} {L.detalle.length === 1 ? 'propiedad' : 'propiedades'} · {mesTexto}
-          </div>
+          <div className="k">Neto a girar</div>
+          <div className="sub">Liquidación N° {L.numero}</div>
         </div>
-        <span className="spacer"></span>
-        <div className="lnet">
-          <b>NETO A GIRAR</b>
-          <span style={{ color: neto >= 0 ? 'var(--green)' : 'var(--red)' }}>{formatMoney(neto)}</span>
-        </div>
+        <span className="monto">{formatMoney(neto)}</span>
       </div>
-      <div className="liqbody">
-        {L.detalle.map((d, i) => (
-          // La separación visual entre propiedades es una clase propia, no
-          // un combinador de hermano adyacente (`+`, como antes) — el
-          // paginado del PDF (`pdfComprobante.ts`) inserta un `<div>`
-          // espaciador ANTES de cada propiedad (salvo la primera) para
-          // forzarla al inicio de una hoja nueva, y eso rompía el
-          // combinador (ya no eran hermanos directos): la propiedad perdía
-          // su margen/borde superior recién al insertarse el espaciador,
-          // corriéndose unos px de donde se la había medido y dejando un
-          // corte visible entre hojas (pedido del usuario 2026-09-19).
-          <div className={`comp-propgrupo${i > 0 ? ' comp-propgrupo-sep' : ''}`} key={d.propiedadId}>
-            <div className="liqline pos">
+
+      <div className="comp-detalletitulo">Detalle por Propiedad</div>
+
+      {L.detalle.map((d) => (
+        <div className="comp-propgrupo comp-liqprop" key={d.propiedadId}>
+          <div className="comp-liqprop-head">
+            <div>
+              <b>{d.propiedad.nombre}</b>
+              {d.facturaNumero != null && (
+                <span className="sub">
+                  Factura N° {d.facturaNumero}
+                  {(() => {
+                    const meses = mesesContrato(d.propiedad.contratoInicio, d.propiedad.contratoFin);
+                    return meses != null ? `/${meses}` : '';
+                  })()}
+                </span>
+              )}
+            </div>
+            <span className="monto">{formatMoney(d.cobradoTotal)}</span>
+          </div>
+          {d.items.map((it, i) => (
+            <div className="comp-liqrow" key={i}>
               <span className="ld">
-                <b>{d.propiedad.nombre}</b>
-                {d.facturaNumero != null && (
-                  <small style={{ color: 'var(--muted)' }}>
-                    {' '}
-                    · Numero factura {d.facturaNumero}
-                    {(() => {
-                      const meses = mesesContrato(d.propiedad.contratoInicio, d.propiedad.contratoFin);
-                      return meses != null ? `/${meses}` : '';
-                    })()}
-                  </small>
-                )}
+                {it.descripcion}
+                {it.numeroLiquidacion && <small> · Liq N° {it.numeroLiquidacion}</small>}
               </span>
-              <span className="lv">{formatMoney(d.cobradoTotal)}</span>
+              <span className="lv">{formatMoney(it.monto)}</span>
             </div>
-            {d.items.map((it, i) => {
-              // Cuando la inmobiliaria paga los servicios (§ pedido del
-              // usuario 2026-09-03), el backend manda esos ítems en
-              // negativo — se muestran restando, igual criterio visual que
-              // los gastos absorbidos de abajo.
-              const monto = Number(it.monto);
-              const esNegativo = monto < 0;
-              return (
-                <div className={`liqline${esNegativo ? ' neg' : ''}`} key={i}>
-                  <span className="ld" style={{ paddingLeft: 16 }}>
-                    {esNegativo && '↳ '}
-                    {it.descripcion}
-                    {it.numeroLiquidacion && <small style={{ color: 'var(--muted)' }}> · Liq N° {it.numeroLiquidacion}</small>}
-                  </span>
-                  <span className="lv">{esNegativo ? `− ${formatMoney(Math.abs(monto))}` : formatMoney(monto)}</span>
-                </div>
-              );
-            })}
-            {d.gastos.map((g, i) => (
-              <div className="liqline neg" key={i}>
-                <span className="ld" style={{ paddingLeft: 16 }}>
-                  ↳ {g.descripcion}
-                </span>
-                <span className="lv">− {formatMoney(g.monto)}</span>
-              </div>
-            ))}
-            {/* Por propiedad, no un total combinado (pedido del usuario
-                2026-09-03): cada una puede tener un % de honorarios de
-                administración distinto, mezclarlas en una sola línea no
-                dejaba ver cuánto le correspondía a cuál. */}
-            {Number(d.honorariosAdministracion) > 0 && (
-              <div className="liqline neg">
-                <span className="ld" style={{ paddingLeft: 16 }}>
-                  ↳ Honorarios de administración ({Number(d.porcentajeHonorariosAdministracion)}% del alquiler:{' '}
-                  {formatMoney(d.baseAlquilerHonorarios)})
-                </span>
-                <span className="lv">− {formatMoney(d.honorariosAdministracion)}</span>
-              </div>
-            )}
-          </div>
-        ))}
-        {L.detalle.length > 0 && (
-          <div className="comp-totalesgrupo">
-            <div className="liqline" style={{ marginTop: 4 }}>
-              <span className="ld">Suma de alquileres (todas las propiedades)</span>
-              <span className="lv">{formatMoney(L.sumaAlquileres)}</span>
+          ))}
+          {d.gastos.map((g, i) => (
+            <div className="comp-liqrow neg" key={i}>
+              <span className="ld">{g.descripcion}</span>
+              <span className="lv">− {formatMoney(g.monto)}</span>
             </div>
-            {L.ajustesServicios.length > 0 && (
-              <>
-                <div className="fg full" style={{ margin: '10px 0 2px' }}>
-                  <label>Servicios a descontar (total de todas las propiedades)</label>
-                </div>
-                {L.ajustesServicios.map((a, i) => (
-                  <div className="liqline neg" key={i}>
-                    <span className="ld">
-                      ↳ {a.descripcion}
-                      {a.numeroLiquidacion && <small style={{ color: 'var(--muted)' }}> · Liq N° {a.numeroLiquidacion}</small>}
-                    </span>
-                    <span className="lv">− {formatMoney(Math.abs(Number(a.monto)))}</span>
-                  </div>
-                ))}
-              </>
-            )}
-            <div className="liqline tot">
-              <span className="ld">Total a liquidar</span>
-              <span className="lv" style={{ color: neto >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                {formatMoney(neto)}
+          ))}
+          {/* Por propiedad, no un total combinado (pedido del usuario
+              2026-09-03): cada una puede tener un % de honorarios de
+              administración distinto, mezclarlas en una sola línea no
+              dejaba ver cuánto le correspondía a cuál. El total combinado
+              sí se suma aparte en el resumen de abajo. */}
+          {Number(d.honorariosAdministracion) > 0 && (
+            <div className="comp-liqrow neg">
+              <span className="ld">
+                Honorarios de administración ({Number(d.porcentajeHonorariosAdministracion)}% del alquiler:{' '}
+                {formatMoney(d.baseAlquilerHonorarios)})
               </span>
+              <span className="lv">− {formatMoney(d.honorariosAdministracion)}</span>
             </div>
+          )}
+        </div>
+      ))}
+
+      {L.detalle.length > 0 && (
+        <div className="comp-totalesgrupo comp-liqresumen">
+          <div className="comp-detalletitulo">Resumen de Liquidación</div>
+          <div className="comp-liqrow principal">
+            <span className="ld">Suma de alquileres (todas las propiedades)</span>
+            <span className="lv">{formatMoney(L.sumaAlquileres)}</span>
           </div>
-        )}
-      </div>
-      </div>
+          {L.ajustesServicios.map((a, i) => (
+            <div className="comp-liqrow neg" key={i}>
+              <span className="ld">
+                {a.descripcion} · total
+                {a.numeroLiquidacion && <small> · Liq N° {a.numeroLiquidacion}</small>}
+              </span>
+              <span className="lv">− {formatMoney(Math.abs(Number(a.monto)))}</span>
+            </div>
+          ))}
+          {honorariosTotal > 0 && (
+            <div className="comp-liqrow neg">
+              <span className="ld">Honorarios de administración</span>
+              <span className="lv">− {formatMoney(honorariosTotal)}</span>
+            </div>
+          )}
+          <div className="comp-liqtotal">
+            <span className="ld">Total a liquidar</span>
+            <span className="lv" style={{ color: neto >= 0 ? 'var(--green)' : 'var(--red)' }}>
+              {formatMoney(neto)}
+            </span>
+          </div>
+        </div>
+      )}
     </>
   );
 }

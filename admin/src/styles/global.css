@@ -755,10 +755,56 @@ textarea.avmsg:focus{outline:2px solid var(--indigo);border-color:transparent;ba
 .comprobante .liqline:last-child{margin-bottom:0}
 .comprobante .liqline.tot{background:#F4F7FA;font-weight:800}
 
-/* Separación entre cada propiedad de una Liquidación (pedido del usuario
-   2026-09-03: "se ven todas juntas y tienden a confundir") — una línea
-   divisoria + aire extra antes de cada propiedad, salvo la primera. */
-.comp-propgrupo-sep{margin-top:20px;padding-top:18px;border-top:1.5px dashed #1C4066}
+/* Diseño propio del comprobante de Liquidación (pedido del usuario
+   2026-09-30, mockup "Nuevo Modelo") — EXCLUSIVO de `LiquidacionComprobante.tsx`,
+   no pisa `.liqcard`/`.liqline` de arriba (esas siguen siendo de
+   Factura/Recibo). El espaciado entre propiedades es `margin-bottom` en la
+   tarjeta misma (`.comp-liqprop`), no un combinador de hermano adyacente
+   (`+`) como antes: el paginado del PDF (`lib/pdfComprobante.ts`) inserta
+   un `<div>` espaciador ANTES de algunas propiedades para forzarlas a una
+   hoja nueva, y con `+` esa propiedad dejaba de ser "hermano directo" de la
+   anterior y perdía el margen justo ahí — con `margin-bottom` propio no
+   depende de qué haya (o no) inmediatamente antes en el DOM.
+   Caja de datos en 3 columnas (Propietario / Período / Propiedades). */
+.comp-liqinfo{display:flex;background:#F4F7FA;border-radius:12px;padding:14px 22px;margin-bottom:16px}
+.comp-liqinfo-col{flex:1;display:flex;flex-direction:column;gap:4px;min-width:0}
+.comp-liqinfo-col+.comp-liqinfo-col{border-left:1px solid #DCE3EC;padding-left:22px;margin-left:22px}
+.comp-liqinfo-col .k{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.comp-liqinfo-col .v{font-size:13.5px;font-weight:700;color:var(--ink2)}
+
+/* Banner "Neto a girar": reemplaza el `.liqhead` con avatar de antes — la
+   Liquidación es de un propietario ya identificado arriba en `.comp-liqinfo`,
+   no hace falta repetir el nombre acá. */
+.comp-liqneto{display:flex;align-items:center;justify-content:space-between;background:#1C4066;border-radius:12px;padding:18px 24px;margin-bottom:22px}
+.comp-liqneto .k{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#AFC3DB}
+.comp-liqneto .sub{font-size:11px;color:#8CA3C2;margin-top:3px}
+.comp-liqneto .monto{font-family:var(--mono);font-size:26px;font-weight:800;color:#fff}
+
+/* Tarjeta de propiedad: franja de color a la izquierda en vez del recuadro
+   completo grueso de antes; renglones internos en lista plana (sin caja
+   propia por renglón). Verde azulado (no el `--green` que ya usa el resto
+   del panel para montos positivos genéricos) — pedido del usuario
+   2026-09-30: el verde puro no era el color del mockup. */
+.comp-liqprop{background:#fff;border:1px solid var(--border2);border-left:4px solid #0D9488;border-radius:10px;padding:14px 18px;margin-bottom:16px}
+.comp-liqprop:last-child{margin-bottom:0}
+.comp-liqprop-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:6px}
+.comp-liqprop-head b{font-size:13.5px;color:var(--ink)}
+.comp-liqprop-head .sub{display:block;font-size:10.5px;color:var(--muted);margin-top:2px}
+.comp-liqprop-head .monto{font-family:var(--mono);font-size:14px;font-weight:800;color:#0D9488;white-space:nowrap}
+
+.comp-liqrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6.5px 0;font-size:12px;border-bottom:1px solid var(--border2)}
+.comp-liqrow:last-child{border-bottom:0}
+.comp-liqrow .ld{color:var(--muted)}
+.comp-liqrow .ld small{display:block;color:var(--muted);font-size:10px;margin-top:1px}
+.comp-liqrow .lv{font-family:var(--mono);font-weight:700;white-space:nowrap;color:var(--ink2)}
+.comp-liqrow.principal .ld{color:var(--ink);font-weight:600}
+.comp-liqrow.principal .lv{color:var(--ink)}
+.comp-liqrow.neg .lv{color:var(--red)}
+
+.comp-liqresumen{margin-top:4px}
+.comp-liqtotal{display:flex;justify-content:space-between;align-items:center;background:#F4F7FA;border:1px solid var(--border2);border-radius:10px;padding:14px 18px;margin-top:10px}
+.comp-liqtotal .ld{font-size:13px;font-weight:800;color:var(--ink)}
+.comp-liqtotal .lv{font-family:var(--mono);font-size:17px;font-weight:800}
 
 /* Impresión: el boceto imprimía un documento aparte (#printInvoice); acá no
    hay generación de PDF todavía (pendiente de una fase posterior), así que

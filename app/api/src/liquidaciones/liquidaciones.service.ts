@@ -125,7 +125,7 @@ export class LiquidacionesService {
         // visualmente el monto).
         const itemsParaComprobante = esInmobiliariaResponsable
           ? [
-              { descripcion: 'Importe total del periodo', monto: cobradoTotal, numeroLiquidacion: undefined as string | undefined },
+              { descripcion: 'Alquiler del período', monto: cobradoTotal, numeroLiquidacion: undefined as string | undefined },
               ...items
                 .filter((it) => esServicioTrasladable(it.descripcion))
                 .map((it) => ({ descripcion: it.descripcion, monto: Number(it.monto), numeroLiquidacion: it.numeroLiquidacion })),
