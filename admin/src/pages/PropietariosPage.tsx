@@ -771,7 +771,7 @@ function LiquidacionModal({
 
       {L && (
         <>
-          <ComprobanteImpreso cfg={cfg} titulo="Liquidación de Alquiler" ref={comprobanteRef}>
+          <ComprobanteImpreso cfg={cfg} titulo="Liquidación de Alquiler" mostrarMarcaAgua={false} ref={comprobanteRef}>
             <LiquidacionComprobanteBody propietarioNombre={propietario.nombre} mesTexto={mesLabel(mes)} L={L} />
           </ComprobanteImpreso>
           <div className="btnrow noprint">

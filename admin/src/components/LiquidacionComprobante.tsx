@@ -1,4 +1,5 @@
 import { formatMoney, mesesContrato } from '../lib/format';
+import { splitDescripcionCuenta } from '../lib/itemServicioCuenta';
 
 export interface LiquidacionItem {
   descripcion: string;
@@ -94,7 +95,7 @@ export function LiquidacionComprobanteBody({
         <span className="monto">{formatMoney(neto)}</span>
       </div>
 
-      <div className="comp-detalletitulo">Detalle por Propiedad</div>
+      <div className="comp-liqtitulo">Detalle por Propiedad</div>
 
       {L.detalle.map((d) => (
         <div className="comp-propgrupo comp-liqprop" key={d.propiedadId}>
@@ -116,7 +117,7 @@ export function LiquidacionComprobanteBody({
           {d.items.map((it, i) => (
             <div className="comp-liqrow" key={i}>
               <span className="ld">
-                {it.descripcion}
+                {splitDescripcionCuenta(it.descripcion).base}
                 {it.numeroLiquidacion && <small> · Liq N° {it.numeroLiquidacion}</small>}
               </span>
               <span className="lv">{formatMoney(it.monto)}</span>
@@ -134,7 +135,7 @@ export function LiquidacionComprobanteBody({
               dejaba ver cuánto le correspondía a cuál. El total combinado
               sí se suma aparte en el resumen de abajo. */}
           {Number(d.honorariosAdministracion) > 0 && (
-            <div className="comp-liqrow neg">
+            <div className="comp-liqrow neg honorarios">
               <span className="ld">
                 Honorarios de administración ({Number(d.porcentajeHonorariosAdministracion)}% del alquiler:{' '}
                 {formatMoney(d.baseAlquilerHonorarios)})
@@ -147,7 +148,7 @@ export function LiquidacionComprobanteBody({
 
       {L.detalle.length > 0 && (
         <div className="comp-totalesgrupo comp-liqresumen">
-          <div className="comp-detalletitulo">Resumen de Liquidación</div>
+          <div className="comp-liqtitulo">Resumen de Liquidación</div>
           <div className="comp-liqrow principal">
             <span className="ld">Suma de alquileres (todas las propiedades)</span>
             <span className="lv">{formatMoney(L.sumaAlquileres)}</span>
@@ -162,7 +163,7 @@ export function LiquidacionComprobanteBody({
             </div>
           ))}
           {honorariosTotal > 0 && (
-            <div className="comp-liqrow neg">
+            <div className="comp-liqrow neg honorarios">
               <span className="ld">Honorarios de administración</span>
               <span className="lv">− {formatMoney(honorariosTotal)}</span>
             </div>

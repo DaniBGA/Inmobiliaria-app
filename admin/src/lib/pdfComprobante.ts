@@ -118,7 +118,12 @@ export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: 
     // tiene ese aire gracias al padding propio del clon (`30px 34px`, ver
     // más arriba), pero una hoja 2+ armada acá "a mano" no lo hereda solo
     // por rebanar la imagen larga en franjas.
-    const MARGEN_SALTO_HOJA = 30;
+    const MARGEN_SALTO_HOJA = 18;
+    // Repite el membrete (logo + datos + título) al principio de CADA hoja
+    // nueva que se fuerza acá (pedido del usuario 2026-09-30) — la hoja 1
+    // ya lo tiene tal cual viene en el DOM; de la 2 en adelante se clona el
+    // MISMO nodo ya forzado a visible más arriba, así queda con el mismo
+    // estilo sin tener que repetir la lógica de "display" a mano.
     function empujarAHojaNueva(el: HTMLElement) {
       const top = posicionEnClon(el);
       const resto = top % alturaPaginaEnClon;
@@ -127,6 +132,11 @@ export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: 
       espaciador.style.height = `${alturaPaginaEnClon - resto + MARGEN_SALTO_HOJA}px`;
       espaciador.style.flexShrink = '0';
       el.parentElement?.insertBefore(espaciador, el);
+      if (membrete) {
+        const membreteClon = membrete.cloneNode(true) as HTMLElement;
+        membreteClon.style.flexShrink = '0';
+        el.parentElement?.insertBefore(membreteClon, el);
+      }
     }
     const paginaDe = (y: number) => Math.floor(y / alturaPaginaEnClon);
 
@@ -136,9 +146,12 @@ export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: 
     // paginado queda predecible en vez de depender de cuántas entrarían a
     // ojo. El resumen de liquidación (`.comp-totalesgrupo`, más abajo) no
     // se fuerza a una hoja aparte: si el grupo final tiene 1 o 2
-    // propiedades sobra lugar y queda en la misma hoja; si tiene 3, no
-    // entra y cae solo a la siguiente (misma lógica de "empujar si no
-    // entra entero" que ya usa el resumen).
+    // propiedades sobra lugar y queda en la misma hoja; si tiene 3 (grupo
+    // lleno), SIEMPRE cae a la siguiente — no alcanza con chequear si
+    // técnicamente entraría (pedido del usuario 2026-09-30: con el diseño
+    // más compacto a veces sí entraba de milagro, pero quedaba todo muy
+    // apretado contra el pie, así que con 3 propiedades se fuerza el salto
+    // directo, sin medir).
     const grupos = clon.querySelectorAll<HTMLElement>('.comp-propgrupo');
     grupos.forEach((grupo, i) => {
       if (i === 0) return; // la primera propiedad ya comparte hoja con el membrete/info, no hace falta empujarla
@@ -157,10 +170,15 @@ export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: 
     });
     const totales = clon.querySelector<HTMLElement>('.comp-totalesgrupo');
     if (totales) {
-      const top = posicionEnClon(totales);
-      const bottom = top + totales.getBoundingClientRect().height;
-      if (paginaDe(top) !== paginaDe(bottom - 1)) {
+      const ultimoGrupoLleno = grupos.length > 0 && grupos.length % 3 === 0;
+      if (ultimoGrupoLleno) {
         empujarAHojaNueva(totales);
+      } else {
+        const top = posicionEnClon(totales);
+        const bottom = top + totales.getBoundingClientRect().height;
+        if (paginaDe(top) !== paginaDe(bottom - 1)) {
+          empujarAHojaNueva(totales);
+        }
       }
     }
 

@@ -47,12 +47,15 @@ function splitContacto(contacto: string): { telefono: string; email: string | nu
 // — ahora no se muestra en ningún comprobante, por pedido explícito).
 export const ComprobanteImpreso = forwardRef<
   HTMLDivElement,
-  { cfg?: DatosComprobante; titulo: string; children: ReactNode }
+  // `mostrarMarcaAgua` (pedido del usuario 2026-09-30, "sacalo"): la
+  // Liquidación deja de usar la marca de agua de fondo — default `true`
+  // para no tocar Factura/Recibo, que no pidieron este cambio.
+  { cfg?: DatosComprobante; titulo: string; mostrarMarcaAgua?: boolean; children: ReactNode }
 >(
-  function ComprobanteImpreso({ cfg, titulo, children }, ref) {
+  function ComprobanteImpreso({ cfg, titulo, mostrarMarcaAgua = true, children }, ref) {
     return (
       <div className="comprobante" ref={ref}>
-        <img className="comp-marcaagua printonly" src={logoMarcaAgua} alt="" aria-hidden="true" />
+        {mostrarMarcaAgua && <img className="comp-marcaagua printonly" src={logoMarcaAgua} alt="" aria-hidden="true" />}
 
         <div className="comp-membrete printonly">
           <img className="comp-logo" src={logoMembrete} alt="" />

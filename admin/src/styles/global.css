@@ -11,6 +11,11 @@
   --green:#16A34A; --green-soft:#E8F7EE;
   --mono:'JetBrains Mono','Cascadia Mono',ui-monospace,Consolas,monospace;
   --sans:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;
+  /* Helvetica no viene instalada en Windows — Arial es su reemplazo
+     métricamente compatible (mismos anchos de carácter), así que cae ahí
+     en vez de a una sans-serif genérica cualquiera (pedido del usuario
+     2026-09-30, solo para el comprobante de Liquidación). */
+  --liq-sans:'Helvetica Neue',Helvetica,Arial,sans-serif;
   --shadow:0 1px 2px rgba(17,24,39,.04),0 4px 14px rgba(17,24,39,.05);
   --shadow-lg:0 12px 40px rgba(17,24,39,.16);
 }
@@ -765,46 +770,73 @@ textarea.avmsg:focus{outline:2px solid var(--indigo);border-color:transparent;ba
    hoja nueva, y con `+` esa propiedad dejaba de ser "hermano directo" de la
    anterior y perdía el margen justo ahí — con `margin-bottom` propio no
    depende de qué haya (o no) inmediatamente antes en el DOM.
-   Caja de datos en 3 columnas (Propietario / Período / Propiedades). */
-.comp-liqinfo{display:flex;background:#F4F7FA;border-radius:12px;padding:14px 22px;margin-bottom:16px}
-.comp-liqinfo-col{flex:1;display:flex;flex-direction:column;gap:4px;min-width:0}
-.comp-liqinfo-col+.comp-liqinfo-col{border-left:1px solid #DCE3EC;padding-left:22px;margin-left:22px}
-.comp-liqinfo-col .k{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
-.comp-liqinfo-col .v{font-size:13.5px;font-weight:700;color:var(--ink2)}
+   Caja de datos en 3 columnas (Propietario / Período / Propiedades).
+   Medidas achicadas (pedido del usuario 2026-09-30): con el tamaño
+   original, 2-3 propiedades + resumen + pie terminaban necesitando una
+   hoja extra casi vacía solo para el pie (que siempre se pega al borde
+   inferior de la ÚLTIMA hoja, ver `pdfComprobante.ts`) — más compacto
+   entra más seguido en menos hojas y el pie no queda huérfano. */
+/* Tipografía (pedido del usuario 2026-09-30): Helvetica en todo el cuerpo
+   de la Liquidación (nada de `--mono` acá, a diferencia del resto del
+   panel) — Bold para títulos/encabezados/importes destacados, Regular para
+   texto secundario y detalle. `.comp-liq*` hereda `--liq-sans` una sola vez
+   acá arriba; cada regla de abajo solo pone el peso que le toca. */
+.comp-liqinfo,.comp-liqneto,.comp-liqprop,.comp-liqrow,.comp-liqtotal,.comp-liqtitulo{font-family:var(--liq-sans)}
+
+.comp-liqinfo{display:flex;background:#F4F7FA;border-radius:10px;padding:11px 18px;margin-bottom:12px}
+.comp-liqinfo-col{flex:1;display:flex;flex-direction:column;gap:3px;min-width:0}
+.comp-liqinfo-col+.comp-liqinfo-col{border-left:1px solid #DCE3EC;padding-left:18px;margin-left:18px}
+.comp-liqinfo-col .k{font-size:8.5px;font-weight:400;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.comp-liqinfo-col .v{font-size:12.5px;font-weight:700;color:var(--ink2)}
+
+/* Título de sección propio (pedido del usuario 2026-09-30): mismo lugar que
+   `.comp-detalletitulo` (que sigue siendo de Factura/Recibo, sin tocar) pero
+   en Helvetica Bold en vez de Inter. */
+.comp-liqtitulo{font-size:15px;font-weight:700;color:#1C4066;margin-bottom:10px}
 
 /* Banner "Neto a girar": reemplaza el `.liqhead` con avatar de antes — la
    Liquidación es de un propietario ya identificado arriba en `.comp-liqinfo`,
    no hace falta repetir el nombre acá. */
-.comp-liqneto{display:flex;align-items:center;justify-content:space-between;background:#1C4066;border-radius:12px;padding:18px 24px;margin-bottom:22px}
-.comp-liqneto .k{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#AFC3DB}
-.comp-liqneto .sub{font-size:11px;color:#8CA3C2;margin-top:3px}
-.comp-liqneto .monto{font-family:var(--mono);font-size:26px;font-weight:800;color:#fff}
+.comp-liqneto{display:flex;align-items:center;justify-content:space-between;background:#1C4066;border-radius:10px;padding:13px 20px;margin-bottom:16px}
+.comp-liqneto .k{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#fff}
+.comp-liqneto .sub{font-size:10.5px;font-weight:400;color:#fff;margin-top:2px}
+.comp-liqneto .monto{font-size:22px;font-weight:700;color:#fff}
 
 /* Tarjeta de propiedad: franja de color a la izquierda en vez del recuadro
    completo grueso de antes; renglones internos en lista plana (sin caja
-   propia por renglón). Verde azulado (no el `--green` que ya usa el resto
-   del panel para montos positivos genéricos) — pedido del usuario
-   2026-09-30: el verde puro no era el color del mockup. */
-.comp-liqprop{background:#fff;border:1px solid var(--border2);border-left:4px solid #0D9488;border-radius:10px;padding:14px 18px;margin-bottom:16px}
+   propia por renglón). La franja es verde azulado (pedido del usuario
+   2026-09-30: el verde puro no era el color del mockup), pero el monto
+   total de la propiedad usa el verde genérico del panel (`--green`) —
+   pedido posterior del mismo día: quería ESE monto puntual en verde para
+   que resalte más que la franja. */
+.comp-liqprop{background:#fff;border:1px solid var(--border2);border-left:4px solid #0D9488;border-radius:10px;padding:11px 16px;margin-bottom:12px}
 .comp-liqprop:last-child{margin-bottom:0}
-.comp-liqprop-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:6px}
-.comp-liqprop-head b{font-size:13.5px;color:var(--ink)}
-.comp-liqprop-head .sub{display:block;font-size:10.5px;color:var(--muted);margin-top:2px}
-.comp-liqprop-head .monto{font-family:var(--mono);font-size:14px;font-weight:800;color:#0D9488;white-space:nowrap}
+.comp-liqprop-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:4px}
+.comp-liqprop-head b{font-size:13px;font-weight:700;color:var(--ink)}
+.comp-liqprop-head .sub{display:block;font-size:10px;font-weight:400;color:var(--muted);margin-top:1px}
+.comp-liqprop-head .monto{font-size:13.5px;font-weight:700;color:var(--green);white-space:nowrap}
 
-.comp-liqrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6.5px 0;font-size:12px;border-bottom:1px solid var(--border2)}
+/* Renglón de servicio: el N° de liquidación va al lado del nombre, no en
+   su propia línea (pedido del usuario 2026-09-30: "no esté abajo") — el
+   " · Liq N°..." ya viene con ese separador desde `LiquidacionComprobante.tsx`,
+   alcanza con que `small` deje de forzar su propio renglón. */
+.comp-liqrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:4.5px 0;font-size:11.5px;font-weight:400;border-bottom:1px solid var(--border2)}
 .comp-liqrow:last-child{border-bottom:0}
 .comp-liqrow .ld{color:var(--muted)}
-.comp-liqrow .ld small{display:block;color:var(--muted);font-size:10px;margin-top:1px}
-.comp-liqrow .lv{font-family:var(--mono);font-weight:700;white-space:nowrap;color:var(--ink2)}
-.comp-liqrow.principal .ld{color:var(--ink);font-weight:600}
+.comp-liqrow .ld small{color:var(--muted);font-size:9.5px}
+.comp-liqrow .lv{font-weight:700;white-space:nowrap;color:var(--ink2)}
+.comp-liqrow.principal .ld{color:var(--ink);font-weight:700}
 .comp-liqrow.principal .lv{color:var(--ink)}
 .comp-liqrow.neg .lv{color:var(--red)}
+/* "Honorarios de administración" en negrita (pedido del usuario
+   2026-09-30) — tanto la de cada propiedad como la del resumen usan esta
+   clase (ver `LiquidacionComprobante.tsx`). */
+.comp-liqrow.honorarios .ld{color:var(--ink);font-weight:700}
 
-.comp-liqresumen{margin-top:4px}
-.comp-liqtotal{display:flex;justify-content:space-between;align-items:center;background:#F4F7FA;border:1px solid var(--border2);border-radius:10px;padding:14px 18px;margin-top:10px}
-.comp-liqtotal .ld{font-size:13px;font-weight:800;color:var(--ink)}
-.comp-liqtotal .lv{font-family:var(--mono);font-size:17px;font-weight:800}
+.comp-liqresumen{margin-top:2px}
+.comp-liqtotal{display:flex;justify-content:space-between;align-items:center;background:#F4F7FA;border:1px solid var(--border2);border-radius:10px;padding:11px 16px;margin-top:8px}
+.comp-liqtotal .ld{font-size:12.5px;font-weight:700;color:var(--ink)}
+.comp-liqtotal .lv{font-size:15.5px;font-weight:700}
 
 /* Impresión: el boceto imprimía un documento aparte (#printInvoice); acá no
    hay generación de PDF todavía (pendiente de una fase posterior), así que
