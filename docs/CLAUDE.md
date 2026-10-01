@@ -185,6 +185,36 @@ revisarlas antes de reimplementar algo que suene a "normalizar un mes" o
   endpoints que ni siquiera están en su sidebar. Antes de exponer un
   endpoint nuevo, decidir explícitamente si es ADMIN-only o también lo
   necesita `EQUIPO`.
+- **El comprobante de Liquidación tiene su propio sistema visual**
+  (`admin/src/components/LiquidacionComprobante.tsx::LiquidacionComprobanteBody`,
+  rediseñado 2026-09-30), separado del de Factura/Recibo
+  (`PropiedadFichaDrawer.tsx`): usa clases CSS exclusivas `comp-liq*`
+  (`.comp-liqinfo` caja de datos en 3 columnas, `.comp-liqneto` banner
+  navy "Neto a girar", `.comp-liqprop` tarjeta de propiedad con franja
+  izquierda verde azulado `#0D9488` y monto en `--green`, `.comp-liqrow`/
+  `.comp-liqtotal` renglones planos) en vez de `.liqcard`/`.liqline`
+  (esas siguen siendo únicamente de Factura/Recibo, no tocar una pensando
+  que afecta a la otra). Tipografía Helvetica/Arial propia (`--liq-sans`
+  en `global.css`), no la Inter/JetBrains Mono del resto del panel.
+  Comparte con Factura/Recibo el membrete y pie
+  (`ComprobanteImpreso.tsx`), pero sin la marca de agua de fondo —
+  `mostrarMarcaAgua` es un prop nuevo de ese componente, default `true`
+  (Factura/Recibo sin tocar), `false` en los dos callers de Liquidación
+  (`PropietariosPage.tsx`, `AvisosPage.tsx`).
+- **El paginado del PDF de Liquidación es manual, no CSS nativo**
+  (`admin/src/lib/pdfComprobante.ts::descargarPdfComprobante()`): como
+  html2canvas rasteriza TODO el comprobante como una sola imagen larga
+  que después se corta en franjas de una hoja A4 cada una, antes de
+  rasterizar se insertan `<div>` espaciadores para forzar los saltos de
+  hoja "a mano" (función `empujarAHojaNueva()`). Regla actual (pedido del
+  usuario 2026-09-30, reemplaza "una propiedad = una hoja" de antes):
+  hasta 3 `.comp-propgrupo` (propiedades) por hoja — se fuerza salto cada
+  3 (`i % 3 === 0`), sin importar si técnicamente entrarían más; el
+  `.comp-totalesgrupo` (resumen) SIEMPRE salta a hoja nueva si el último
+  grupo de propiedades quedó lleno (3), y si no, solo si no entra
+  completo en lo que queda de la hoja actual; cada hoja forzada repite un
+  clon del `.comp-membrete` (encabezado) al principio. Cambiar cuántas
+  propiedades entran por hoja es editar el `i % 3 === 0` ahí, no CSS.
 
 ### Verificar cambios (no hay test suite)
 

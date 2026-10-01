@@ -3773,6 +3773,113 @@ Vacante, Propietario y La muestra.
       `FREQ_LABEL` local igual al que ya usa `PropiedadFichaDrawer.tsx`
       para la misma frecuencia.
 
+## 2026-09-30 — Monto actual por historial, auto-avance de mes en Factura, y rediseño completo del comprobante de Liquidación
+
+Sesión larga con varios pedidos del usuario sobre "Propiedades" e
+"Inquilinos y Cobros", y después un rediseño completo (varias vueltas) del
+PDF/vista de Liquidación a partir de un mockup de referencia que mandó.
+
+- [x] **"Monto actual" de la ficha de propiedad y de la tarjeta de
+      "Propiedades en alquiler" pasan a tomar siempre el último renglón del
+      historial de aumentos**, no el `rentaVigente`/`montoAlquilerVigente`
+      (que es a-la-fecha-de-hoy, §5.1) — si ya se cargó un aumento con
+      fecha futura, el historial lo lista como aplicado y estos dos
+      lugares tienen que coincidir con eso. `montoVigente`/`rentaVigente`
+      (la ficha, en `PropiedadFichaDrawer.tsx`) y `montoAlquilerVigente`
+      (billing real: Cobros/Facturas/Liquidaciones) **no se tocaron** —
+      siguen siendo la fuente correcta para esos cálculos, el cambio es
+      solo de visualización en estos dos puntos puntuales.
+      - `admin/src/components/PropiedadFichaDrawer.tsx`: nuevo
+        `montoActual = historial.length ? historial[0].monto : montoVigente`,
+        usado en el campo "Monto actual" de "Información del contrato"
+        (no en "Alquiler vigente" de "Estado de Cobros", que sigue
+        date-aware a propósito).
+      - `admin/src/pages/InquilinosPage.tsx`: la tarjeta de propiedad
+        ahora pide `historialAumentos` (solo el último renglón, `take: 1`)
+        al listado — `api/src/propiedades/propiedades.service.ts::findAll()`
+        suma ese `include` — y usa `p.historialAumentos[0]?.monto` en vez
+        de `p.montoAlquilerVigente` para el precio mostrado.
+- [x] **"Emitir factura" arranca en el mes siguiente si el mes en curso ya
+      tiene factura emitida**, en vez de volver a mostrar el mes ya
+      facturado — solo quando se abre SIN un mes explícito (el botón de la
+      ficha de propiedad); el navegador de mes de "Inquilinos y Cobros"
+      sigue mandando su propio `mes` y no se ve afectado.
+      `FacturaModal` (`PropiedadFichaDrawer.tsx`) agrega una query previa
+      (`facturaMesActualQuery`, GET del mes actual) que resuelve el `mes`
+      efectivo antes de disparar `facturaExistente`/`predeterminados`;
+      mientras se resuelve, `cargandoItems` ya cubre el estado de carga
+      (no hace falta un loading aparte).
+
+### Rediseño del comprobante de Liquidación (varias vueltas, mismo día)
+
+El usuario mandó un PDF mockup ("Nuevo_Modelo_Liquidacion...") pidiendo
+adaptar el diseño viejo (`.liqcard`/`.liqline`, compartido con Factura/
+Recibo) a ese nuevo look. Ver la entrada nueva en `CLAUDE.md` ("Invariantes
+de dominio") para el resumen arquitectónico permanente — acá queda el
+historial de las vueltas de ajuste pedidas sobre la marcha:
+
+- [x] **Rediseño base**: `LiquidacionComprobanteBody` pasa a un sistema de
+      clases propio `comp-liq*` (ver `CLAUDE.md`) — caja de datos en 3
+      columnas (Propietario/Período/Propiedades), banner navy "Neto a
+      girar" (reemplaza el header con avatar de antes), tarjetas de
+      propiedad con franja de color a la izquierda en vez del recuadro
+      grueso completo, renglones planos sin caja individual. El ítem
+      sintético que arma `LiquidacionesService` para una propiedad con
+      servicios a cargo de la inmobiliaria se renombró de "Importe total
+      del periodo" a "Alquiler del período" (`liquidaciones.service.ts`) —
+      solo texto, liquidaciones ya emitidas antes de este cambio quedan
+      con el texto viejo (el detalle se persiste tal cual al emitir, no se
+      recalcula después).
+- [x] **Paginado "3 propiedades por hoja"** (reemplaza "una propiedad = una
+      hoja" de una sesión anterior) en `pdfComprobante.ts` — ver el detalle
+      exacto en `CLAUDE.md`. Ajustado dos veces sobre la marcha: primero
+      el resumen solo saltaba de hoja si "no entraba" (chequeo de altura),
+      pero con el diseño ya compacto a veces entraba igual y quedaba todo
+      apretado contra el pie — se cambió a "si el último grupo de
+      propiedades quedó lleno (3), el resumen SIEMPRE salta, sin medir".
+      También se agregó repetir el membrete al principio de cada hoja
+      forzada (antes solo aparecía en la primera).
+- [x] **Achicado de medidas**: paddings/márgenes/tamaños de fuente de
+      todo `comp-liq*` se redujeron — con las medidas originales, 2-3
+      propiedades + resumen + pie a veces terminaban necesitando una hoja
+      extra casi vacía solo para el pie (que siempre se pega al borde
+      inferior de la ÚLTIMA hoja vía `margin-top:auto`, ver comentario en
+      `pdfComprobante.ts`).
+- [x] **Color de la franja de propiedad**: verde azulado `#0D9488` (el
+      usuario lo pidió explícitamente tras comparar contra el mockup —
+      el verde puro `--green` que se había usado primero no coincidía).
+      El monto total de cada propiedad, en cambio, sí quedó en `--green`
+      puro (pedido posterior, para que resalte más que la franja).
+- [x] **Tipografía Helvetica/Arial** (`--liq-sans`, nueva variable en
+      `global.css`) en todo `comp-liq*` — Bold para títulos/encabezados/
+      montos destacados, Regular para texto secundario/detalle — en vez
+      de la Inter/JetBrains Mono que usa el resto del panel. "Honorarios
+      de administración" (por propiedad y en el resumen) en negrita vía
+      clase `.honorarios`.
+- [x] **Servicios: solo el nombre + Liq N°, sin número de cuenta** — los
+      ítems de servicio en la Liquidación reusan
+      `splitDescripcionCuenta()` (`lib/itemServicioCuenta.ts`, ya existía
+      para separar esto en los inputs de edición) para mostrar solo la
+      base ("Usina", no "Usina (Usuario 123 - N° de control 456)") — el
+      número de cuenta/usuario lo sigue mostrando la Factura del
+      inquilino, que es donde corresponde. El "· Liq N°" pasó a quedar en
+      la misma línea que el nombre del servicio (antes `display:block` lo
+      forzaba a su propio renglón).
+- [x] **Marca de agua sacada de Liquidación**: `ComprobanteImpreso` suma
+      el prop `mostrarMarcaAgua` (default `true`), `false` en los dos
+      callers de Liquidación — Factura/Recibo la siguen mostrando igual
+      que siempre.
+- [~] **Verificado con PDFs reales y una prueba aislada** (sin tocar
+      datos de negocio reales más que lecturas): se re-descargó varias
+      veces el PDF de una Liquidación real ya emitida (propietario de
+      prueba del propio usuario) vía Playwright headless para confirmar
+      cada ajuste visual, y se armó un comprobante 100% sintético (3
+      propiedades inventadas) importando el módulo real de
+      `pdfComprobante.ts` desde el dev server de Vite para probar la
+      regla de paginado sin depender de qué datos reales hubiera cargados
+      en ese momento. No se verificó en impresión física ni en otros
+      navegadores (solo Chrome).
+
 ## Cómo actualizar este archivo
 
 Cada vez que se implemente una conexión: marcarla `[x]`, agregar la fecha y
