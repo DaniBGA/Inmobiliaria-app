@@ -11,7 +11,6 @@ import { resolverPorcentajeHonorariosAdministracion, type TipoHonorarios } from 
 import { FotosPropiedad, type FotoPropiedadItem } from './FotosPropiedad';
 import { FotoHeroPropiedad } from './FotoHeroPropiedad';
 import { ComprobanteImpreso } from './ComprobanteImpreso';
-import { ComprobanteInfoBox } from './ComprobanteInfoBox';
 import { descargarPdfComprobante } from '../lib/pdfComprobante';
 import { ServiciosCuentaInputs, SERVICIOS_OPCIONES_ALQUILER, type ServicioFacturable } from './ServiciosCuentaInputs';
 import { splitDescripcionCuenta, combinarDescripcionCuenta, esServicioConCuenta } from '../lib/itemServicioCuenta';
@@ -2014,42 +2013,65 @@ export function FacturaModal({
 
       {F && (
         <>
-          <ComprobanteImpreso cfg={cfg} titulo="Liquidación" ref={comprobanteRef}>
-            <ComprobanteInfoBox
-              izquierda={[
-                { label: 'Nombre Inquilino', valor: inquilino?.nombre ?? '—' },
-                { label: 'Propiedad en Locación', valor: direccion || propiedadNombre },
-                { label: 'Inicio de Contrato', valor: formatDate(contratoInicio) },
-                { label: 'Finalización de Contrato', valor: formatDate(contratoFin) },
-              ]}
-              derecha={[
-                { label: 'Número de Liquidación', valor: String(F.numero) },
-                { label: 'Periodo', valor: mesLabel(mes) },
-                {
-                  label: 'Fecha de Vencimiento',
-                  valor: cfg ? formatDate(fechaVencimientoAlquiler(mes, cfg.diaVencimientoAlquiler)) : '—',
-                },
-              ]}
-            />
-            <div className="comp-detalletitulo">Detalle de Liquidación</div>
-            <div className="liqcard" style={{ boxShadow: 'none' }}>
-              <div className="liqhead">
-                <div>
-                  <h4>Liquidación N° {F.numero}</h4>
-                  <div className="lsub">{mesLabel(mes)}</div>
+          <ComprobanteImpreso cfg={cfg} titulo="Factura" ref={comprobanteRef}>
+            <div className="comp-cuerpo">
+              <div className="comp-liqinfo">
+                <div className="comp-liqinfo-col">
+                  <span className="k">Inquilino</span>
+                  <span className="v">{inquilino?.nombre ?? '—'}</span>
                 </div>
-                <span className="spacer"></span>
-                <div className="lnet">
-                  <b>TOTAL</b>
-                  <span>{formatMoney(F.total)}</span>
+                <div className="comp-liqinfo-col">
+                  <span className="k">Propiedad en Locación</span>
+                  <span className="v">{direccion || propiedadNombre}</span>
+                </div>
+                <div className="comp-liqinfo-col">
+                  <span className="k">Periodo</span>
+                  <span className="v">{mesLabel(mes)}</span>
+                </div>
+                <div className="comp-liqinfo-col">
+                  <span className="k">Número de Factura</span>
+                  <span className="v">{F.numero}</span>
                 </div>
               </div>
-              <div className="liqbody">
+              <div className="comp-liqinfo">
+                <div className="comp-liqinfo-col">
+                  <span className="k">Inicio de Contrato</span>
+                  <span className="v">{formatDate(contratoInicio)}</span>
+                </div>
+                <div className="comp-liqinfo-col">
+                  <span className="k">Finalización de Contrato</span>
+                  <span className="v">{formatDate(contratoFin)}</span>
+                </div>
+                <div className="comp-liqinfo-col">
+                  <span className="k">Fecha de Vencimiento</span>
+                  <span className="v">
+                    {cfg ? formatDate(fechaVencimientoAlquiler(mes, cfg.diaVencimientoAlquiler)) : '—'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="comp-liqneto">
+                <div>
+                  <div className="k">Total</div>
+                  <div className="sub">Factura N° {F.numero}</div>
+                </div>
+                <span className="monto">{formatMoney(F.total)}</span>
+              </div>
+
+              <div className="comp-liqtitulo">Detalle de Factura</div>
+
+              <div className="comp-liqprop">
+                <div className="comp-liqprop-head">
+                  <div>
+                    <b>{propiedadNombre}</b>
+                    {direccion && <span className="sub">{direccion}</span>}
+                  </div>
+                </div>
                 {F.items.map((it) => (
-                  <div className="liqline" key={it.id}>
+                  <div className="comp-liqrow" key={it.id}>
                     <span className="ld">
                       {it.descripcion}
-                      {it.numeroLiquidacion && <small style={{ color: 'var(--muted)' }}> · Liq N° {it.numeroLiquidacion}</small>}
+                      {it.numeroLiquidacion && <small> · Liq N° {it.numeroLiquidacion}</small>}
                     </span>
                     <span className="lv">{formatMoney(it.monto)}</span>
                   </div>
@@ -2139,35 +2161,59 @@ function ReciboModal({
       {R && (
         <>
           <ComprobanteImpreso cfg={cfg} titulo="Recibo" ref={comprobanteRef}>
-            <ComprobanteInfoBox
-              izquierda={[
-                { label: 'Nombre Inquilino', valor: inquilino?.nombre ?? '—' },
-                { label: 'Propiedad en Locación', valor: direccion || propiedadNombre },
-                { label: 'Inicio de Contrato', valor: formatDate(contratoInicio) },
-                { label: 'Finalización de Contrato', valor: formatDate(contratoFin) },
-              ]}
-              derecha={[
-                { label: 'Número de Recibo', valor: String(R.numero) },
-                { label: 'Periodo', valor: mesLabel(mes) },
-                { label: 'Fecha de Emisión', valor: formatDate(new Date()) },
-              ]}
-            />
-            <div className="comp-detalletitulo">Detalle de Recibo</div>
-            <div className="liqcard" style={{ boxShadow: 'none' }}>
-              <div className="liqhead">
-                <div>
-                  <h4>Recibo N° {R.numero}</h4>
-                  <div className="lsub">{mesLabel(mes)}</div>
+            <div className="comp-cuerpo">
+              <div className="comp-liqinfo">
+                <div className="comp-liqinfo-col">
+                  <span className="k">Inquilino</span>
+                  <span className="v">{inquilino?.nombre ?? '—'}</span>
                 </div>
-                <span className="spacer"></span>
-                <div className="lnet">
-                  <b>COBRADO</b>
-                  <span>{formatMoney(R.montoCobrado)}</span>
+                <div className="comp-liqinfo-col">
+                  <span className="k">Propiedad en Locación</span>
+                  <span className="v">{direccion || propiedadNombre}</span>
+                </div>
+                <div className="comp-liqinfo-col">
+                  <span className="k">Periodo</span>
+                  <span className="v">{mesLabel(mes)}</span>
+                </div>
+                <div className="comp-liqinfo-col">
+                  <span className="k">Número de Recibo</span>
+                  <span className="v">{R.numero}</span>
                 </div>
               </div>
-              <div className="liqbody">
+              <div className="comp-liqinfo">
+                <div className="comp-liqinfo-col">
+                  <span className="k">Inicio de Contrato</span>
+                  <span className="v">{formatDate(contratoInicio)}</span>
+                </div>
+                <div className="comp-liqinfo-col">
+                  <span className="k">Finalización de Contrato</span>
+                  <span className="v">{formatDate(contratoFin)}</span>
+                </div>
+                <div className="comp-liqinfo-col">
+                  <span className="k">Fecha de Emisión</span>
+                  <span className="v">{formatDate(new Date())}</span>
+                </div>
+              </div>
+
+              <div className="comp-liqneto">
+                <div>
+                  <div className="k">Cobrado</div>
+                  <div className="sub">Recibo N° {R.numero}</div>
+                </div>
+                <span className="monto">{formatMoney(R.montoCobrado)}</span>
+              </div>
+
+              <div className="comp-liqtitulo">Detalle de Recibo</div>
+
+              <div className="comp-liqprop">
+                <div className="comp-liqprop-head">
+                  <div>
+                    <b>{propiedadNombre}</b>
+                    {direccion && <span className="sub">{direccion}</span>}
+                  </div>
+                </div>
                 {R.items.map((it) => (
-                  <div className="liqline" key={it.id}>
+                  <div className="comp-liqrow" key={it.id}>
                     <span className="ld">{it.descripcion}</span>
                     <span className="lv">{formatMoney(it.monto)}</span>
                   </div>

@@ -6,20 +6,22 @@ import html2canvas from 'html2canvas';
 // para @media print — y dispara la descarga en el navegador.
 //
 // html2canvas rasteriza el nodo tal cual está en pantalla (no evalúa
-// `@media print`), así que el membrete/marca de agua/pie — ocultos con
-// `display:none` fuera de @media print — no aparecerían solos. Para no
-// flashear el membrete en el modal real mientras se genera el PDF, se
-// clona el nodo fuera de pantalla y se fuerza la visibilidad SOLO en el
-// clon. El resto del estilo (colores/bordes/tipografía de
-// `.comp-*`/`.liqcard`/`.liqline`) vive en reglas normales de
-// `global.css` que NO dependen de `@media print` — esas sí las agarra
-// html2canvas solo con forzar el `display`. Lo único que además hay que
-// resolver acá a mano es el `position:fixed` que usan `.comp-marcaagua` y
+// `@media print`), así que el membrete/pie — ocultos con `display:none`
+// fuera de @media print — no aparecerían solos. Para no flashear el
+// membrete en el modal real mientras se genera el PDF, se clona el nodo
+// fuera de pantalla y se fuerza la visibilidad SOLO en el clon. El resto
+// del estilo (colores/bordes/tipografía de `.comp-*`) vive en reglas
+// normales de `global.css` que NO dependen de `@media print` — esas sí
+// las agarra html2canvas solo con forzar el `display`. Lo único que
+// además hay que resolver acá a mano es el `position:fixed` que usa
 // `.comp-pie` en `@media print` (pensado para pegarse al borde de la hoja
 // física real) — no tiene sentido capturando un nodo suelto con
-// html2canvas, así que acá se posicionan `absolute` relativos a
-// `.comprobante` (o, en el caso del pie, en el flujo normal después del
-// contenido) en vez de fixed.
+// html2canvas, así que acá se posiciona en el flujo normal después del
+// contenido en vez de fixed.
+//
+// El pie se repite en TODAS las hojas, no solo la última (pedido del
+// usuario 2026-10-01) — ver el comentario de `empujarAHojaNueva()` más
+// abajo para el cómo exacto.
 export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: string): Promise<void> {
   const clon = nodo.cloneNode(true) as HTMLElement;
   clon.style.position = 'fixed';
@@ -38,19 +40,6 @@ export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: 
   clon.style.display = 'flex';
   clon.style.flexDirection = 'column';
 
-  const marcaAgua = clon.querySelector<HTMLElement>('.comp-marcaagua');
-  if (marcaAgua) {
-    Object.assign(marcaAgua.style, {
-      display: 'block',
-      position: 'absolute',
-      left: '-140px',
-      top: '50%',
-      transform: 'translateY(-50%)',
-      width: '600px',
-      opacity: '.05',
-      zIndex: '0',
-    });
-  }
   // Solo se fuerza acá lo que de verdad depende de `@media print` (el
   // `display` del membrete/pie, ocultos por default fuera de esa media
   // query, y el `position:fixed` del pie que no tiene sentido en un nodo
@@ -77,13 +66,26 @@ export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: 
     Object.assign(pie.style, { display: 'flex', marginTop: 'auto', paddingTop: '18px', position: 'relative', zIndex: '1' });
   }
 
-  const cuerpo = clon.querySelector<HTMLElement>('.liqcard');
+  const cuerpo = clon.querySelector<HTMLElement>('.comp-cuerpo');
   if (cuerpo) {
     Object.assign(cuerpo.style, { position: 'relative', zIndex: '1' });
   }
 
   document.body.appendChild(clon);
   try {
+    // Todas las mediciones de abajo (altura del pie, de cada propiedad, del
+    // contenido entero) dependen del layout YA renderizado — si algún logo
+    // (`<img>`) del clon todavía no cargó, su altura real (una vez cargado)
+    // puede terminar siendo mayor a la medida acá, corriendo todo lo que
+    // venga después y desalineando los saltos de hoja calculados más abajo.
+    // `img.decode()` espera la carga Y el decodificado (más estricto
+    // que solo esperar `onload`); si la imagen ya está en caché del
+    // navegador (lo normal: el comprobante original, aunque oculto con
+    // `display:none`, ya la precargó) resuelve prácticamente al instante.
+    await Promise.all(
+      Array.from(clon.querySelectorAll('img')).map((img) => img.decode().catch(() => {})),
+    );
+
     const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
@@ -119,19 +121,58 @@ export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: 
     // más arriba), pero una hoja 2+ armada acá "a mano" no lo hereda solo
     // por rebanar la imagen larga en franjas.
     const MARGEN_SALTO_HOJA = 18;
+    // Pie repetido al final de CADA hoja (pedido del usuario 2026-10-01:
+    // antes solo aparecía una vez, al final de TODO el comprobante, por el
+    // `margin-top:auto` de más arriba) — se mide una sola vez acá (mismo
+    // contenido/ancho en cualquier hoja, así que la altura es siempre la
+    // misma) para poder reservarle exactamente su lugar antes del borde de
+    // cada hoja forzada.
+    const alturaPie = pie ? pie.getBoundingClientRect().height : 0;
     // Repite el membrete (logo + datos + título) al principio de CADA hoja
     // nueva que se fuerza acá (pedido del usuario 2026-09-30) — la hoja 1
     // ya lo tiene tal cual viene en el DOM; de la 2 en adelante se clona el
     // MISMO nodo ya forzado a visible más arriba, así queda con el mismo
-    // estilo sin tener que repetir la lógica de "display" a mano.
+    // estilo sin tener que repetir la lógica de "display" a mano. Mismo
+    // criterio para el pie (2026-10-01): se clona el nodo `pie` ya forzado
+    // visible y se le saca el `margin-top:auto` (acá no tiene que
+    // empujarse solo, el espaciador de arriba ya lo deja en su lugar).
+    //
+    // Orden de los 4 elementos insertados antes de `el` (cada
+    // `insertBefore(X, el)` dejar a `X` pegado justo antes de `el`, en el
+    // mismo orden en que se llama): espaciador1 → pie → espaciador2
+    // (margen) → membrete → el. Los primeros DOS espaciadores separan la
+    // altura restante de la hoja actual en dos partes: lo que sobra ANTES
+    // del pie (`espaciador1`, puede ser 0 si el contenido llega justo hasta
+    // donde empieza el pie) y el margen de aire DESPUÉS del pie, antes del
+    // membrete de la hoja nueva (`espaciador2` = `MARGEN_SALTO_HOJA`, el
+    // mismo margen que ya existía antes de este cambio). Bug encontrado
+    // 2026-10-01 ("el footer se ve cortado cuando hay 3 propiedades"): la
+    // primera versión de este fix metía el `MARGEN_SALTO_HOJA` DENTRO del
+    // primer espaciador (antes del pie) en vez de en uno aparte después —
+    // eso empujaba el pie exactamente `MARGEN_SALTO_HOJA` píxeles de más,
+    // así que terminaba `MARGEN_SALTO_HOJA` px DENTRO de la hoja siguiente
+    // en vez de justo en el borde de la hoja actual, y la rebanada de
+    // `pdf.addImage()` lo cortaba a la mitad. Con el margen en su propio
+    // espaciador DESPUÉS del pie, el pie siempre termina en una posición
+    // que es múltiplo exacto de `alturaPaginaEnClon` (el borde real de la
+    // hoja), sin importar cuánto aire haya antes.
     function empujarAHojaNueva(el: HTMLElement) {
       const top = posicionEnClon(el);
       const resto = top % alturaPaginaEnClon;
       if (resto <= 1) return; // ya arranca (o casi) al principio de una hoja
-      const espaciador = document.createElement('div');
-      espaciador.style.height = `${alturaPaginaEnClon - resto + MARGEN_SALTO_HOJA}px`;
-      espaciador.style.flexShrink = '0';
-      el.parentElement?.insertBefore(espaciador, el);
+      const espacioAntesDelPie = document.createElement('div');
+      espacioAntesDelPie.style.height = `${Math.max(alturaPaginaEnClon - resto - alturaPie, 0)}px`;
+      espacioAntesDelPie.style.flexShrink = '0';
+      el.parentElement?.insertBefore(espacioAntesDelPie, el);
+      if (pie) {
+        const pieClon = pie.cloneNode(true) as HTMLElement;
+        Object.assign(pieClon.style, { flexShrink: '0', marginTop: '0' });
+        el.parentElement?.insertBefore(pieClon, el);
+      }
+      const margenHojaNueva = document.createElement('div');
+      margenHojaNueva.style.height = `${MARGEN_SALTO_HOJA}px`;
+      margenHojaNueva.style.flexShrink = '0';
+      el.parentElement?.insertBefore(margenHojaNueva, el);
       if (membrete) {
         const membreteClon = membrete.cloneNode(true) as HTMLElement;
         membreteClon.style.flexShrink = '0';

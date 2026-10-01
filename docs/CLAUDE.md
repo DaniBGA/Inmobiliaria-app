@@ -130,13 +130,21 @@ Antes de asumir cómo funciona algo, leer en este orden:
   - Descarga directa a PDF con un botón, vía `html2canvas` + `jsPDF`
     (`admin/src/lib/pdfComprobante.ts::descargarPdfComprobante()`) —
     clona el nodo `.comprobante`, fuerza visible el membrete (que fuera
-    de `@media print` está oculto) y convierte los elementos
-    `position:fixed` del print (marca de agua, pie) a posicionamiento
-    absoluto/normal porque html2canvas rasteriza tal cual está en
-    pantalla, sin paginación real. El resto del estilo del comprobante
-    (colores/bordes/tipografía de `.comp-*`/`.liqcard`/`.liqline`) vive en
-    reglas normales fuera de `@media print` justamente para que
-    html2canvas también las agarre sin tener que duplicarlas a mano acá.
+    de `@media print` está oculto) y saca el `position:fixed` que usa
+    `.comp-pie` en el print (pensado para pegarse al borde de la hoja
+    física real) porque html2canvas rasteriza tal cual está en pantalla,
+    sin paginación real. El resto del estilo del comprobante (colores/
+    bordes/tipografía de `.comp-*`) vive en reglas normales fuera de
+    `@media print` justamente para que html2canvas también las agarre sin
+    tener que duplicarlas a mano acá. Antes del de clonado no esperaba a
+    que los `<img>` del clon terminaran de cargar — como todas las
+    mediciones de paginado dependen del layout ya renderizado, una imagen
+    (ej. el logo del pie) que tardara en cargar podía dar una altura
+    medida menor a la real y desalinear los saltos de hoja (bug
+    encontrado 2026-10-01: el pie quedaba cortado a la mitad al saltar de
+    hoja) — ahora espera `img.decode()` de todas antes de medir nada. No
+    hay marca de agua de fondo en ningún comprobante (se sacó 2026-10-01,
+    existía solo en Factura/Recibo).
 
 ### Módulos backend (`app/api/src/*`)
 
@@ -185,22 +193,36 @@ revisarlas antes de reimplementar algo que suene a "normalizar un mes" o
   endpoints que ni siquiera están en su sidebar. Antes de exponer un
   endpoint nuevo, decidir explícitamente si es ADMIN-only o también lo
   necesita `EQUIPO`.
-- **El comprobante de Liquidación tiene su propio sistema visual**
-  (`admin/src/components/LiquidacionComprobante.tsx::LiquidacionComprobanteBody`,
-  rediseñado 2026-09-30), separado del de Factura/Recibo
-  (`PropiedadFichaDrawer.tsx`): usa clases CSS exclusivas `comp-liq*`
-  (`.comp-liqinfo` caja de datos en 3 columnas, `.comp-liqneto` banner
-  navy "Neto a girar", `.comp-liqprop` tarjeta de propiedad con franja
-  izquierda verde azulado `#0D9488` y monto en `--green`, `.comp-liqrow`/
-  `.comp-liqtotal` renglones planos) en vez de `.liqcard`/`.liqline`
-  (esas siguen siendo únicamente de Factura/Recibo, no tocar una pensando
-  que afecta a la otra). Tipografía Helvetica/Arial propia (`--liq-sans`
-  en `global.css`), no la Inter/JetBrains Mono del resto del panel.
-  Comparte con Factura/Recibo el membrete y pie
-  (`ComprobanteImpreso.tsx`), pero sin la marca de agua de fondo —
-  `mostrarMarcaAgua` es un prop nuevo de ese componente, default `true`
-  (Factura/Recibo sin tocar), `false` en los dos callers de Liquidación
-  (`PropietariosPage.tsx`, `AvisosPage.tsx`).
+- **Los tres comprobantes (Factura/Recibo/Liquidación) comparten un único
+  sistema visual**, clases CSS `comp-liq*` (rediseño de Liquidación
+  2026-09-30, extendido a Factura/Recibo 2026-10-01): `.comp-liqinfo` caja
+  de datos (Liquidación: 3 columnas en una fila — Propietario/Período/
+  Propiedades; Factura/Recibo: 7 campos en dos filas de `.comp-liqinfo`),
+  `.comp-liqneto` banner navy ("Neto a girar" en Liquidación, "Total" en
+  Factura, "Cobrado" en Recibo), `.comp-liqprop` tarjeta con franja
+  izquierda verde azulado `#0D9488` y monto en `--green` (Liquidación: una
+  por propiedad; Factura/Recibo: siempre una sola, la propia), `.comp-liqrow`/
+  `.comp-liqtotal` renglones planos. Cada documento arma su propio JSX con
+  estas clases — `LiquidacionComprobanteBody`
+  (`admin/src/components/LiquidacionComprobante.tsx`) para Liquidación,
+  directo en `FacturaModal`/`ReciboModal`
+  (`admin/src/components/PropiedadFichaDrawer.tsx`) para los otros dos — no
+  hay un componente compartido de más alto nivel. `.liqcard`/`.liqline`
+  siguen existiendo pero YA NO son de ningún comprobante impreso: quedaron
+  exclusivamente para la vista previa editable de Liquidación en pantalla
+  (`PropietariosPage.tsx::LiquidacionModal`, antes de emitir), que arma su
+  propio markup aparte y no pasa por `.comprobante`. Tipografía
+  Helvetica/Arial propia (`--liq-sans` en `global.css`), no la Inter/
+  JetBrains Mono del resto del panel. Los tres comparten membrete y pie
+  (`ComprobanteImpreso.tsx`) y son visualmente idénticos en eso — ya no
+  hay ninguna marca de agua de fondo en ningún comprobante (existía solo
+  en Factura/Recibo, se sacó del todo 2026-10-01 por pedido del usuario:
+  "eso no está en el diseño de liquidación"). El cuerpo de los tres igual
+  va envuelto en un `<div className="comp-cuerpo">` (con
+  `position:relative;z-index:1` en `global.css`/`pdfComprobante.ts`) —
+  quedó de cuando Factura/Recibo necesitaban eso para no quedar tapados
+  por la marca de agua, ya no hace falta para ese motivo puntual pero se
+  deja por ser un wrapper inofensivo y consistente entre los tres.
 - **El paginado del PDF de Liquidación es manual, no CSS nativo**
   (`admin/src/lib/pdfComprobante.ts::descargarPdfComprobante()`): como
   html2canvas rasteriza TODO el comprobante como una sola imagen larga
@@ -213,8 +235,12 @@ revisarlas antes de reimplementar algo que suene a "normalizar un mes" o
   `.comp-totalesgrupo` (resumen) SIEMPRE salta a hoja nueva si el último
   grupo de propiedades quedó lleno (3), y si no, solo si no entra
   completo en lo que queda de la hoja actual; cada hoja forzada repite un
-  clon del `.comp-membrete` (encabezado) al principio. Cambiar cuántas
-  propiedades entran por hoja es editar el `i % 3 === 0` ahí, no CSS.
+  clon del `.comp-membrete` (encabezado) al principio Y un clon de
+  `.comp-pie` (pie) al final de la hoja que termina (pedido del usuario
+  2026-10-01: antes el pie solo aparecía en la última hoja, vía
+  `margin-top:auto`, que sigue así sin tocar — eso sigue resolviendo
+  únicamente el pie de la ÚLTIMA hoja). Cambiar cuántas propiedades entran
+  por hoja es editar el `i % 3 === 0` ahí, no CSS.
 
 ### Verificar cambios (no hay test suite)
 

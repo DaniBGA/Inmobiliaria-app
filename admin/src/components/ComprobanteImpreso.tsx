@@ -2,7 +2,6 @@ import { forwardRef } from 'react';
 import type { ReactNode } from 'react';
 import logoMembrete from '../images/logo-comprobante-membrete.png';
 import logoPie from '../images/logo-comprobante-pie.png';
-import logoMarcaAgua from '../images/logo-marca-agua.png';
 import logoWhatsapp from '../images/logo-whatsapp-azul.png';
 
 interface DatosComprobante {
@@ -44,19 +43,20 @@ function splitContacto(contacto: string): { telefono: string; email: string | nu
 // papel "Liquidación de Alquiler"): título grande junto al logo, condiciones
 // de pago en el pie. A propósito SIN matrícula/N° de colegiado (antes se
 // mostraba en Liquidación y se ocultaba solo en Factura vía `ocultarMatricula`
-// — ahora no se muestra en ningún comprobante, por pedido explícito).
+// — ahora no se muestra en ningún comprobante, por pedido explícito). Sin
+// marca de agua de fondo tampoco (pedido del usuario 2026-09-30 para
+// Liquidación, extendido a Factura/Recibo 2026-10-01: "ese no está en el
+// diseño de liquidación") — llegó a existir un prop `mostrarMarcaAgua` para
+// tenerla solo en Factura/Recibo, pero con los 4 callers en `false` ya no
+// tenía sentido, así que se sacó del todo (imagen, CSS y el handling en
+// `pdfComprobante.ts`).
 export const ComprobanteImpreso = forwardRef<
   HTMLDivElement,
-  // `mostrarMarcaAgua` (pedido del usuario 2026-09-30, "sacalo"): la
-  // Liquidación deja de usar la marca de agua de fondo — default `true`
-  // para no tocar Factura/Recibo, que no pidieron este cambio.
-  { cfg?: DatosComprobante; titulo: string; mostrarMarcaAgua?: boolean; children: ReactNode }
+  { cfg?: DatosComprobante; titulo: string; children: ReactNode }
 >(
-  function ComprobanteImpreso({ cfg, titulo, mostrarMarcaAgua = true, children }, ref) {
+  function ComprobanteImpreso({ cfg, titulo, children }, ref) {
     return (
       <div className="comprobante" ref={ref}>
-        {mostrarMarcaAgua && <img className="comp-marcaagua printonly" src={logoMarcaAgua} alt="" aria-hidden="true" />}
-
         <div className="comp-membrete printonly">
           <img className="comp-logo" src={logoMembrete} alt="" />
           <div className="comp-datos">

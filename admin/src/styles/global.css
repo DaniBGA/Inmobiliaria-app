@@ -730,47 +730,28 @@ textarea.avmsg:focus{outline:2px solid var(--indigo);border-color:transparent;ba
 .comp-iconwsp{height:13px;width:auto}
 .comp-pieemail{font-weight:600}
 
-/* Caja de datos (`ComprobanteInfoBox.tsx`): mismo recuadro redondeado del
-   boceto arriba de "Detalle de Liquidación", dos columnas rótulo/valor. */
-.comp-infobox{display:flex;gap:28px;border:2px solid #1C4066;border-radius:14px;padding:16px 22px;margin-bottom:18px}
-.comp-infocol{flex:1;display:flex;flex-direction:column;gap:7px;min-width:0}
-.comp-infofila{font-size:11.5px;color:var(--ink2);line-height:1.4}
-.comp-infofila b{color:#1C4066;font-weight:700;margin-right:3px}
+/* Diseño compartido por los tres comprobantes (Factura/Recibo/Liquidación)
+   — pedido del usuario 2026-10-01: "que facturas de inquilinos y recibos
+   tengan el mismo diseño que el de liquidación". Hasta acá, Factura/Recibo
+   tenían su propio sistema (`ComprobanteInfoBox.tsx` + `.liqcard`/`.liqline`
+   scopeados a `.comprobante`, ya quitados) separado del rediseño de
+   Liquidación de 2026-09-30 (`comp-liq*`, ver más abajo); ahora los tres
+   arman su cuerpo con las mismas clases `comp-liq*` —
+   `FacturaModal`/`ReciboModal` (`PropiedadFichaDrawer.tsx`) arman un único
+   `.comp-liqprop` (su única "propiedad") en vez de uno por cada propiedad
+   de una Liquidación. `.liqcard`/`.liqline` NO se tocaron: siguen siendo de
+   la vista previa editable de Liquidación en pantalla, en
+   `PropietariosPage.tsx`, que no pasa por `.comprobante`. */
 
-/* Título de sección ("Detalle de Factura/Recibo/Liquidación"), igual que
-   el boceto arriba de la tabla de conceptos. */
-.comp-detalletitulo{font-size:15px;font-weight:800;color:#1C4066;margin-bottom:10px}
-
-/* Caja del comprobante: borde MÁS GRUESO y en el azul de marca (pedido del
-   usuario 2026-09-02: "un reborde más grueso y azul no negro"), esquinas
-   redondeadas, ítems como renglones recuadrados — mismo criterio visual
-   del boceto histórico en papel ("Detalle de Liquidación" con cada
-   concepto en su propio recuadro). Scopeado a `.comprobante` para no
-   afectar el `.liqcard`/`.liqline` que se usa en pantalla en otras partes
-   del panel (ej. la vista previa editable de Liquidación, que no pasa por
-   acá). No depende de `@media print` (no hay nada que ocultar en
-   pantalla): estas clases no son `printonly`, ya se ven en el modal antes
-   de imprimir, así que directamente se les da este estilo siempre. */
-.comprobante .liqcard{border:2px solid #1C4066;border-radius:12px;overflow:hidden}
-.comprobante .liqhead{background:#F4F7FA;border-bottom:2px solid #1C4066;padding:16px 20px}
-.comprobante .liqhead h4{color:#1C4066;font-size:16px}
-.comprobante .liqhead .lnet span{color:#1C4066;font-size:19px}
-.comprobante .liqbody{padding:14px 20px 16px}
-.comprobante .liqline{border:2px solid #1C4066;border-radius:6px;padding:9px 14px;margin-bottom:8px}
-.comprobante .liqline:last-child{margin-bottom:0}
-.comprobante .liqline.tot{background:#F4F7FA;font-weight:800}
-
-/* Diseño propio del comprobante de Liquidación (pedido del usuario
-   2026-09-30, mockup "Nuevo Modelo") — EXCLUSIVO de `LiquidacionComprobante.tsx`,
-   no pisa `.liqcard`/`.liqline` de arriba (esas siguen siendo de
-   Factura/Recibo). El espaciado entre propiedades es `margin-bottom` en la
-   tarjeta misma (`.comp-liqprop`), no un combinador de hermano adyacente
-   (`+`) como antes: el paginado del PDF (`lib/pdfComprobante.ts`) inserta
-   un `<div>` espaciador ANTES de algunas propiedades para forzarlas a una
-   hoja nueva, y con `+` esa propiedad dejaba de ser "hermano directo" de la
-   anterior y perdía el margen justo ahí — con `margin-bottom` propio no
-   depende de qué haya (o no) inmediatamente antes en el DOM.
-   Caja de datos en 3 columnas (Propietario / Período / Propiedades).
+/* Diseño propio del comprobante (pedido del usuario 2026-09-30, mockup
+   "Nuevo Modelo" de Liquidación; extendido a Factura/Recibo 2026-10-01).
+   El espaciado entre tarjetas es `margin-bottom` en la tarjeta misma
+   (`.comp-liqprop`), no un combinador de hermano adyacente (`+`) como
+   antes: el paginado del PDF (`lib/pdfComprobante.ts`) inserta un `<div>`
+   espaciador ANTES de algunas propiedades para forzarlas a una hoja nueva,
+   y con `+` esa propiedad dejaba de ser "hermano directo" de la anterior y
+   perdía el margen justo ahí — con `margin-bottom` propio no depende de
+   qué haya (o no) inmediatamente antes en el DOM.
    Medidas achicadas (pedido del usuario 2026-09-30): con el tamaño
    original, 2-3 propiedades + resumen + pie terminaban necesitando una
    hoja extra casi vacía solo para el pie (que siempre se pega al borde
@@ -887,11 +868,16 @@ textarea.avmsg:focus{outline:2px solid var(--indigo);border-color:transparent;ba
   .printonly{display:block}
   .comp-membrete{display:flex}
 
-  /* Marca de agua (§2.10): el isotipo solo, bien grande y casi invisible,
-     detrás del contenido — nunca a suficiente opacidad como para competir
-     con el texto facturado. */
-  .comp-marcaagua{position:fixed;left:-140px;top:50%;transform:translateY(-50%);width:600px;opacity:.045;z-index:0}
-  .comp-membrete,.liqcard{position:relative;z-index:1}
+  /* `.comp-cuerpo` envuelve el cuerpo entero del comprobante (ver
+     `ComprobanteImpreso.tsx`/`PropiedadFichaDrawer.tsx`/
+     `LiquidacionComprobante.tsx`). Quedó de cuando Factura/Recibo todavía
+     mostraban la marca de agua de fondo (`position:fixed`, z-index:0) y
+     necesitaban este `position:relative;z-index:1` para no quedar tapados
+     por ella — la marca de agua se sacó del todo 2026-10-01 (pedido del
+     usuario: "eso no está en el diseño de liquidación"), así que esto ya
+     no hace falta para ESE motivo puntual, pero se deja: es inofensivo y
+     mantiene un único wrapper consistente en los tres comprobantes. */
+  .comp-membrete,.comp-cuerpo{position:relative;z-index:1}
 
   /* `position:fixed` (no `margin-top` fluyendo con el contenido): en la
      hoja de referencia el pie queda pegado al borde inferior de la página

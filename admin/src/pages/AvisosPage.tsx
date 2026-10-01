@@ -427,7 +427,7 @@ export function AvisosPage() {
           cuando se pide el PDF de una liquidación desde acá. */}
       {pdfData && (
         <div style={{ position: 'fixed', left: -10000, top: 0 }}>
-          <ComprobanteImpreso cfg={configuracion.data} titulo="Liquidación de Alquiler" mostrarMarcaAgua={false} ref={comprobanteRef}>
+          <ComprobanteImpreso cfg={configuracion.data} titulo="Liquidación de Alquiler" ref={comprobanteRef}>
             <LiquidacionComprobanteBody propietarioNombre={pdfData.propietarioNombre} mesTexto={mesLabel(mes)} L={pdfData.L} />
           </ComprobanteImpreso>
         </div>

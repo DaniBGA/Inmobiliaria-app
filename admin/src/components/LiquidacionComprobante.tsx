@@ -50,13 +50,17 @@ export interface Liquidacion {
 // Diseño propio (pedido del usuario 2026-09-30, "Nuevo Modelo" — mockup de
 // referencia adjunto): caja de datos en 3 columnas, banner "Neto a girar" y
 // tarjetas de propiedad con franja de color en vez del recuadro con avatar
-// de antes. Usa clases EXCLUSIVAS (`comp-liq*`), no `.liqcard`/`.liqline` —
-// esas las sigue usando el detalle de Factura/Recibo en
-// `PropiedadFichaDrawer.tsx`, que no cambia. `comp-propgrupo`/
-// `comp-totalesgrupo` se mantienen como clases marcadoras (sin estilo
-// propio) porque `lib/pdfComprobante.ts` las usa para el paginado — ver
-// comentario ahí (hasta 3 propiedades por hoja, resumen a la hoja
-// siguiente si no entra).
+// de antes. Usa clases `comp-liq*` (desde 2026-10-01, compartidas con
+// Factura/Recibo en `PropiedadFichaDrawer.tsx` — ver comentario en
+// `global.css`), NO `.liqcard`/`.liqline` (esas siguen siendo únicamente de
+// la vista previa editable en pantalla de `PropietariosPage.tsx`).
+// `comp-propgrupo`/`comp-totalesgrupo` se mantienen como clases marcadoras
+// (sin estilo propio) porque `lib/pdfComprobante.ts` las usa para el
+// paginado — ver comentario ahí (hasta 3 propiedades por hoja, resumen a la
+// hoja siguiente si no entra). El `<div className="comp-cuerpo">` raíz es
+// el que necesita `lib/pdfComprobante.ts`/`global.css` para que el
+// contenido pinte por encima de la marca de agua cuando esté visible (acá
+// no aplica, Liquidación no la muestra, pero Factura/Recibo sí).
 export function LiquidacionComprobanteBody({
   propietarioNombre,
   mesTexto,
@@ -69,7 +73,7 @@ export function LiquidacionComprobanteBody({
   const neto = Number(L.netoAGirar);
   const honorariosTotal = L.detalle.reduce((acc, d) => acc + Number(d.honorariosAdministracion), 0);
   return (
-    <>
+    <div className="comp-cuerpo">
       <div className="comp-liqinfo">
         <div className="comp-liqinfo-col">
           <span className="k">Propietario</span>
@@ -176,6 +180,6 @@ export function LiquidacionComprobanteBody({
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

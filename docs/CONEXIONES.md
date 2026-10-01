@@ -3880,6 +3880,120 @@ historial de las vueltas de ajuste pedidas sobre la marcha:
       en ese momento. No se verificó en impresión física ni en otros
       navegadores (solo Chrome).
 
+## 2026-10-01 — Pie en TODAS las hojas del PDF + Factura/Recibo con el mismo diseño que Liquidación
+
+Pedido del usuario: (1) el pie de la Liquidación solo aparecía en la ÚLTIMA
+hoja del PDF descargado, (2) que Factura (inquilino) y Recibo tengan el
+mismo diseño que el nuevo de Liquidación (rediseño del 2026-09-30).
+
+- [x] **Pie repetido en cada hoja** — `lib/pdfComprobante.ts::empujarAHojaNueva()`:
+      antes solo insertaba un espaciador + un clon del membrete antes de
+      forzar un salto de hoja; ahora también clona `.comp-pie` (ya forzado
+      visible más arriba en la función) y lo inserta al final del
+      espaciador, pegado al borde inferior de la hoja que termina — la
+      altura del pie se mide una sola vez (`alturaPie`, mismo contenido en
+      cualquier hoja) y se descuenta del espaciador para que el elemento
+      empujado siga arrancando justo al principio de la hoja siguiente. La
+      ÚLTIMA hoja sigue usando el pie original con `margin-top:auto` (sin
+      cambios ahí), así que ahora TODAS las hojas tienen pie, no solo la
+      última.
+- [x] **Factura y Recibo pasan a `comp-liq*`** (antes `ComprobanteInfoBox.tsx`
+      + `.liqcard`/`.liqline` propios, separados del rediseño de
+      Liquidación) — `PropiedadFichaDrawer.tsx` (`FacturaModal`/
+      `ReciboModal`): caja de datos en dos filas de `.comp-liqinfo` (fila 1:
+      Inquilino/Propiedad/Periodo/N°; fila 2: Inicio/Fin de
+      Contrato/Vencimiento o Emisión — Liquidación usa una sola fila porque
+      solo tiene 3 campos, acá entran 7 así que se partió en dos),
+      `.comp-liqneto` como banner ("Total" en Factura, "Cobrado" en
+      Recibo — mismo rol que "Neto a girar" de Liquidación),
+      `.comp-liqtitulo` ("Detalle de Factura/Recibo", reemplaza
+      `.comp-detalletitulo` que ya no se usa en ningún lado y se borró) y
+      un único `.comp-liqprop` (la única "propiedad" del documento) con
+      `.comp-liqrow` por ítem. `ComprobanteInfoBox.tsx` quedó sin ningún
+      uso → se borró el archivo y su CSS (`.comp-infobox`/`.comp-infocol`/
+      `.comp-infofila`). `.liqcard`/`.liqline` NO se tocaron: siguen
+      siendo de la vista previa editable de Liquidación en pantalla
+      (`PropietariosPage.tsx`), que no pasa por `.comprobante` y nunca usó
+      el diseño nuevo.
+- [x] **Bug de paso encontrado y arreglado**: dentro de `FacturaModal`, el
+      `titulo` del membrete y el encabezado del comprobante decían
+      literalmente "Liquidación" en vez de "Factura" (quedó así de alguna
+      edición anterior — el resto del modal, botones, nombre de archivo del
+      PDF y mensaje de WhatsApp sí decían "Factura" correctamente). Se
+      corrigió de paso al reemplazar ese bloque por el nuevo diseño.
+- [x] **Fix de apilamiento nuevo que no hacía falta en Liquidación**: Factura/
+      Recibo SÍ muestran la marca de agua de fondo (`mostrarMarcaAgua`
+      default `true`, a diferencia de Liquidación que la saca) — un `<div>`
+      sin posicionar pinta POR DEBAJO de un `position:fixed`/`absolute` con
+      z-index aunque esté después en el DOM, así que el cuerpo nuevo
+      (`comp-liq*`) necesitaba el mismo `position:relative;z-index:1` que
+      antes tenía `.liqcard` para no quedar tapado por la marca de agua.
+      Se armó un wrapper genérico `.comp-cuerpo` (ahora lo usan los tres:
+      Factura, Recibo y también Liquidación, por consistencia aunque a
+      Liquidación no le hacía falta) y se actualizó tanto `global.css`
+      (`@media print`) como `pdfComprobante.ts` (antes apuntaban a
+      `.liqcard`, que ya no existe en ningún comprobante impreso) para
+      usarlo.
+- [~] **No verificado visualmente**: no hay Chrome/Chromium ni
+      `puppeteer-core` instalados en este entorno, así que no se pudo
+      repetir el patrón de verificación con PDFs reales que se usó el
+      2026-09-30. Sí se verificó `npx tsc --noEmit` y `npm run build`
+      limpios en `admin/`, y revisión manual línea por línea de
+      `empujarAHojaNueva()` (orden de inserción de
+      espaciador/pie-clonado/membrete-clonado) contra el comportamiento
+      esperado. Falta que el usuario confirme con un PDF real de varias
+      hojas (Liquidación) y uno de Factura/Recibo (membrete + marca de
+      agua + pie + diseño nuevo).
+
+### Follow-up mismo día: el pie se veía cortado + sacar la marca de agua de Factura/Recibo
+
+El usuario probó un PDF real de Liquidación con 3 propiedades (grupo
+lleno, resumen a la hoja siguiente) y mandó captura: el pie de la hoja
+forzada se veía cortado a la mitad justo en el salto de hoja. De paso
+pidió sacar la marca de agua de fondo de Factura/Recibo — "ese no está en
+el diseño de liquidación" (que ya la había sacado el 2026-09-30).
+
+- [x] **Bug real encontrado en el fix de arriba, mismo día**: el
+      `MARGEN_SALTO_HOJA` (18px de aire antes del membrete de la hoja
+      nueva) se sumaba DENTRO del único espaciador insertado ANTES del pie
+      clonado, en vez de en uno aparte DESPUÉS — eso empujaba el pie
+      clonado 18px de más, así que terminaba 18px DENTRO de la hoja
+      siguiente (no en el borde de la hoja actual) y la rebanada de
+      `pdf.addImage()` (que corta la imagen larga en franjas de una hoja
+      exacta) lo cortaba a la mitad. Fix en
+      `lib/pdfComprobante.ts::empujarAHojaNueva()`: ahora son DOS
+      espaciadores — uno antes del pie (con la altura restante de la hoja
+      actual, ya descontando el pie) y uno después (el `MARGEN_SALTO_HOJA`,
+      antes del membrete de la hoja nueva) — así el pie siempre termina
+      en una posición múltiplo exacto de `alturaPaginaEnClon`, el borde
+      real de la hoja, sin importar cuánto aire haya antes.
+- [x] **Fix defensivo de paso**: ninguna de las mediciones de
+      `descargarPdfComprobante()` (altura del pie, de cada propiedad, del
+      contenido entero) esperaba a que los `<img>` del clon terminaran de
+      cargar/decodificar — si alguno (ej. el logo del pie) tardaba,
+      `getBoundingClientRect()` podía medir una altura menor a la real y
+      desalinear todo el paginado calculado después. Ahora se espera
+      `Promise.all(... img.decode() ...)` de todas las imágenes del clon
+      apenas se appendea al DOM, antes de medir nada.
+- [x] **Marca de agua sacada del todo**: con los 4 callers de
+      `ComprobanteImpreso` ya en `mostrarMarcaAgua={false}` (Liquidación
+      desde 2026-09-30, Factura/Recibo desde este pedido), el prop no
+      tenía ningún caso que lo dejara en `true` — se sacó por completo:
+      el prop, el `<img className="comp-marcaagua">` y su manejo en
+      `ComprobanteImpreso.tsx`, la regla `.comp-marcaagua` en
+      `global.css`, el bloque que la hacía visible en
+      `pdfComprobante.ts`, y la imagen `admin/src/images/logo-marca-agua.png`
+      (sin ningún otro uso). `.comp-cuerpo` (el wrapper que evitaba que el
+      contenido quedara tapado por la marca de agua) se dejó igual —
+      inofensivo sin ella, y consistente entre los tres comprobantes.
+- [~] **Tampoco verificado visualmente** (mismo motivo: sin Chrome/
+      Puppeteer acá) — verificado con `npx tsc --noEmit` y `npm run
+      build` limpios, y derivación manual paso a paso de las posiciones
+      finales del pie/membrete/`el` con la fórmula nueva para confirmar
+      que el pie cae justo en el borde de la hoja. Falta que el usuario
+      vuelva a probar el mismo caso (3 propiedades, resumen a la hoja
+      siguiente) y confirme que ahora el pie no se corta.
+
 ## Cómo actualizar este archivo
 
 Cada vez que se implemente una conexión: marcarla `[x]`, agregar la fecha y
