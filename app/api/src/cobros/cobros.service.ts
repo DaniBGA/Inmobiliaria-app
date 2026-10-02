@@ -136,12 +136,15 @@ export class CobrosService {
       propiedades.map(async (p) => {
         const alDiaDesde = p.inquilino?.alDiaDesde ?? null;
         const antesDeAlDia = !!alDiaDesde && mes.getTime() < alDiaDesde.getTime();
+        // Se pide SIEMPRE (no solo cuando `!antesDeAlDia`) porque acá
+        // también sale el nombre del inquilino de ESE mes, no solo el total
+        // esperado — ver `inquilinoNombre` más abajo.
+        const facturaExistente = await this.prisma.factura.findUnique({
+          where: { propiedadId_mes: { propiedadId: p.id, mes } },
+          select: { total: true, inquilinoNombre: true },
+        });
         let esperado: number | null = null;
         if (!antesDeAlDia) {
-          const facturaExistente = await this.prisma.factura.findUnique({
-            where: { propiedadId_mes: { propiedadId: p.id, mes } },
-            select: { total: true },
-          });
           esperado = facturaExistente ? Number(facturaExistente.total) : await this.esperadoEstimado(p.id, mesStr);
         }
         // `cobrado` se calcula del propio listado de pagos de abajo (mismo
@@ -153,10 +156,22 @@ export class CobrosService {
         });
         const cobrado = pagos.reduce((acc, pago) => acc + Number(pago.monto), 0);
         const tieneMoraConfigurada = !!p.punitorioTipo && p.punitorioValor != null && Number(p.punitorioValor) > 0;
+        // Nombre del inquilino DE ESE MES, no el actual (§ bug reportado por
+        // el usuario 2026-10-02: "cuando agrego un inquilino nuevo... los
+        // meses anteriores te muestra el nombre del inquilino nuevo") —
+        // `Inquilino` es la relación 1:1 VIGENTE, se pisa en cada cambio de
+        // inquilino, así que para un mes ya facturado/cobrado se prioriza la
+        // copia guardada en su momento (factura primero, pago como
+        // respaldo si por lo que sea no se emitió factura ese mes). Si
+        // ninguna de las dos existe (mes actual/futuro, todavía sin
+        // facturar ni cobrar), no hay ambigüedad real: se muestra el
+        // inquilino vigente tal cual, que es lo correcto para ese caso.
+        const nombreDelMes = facturaExistente?.inquilinoNombre ?? pagos.find((pg) => pg.inquilinoNombre)?.inquilinoNombre ?? null;
+        const inquilino = nombreDelMes ? { ...p.inquilino, nombre: nombreDelMes } : p.inquilino;
         return {
           propiedadId: p.id,
           propiedadNombre: p.nombre,
-          inquilino: p.inquilino,
+          inquilino,
           propietario: p.propietario,
           esperado,
           cobrado,
@@ -184,6 +199,7 @@ export class CobrosService {
   async registrarPago(propiedadId: string, dto: CreatePagoDto) {
     const propiedad = await this.prisma.propiedad.findUniqueOrThrow({
       where: { id: propiedadId },
+      include: { inquilino: { select: { nombre: true } } },
     });
     const mes = mesStringAFecha(dto.mes);
 
@@ -212,6 +228,10 @@ export class CobrosService {
           comprobante: dto.comprobante,
           observaciones: dto.observaciones,
           movimientoCajaId: movimiento.id,
+          // Mismo motivo que `Factura.inquilinoNombre` (§ bug reportado por
+          // el usuario 2026-10-02) — copia del inquilino AL REGISTRAR el
+          // pago, no se recalcula después.
+          inquilinoNombre: propiedad.inquilino?.nombre ?? null,
         },
       });
     });
@@ -264,15 +284,35 @@ export class CobrosService {
     });
   }
 
-  // Fecha desde la que corre la obligación de pago del inquilino actual —
-  // `null` si no tiene el checkbox "Se encuentra al día" tildado (deuda
-  // calculada desde siempre, comportamiento de base). Ver Inquilino.alDiaDesde.
+  // Fecha desde la que corre la obligación de pago del inquilino actual.
+  // Siempre acotada por `Propiedad.contratoInicio` (§ bug reportado por el
+  // usuario 2026-10-02: "cuando se agrega un inquilino nuevo a una
+  // propiedad que ya se encontraba [ocupada] queda la mora de el anterior
+  // alquiler") — antes, si no se tildaba "Se encuentra al día" al cargar el
+  // inquilino nuevo (`Inquilino.alDiaDesde` quedaba `null`), la ventana de
+  // deuda/mora de `deudaAcumulada()`/`moraAcumulada()` escaneaba los 12
+  // meses enteros sin ningún piso, así que si el inquilino ANTERIOR dejó
+  // meses sin pagar dentro de esa ventana, esa deuda/mora quedaba pegada al
+  // inquilino nuevo (que ni siquiera vivía ahí todavía). `contratoInicio`
+  // se actualiza siempre que se asigna un inquilino nuevo
+  // (`AlquilarPropiedadModal.tsx` → `PATCH /propiedades/:id`), así que es
+  // un piso objetivo independiente del checkbox — "al día" solo puede
+  // correr el piso MÁS ADELANTE todavía (un inquilino que ya venía
+  // alquilando por fuera y recién ahora entra "al día" al sistema), nunca
+  // antes del inicio de SU propio contrato. Se normaliza a principio de
+  // mes (mismo criterio que `alDiaDesde` y que el resto del sistema, que
+  // trabaja en meses enteros) — el mes en que arrancó el contrato nuevo
+  // queda afuera de la deuda histórica, sin prorratear por día.
   private async alDiaDesde(propiedadId: string): Promise<Date | null> {
-    const inquilino = await this.prisma.inquilino.findUnique({
-      where: { propiedadId },
-      select: { alDiaDesde: true },
-    });
-    return inquilino?.alDiaDesde ?? null;
+    const [inquilino, propiedad] = await Promise.all([
+      this.prisma.inquilino.findUnique({ where: { propiedadId }, select: { alDiaDesde: true } }),
+      this.prisma.propiedad.findUnique({ where: { id: propiedadId }, select: { contratoInicio: true } }),
+    ]);
+    const pisoContrato = propiedad?.contratoInicio ? primerDiaMes(propiedad.contratoInicio) : null;
+    const pisoAlDia = inquilino?.alDiaDesde ?? null;
+    if (!pisoContrato) return pisoAlDia;
+    if (!pisoAlDia) return pisoContrato;
+    return pisoAlDia.getTime() > pisoContrato.getTime() ? pisoAlDia : pisoContrato;
   }
 
   // §5.4: deuda acumulada sobre los últimos 12 meses cerrados (el mes en

@@ -2070,7 +2070,7 @@ export function FacturaModal({
                 {F.items.map((it) => (
                   <div className="comp-liqrow" key={it.id}>
                     <span className="ld">
-                      {it.descripcion}
+                      {splitDescripcionCuenta(it.descripcion).base}
                       {it.numeroLiquidacion && <small> · Liq N° {it.numeroLiquidacion}</small>}
                     </span>
                     <span className="lv">{formatMoney(it.monto)}</span>
@@ -2214,7 +2214,7 @@ function ReciboModal({
                 </div>
                 {R.items.map((it) => (
                   <div className="comp-liqrow" key={it.id}>
-                    <span className="ld">{it.descripcion}</span>
+                    <span className="ld">{splitDescripcionCuenta(it.descripcion).base}</span>
                     <span className="lv">{formatMoney(it.monto)}</span>
                   </div>
                 ))}

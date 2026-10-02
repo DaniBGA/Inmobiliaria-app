@@ -224,7 +224,10 @@ export class FacturasService {
   // Si se manda, el contador automático NO avanza (queda intacto para la
   // próxima factura sin número manual).
   async emitir(propiedadId: string, mesStr: string, itemsInput?: FacturaItemInputDto[], numeroManual?: number) {
-    await this.prisma.propiedad.findUniqueOrThrow({ where: { id: propiedadId } });
+    const propiedad = await this.prisma.propiedad.findUniqueOrThrow({
+      where: { id: propiedadId },
+      include: { inquilino: { select: { nombre: true } } },
+    });
     const mes = mesStringAFecha(mesStr);
     const items = itemsInput ?? (await this.itemsPredeterminados(propiedadId, mesStr));
     const total = items.reduce((acc, it) => acc + Number(it.monto), 0);
@@ -244,6 +247,13 @@ export class FacturasService {
             numero,
             fecha: new Date(),
             total,
+            // Copia del nombre del inquilino AL EMITIR (§ bug reportado por
+            // el usuario 2026-10-02) — `Inquilino` es 1:1 vigente con
+            // `Propiedad`, se pisa al cambiar de inquilino; sin esto, mirar
+            // la factura de un mes viejo después de un cambio de inquilino
+            // mostraría el nombre del inquilino ACTUAL, no el de quien
+            // facturó ese mes.
+            inquilinoNombre: propiedad.inquilino?.nombre ?? null,
             items: {
               create: items.map((it, idx) => ({
                 descripcion: it.descripcion,

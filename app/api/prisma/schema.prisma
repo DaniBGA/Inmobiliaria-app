@@ -408,6 +408,16 @@ model Pago {
   observaciones String?
   anulado       Boolean   @default(false)
 
+  // Nombre del inquilino AL MOMENTO de registrar el pago (§ bug reportado
+  // por el usuario 2026-10-02: "cuando agrego un inquilino nuevo... los
+  // meses anteriores te muestra el nombre del inquilino nuevo") —
+  // `Inquilino` es 1:1 vigente con `Propiedad` (se pisa al cambiar de
+  // inquilino, no hay historial), así que sin esta copia un mes viejo
+  // termina mostrando a quien vive ahí HOY, no a quien pagó en su momento.
+  // `null` en pagos ya existentes antes de este campo (no se puede
+  // reconstruir esa historia retroactivamente).
+  inquilinoNombre String?
+
   propiedadId String
   propiedad   Propiedad @relation(fields: [propiedadId], references: [id], onDelete: Cascade)
 
@@ -476,6 +486,12 @@ model Factura {
   fecha       DateTime
   vencimiento DateTime?
   total       Decimal   @db.Decimal(14, 2)
+
+  // Nombre del inquilino AL MOMENTO de emitir la factura — mismo motivo que
+  // `Pago.inquilinoNombre` (ver ese comentario). `Factura` es la fuente
+  // principal que usa `CobrosService.resumenMes()` para mostrar "a nombre
+  // de quién" fue un mes ya cerrado.
+  inquilinoNombre String?
 
   propiedadId String
   propiedad   Propiedad     @relation(fields: [propiedadId], references: [id], onDelete: Cascade)

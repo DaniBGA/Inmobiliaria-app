@@ -239,8 +239,48 @@ revisarlas antes de reimplementar algo que suene a "normalizar un mes" o
   `.comp-pie` (pie) al final de la hoja que termina (pedido del usuario
   2026-10-01: antes el pie solo aparecía en la última hoja, vía
   `margin-top:auto`, que sigue así sin tocar — eso sigue resolviendo
-  únicamente el pie de la ÚLTIMA hoja). Cambiar cuántas propiedades entran
-  por hoja es editar el `i % 3 === 0` ahí, no CSS.
+  únicamente el pie de la ÚLTIMA hoja). Ese pie clonado por hoja reserva
+  además `MARGEN_PIE_INFERIOR` (40px, nuevo 2026-10-02) de aire antes del
+  borde físico de la hoja — con 3 propiedades (que desde el achicado del
+  diseño no llenan la hoja entera) el pie quedaba pegado del todo abajo,
+  con un hueco enorme arriba de él; el pie de la ÚLTIMA hoja
+  (`margin-top:auto`) no se tocó, no se quejaron de ese. Cambiar cuántas
+  propiedades entran por hoja es editar el `i % 3 === 0` ahí, no CSS.
+- **La deuda/mora acumulada SIEMPRE está acotada por `Propiedad.contratoInicio`**,
+  no solo por `Inquilino.alDiaDesde` (fix 2026-10-02 de un bug real
+  reportado por el usuario: "cuando se agrega un inquilino nuevo a una
+  propiedad que ya se encontraba [ocupada] queda la mora del anterior
+  alquiler"). `CobrosService::alDiaDesde()` (privado, usado por
+  `deudaAcumulada()`/`moraAcumulada()`/`mesesPendientes()`) ahora toma el
+  MÁS TARDE entre `Inquilino.alDiaDesde` (el checkbox manual "Se encuentra
+  al día") y `Propiedad.contratoInicio` normalizado a principio de mes —
+  antes, si no se tildaba ese checkbox al cargar el inquilino nuevo (caso
+  común: queda `null`), la ventana de 12 meses no tenía ningún piso y
+  escaneaba meses en los que el inquilino ANTERIOR vivía ahí, arrastrando
+  su deuda/mora impaga al nuevo. `contratoInicio` se actualiza siempre al
+  asignar un inquilino (`AlquilarPropiedadModal.tsx` → `PATCH
+  /propiedades/:id`), así que es un piso objetivo independiente del
+  checkbox — el checkbox solo puede correrlo MÁS adelante todavía, nunca
+  antes. Como `FacturasService.itemsPredeterminados()` reusa
+  `deudaAcumulada()`/`moraAcumulada()` de `CobrosService` (ver el
+  invariante de arriba), este fix cubre Factura/Recibo/Liquidación a la
+  vez sin tocar nada ahí.
+- **`Inquilino` es la relación 1:1 VIGENTE con `Propiedad`, no un
+  historial** (`propiedadId @unique`) — al asignar un inquilino nuevo a una
+  propiedad ya ocupada, `upsertInquilino()` pisa el mismo registro (mismo
+  `id`), así que no queda ningún rastro de quién vivía ahí antes. Por eso
+  `Factura` y `Pago` tienen su propio campo `inquilinoNombre` (copia del
+  nombre AL EMITIR/AL REGISTRAR, fix 2026-10-02 de un bug real: "cuando
+  agrego un inquilino nuevo... los meses anteriores te muestra el nombre
+  del inquilino nuevo") — son la fuente de verdad para "a nombre de quién
+  fue tal mes", nunca `Propiedad.inquilino` directo para un mes que no sea
+  el actual. `CobrosService.resumenMes()` ya prioriza esa copia (factura
+  del mes, pago del mes como respaldo, inquilino vigente solo si ninguna de
+  las dos existe todavía). **Esto NO reconstruye historia ya perdida**:
+  facturas/pagos emitidos ANTES de este fix quedan con
+  `inquilinoNombre: null` para siempre (no hay forma de saber quién era),
+  así que esos meses van a seguir mostrando el inquilino vigente hasta que
+  se sobrescriban con datos nuevos.
 
 ### Verificar cambios (no hay test suite)
 

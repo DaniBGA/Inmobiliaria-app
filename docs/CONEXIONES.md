@@ -3994,6 +3994,103 @@ el diseño de liquidación" (que ya la había sacado el 2026-09-30).
       vuelva a probar el mismo caso (3 propiedades, resumen a la hoja
       siguiente) y confirme que ahora el pie no se corta.
 
+## 2026-10-02 — Pie más arriba en hojas con 3 propiedades + fix de deuda/mora heredada del inquilino anterior
+
+- [x] **Pie clonado por hoja un poco más arriba**: con 3 propiedades (que
+      ya no llenan la hoja entera desde que se achicó el diseño el
+      2026-09-30) el pie quedaba pegado del todo al borde inferior físico
+      de la hoja, con un hueco grande antes — `lib/pdfComprobante.ts`
+      suma `MARGEN_PIE_INFERIOR = 40` (px) descontado del espaciador que
+      calcula dónde va el pie clonado de cada hoja forzada. El pie de la
+      ÚLTIMA hoja (el original, con `margin-top:auto`) no se tocó, no era
+      el que se quejaron.
+- [x] **Bug real: deuda/mora del inquilino anterior se mezclaba con la del
+      nuevo**. Reportado por el usuario: "cuando se agrega un inquilino
+      nuevo a una propiedad que ya se encontraba [ocupada] queda la mora
+      de el anterior alquiler". Causa: `CobrosService::alDiaDesde()`
+      (privado, acota la ventana de 12 meses de `deudaAcumulada()`/
+      `moraAcumulada()`/`mesesPendientes()`) solo miraba
+      `Inquilino.alDiaDesde` — si al cargar el inquilino nuevo no se
+      tildaba "Se encuentra al día" (caso normal, no es "ya alquilaba por
+      fuera"), quedaba `null` y la ventana escaneaba los 12 meses SIN
+      ningún piso, incluyendo meses en los que el inquilino ANTERIOR vivía
+      ahí — si ese inquilino dejó meses sin pagar, esa deuda/mora quedaba
+      pegada al nuevo (que ni vivía ahí todavía).
+      - [x] **Fix**: `alDiaDesde()` ahora toma el MÁS TARDE entre
+        `Inquilino.alDiaDesde` y `Propiedad.contratoInicio` (normalizado a
+        principio de mes) — `contratoInicio` se actualiza siempre al
+        asignar un inquilino nuevo (`AlquilarPropiedadModal.tsx`), así que
+        es un piso objetivo que no depende de que el admin se acuerde de
+        tildar el checkbox. El checkbox sigue pudiendo correr el piso
+        TODAVÍA más adelante (inquilino que ya alquilaba por fuera y recién
+        entra "al día" al sistema), nunca antes del inicio de su propio
+        contrato.
+      - [x] **Verificado con curl, datos `TEST` creados y borrados al
+        final**: propiedad con `contratoInicio` en julio, punitorio 10%
+        mensual, inquilino viejo sin pagar jul/ago/sep → `GET
+        /cobros/propiedades/:id/deuda` daba `{"deuda":300000,"mesesImpagos":3}`
+        y `items-predeterminados` de octubre traía "Deuda arrastrada
+        $300.000" + "Mora acumulada (62 días) $30.000". Se actualizó
+        `contratoInicio` a octubre y se reemplazó el inquilino (sin tildar
+        "al día", el caso que reportó el usuario) — después del fix,
+        `deuda` da `{"deuda":0,"mesesImpagos":0}` y esos dos ítems
+        desaparecen de `items-predeterminados`. Como
+        `FacturasService.itemsPredeterminados()` reusa estas mismas
+        funciones de `CobrosService` (ver `CLAUDE.md`), el fix cubre
+        Factura/Recibo/Liquidación de una sola vez.
+
+## 2026-10-02 (2) — Factura/Recibo sin N° de cuenta, guion habilitado en Liq N°, y meses viejos mostraban el inquilino nuevo
+
+- [x] **Factura/Recibo ya no muestran el N° de cuenta/usuario del servicio**
+      en el PDF (ej. "Usina (12312)") — `PropiedadFichaDrawer.tsx`
+      (`FacturaModal`/`ReciboModal`) pasa a usar
+      `splitDescripcionCuenta(it.descripcion).base` al renderizar cada
+      ítem, mismo tratamiento que ya tenía Liquidación desde el
+      2026-09-30. El N° de cuenta sigue viviendo en el dato (no se borra
+      nada), solo deja de imprimirse.
+- [x] **El input "Liq N°" ahora acepta guion** (`3-112312321-23`, formato
+      típico de N° de cuenta de servicios) — en `PropietariosPage.tsx`
+      (ítem por propiedad y "Servicios a descontar") el filtro pasa de
+      `\D` (solo dígitos) a `[^\d-]` (dígitos y guion), igual al que ya
+      tenía el campo equivalente de Factura.
+- [x] **Bug real: meses viejos mostraban el nombre del inquilino NUEVO**.
+      Reportado por el usuario: "cuando agrego un inquilino nuevo a una
+      propiedad ya existente los meses anteriores te muestra el nombre
+      de el inquilino nuevo en vez de mostrarte el nombre de el
+      inquilino anterior". Causa: `Inquilino` es la relación 1:1 VIGENTE
+      con `Propiedad` (`propiedadId @unique`) — al asignar un inquilino
+      nuevo, `upsertInquilino()` pisa el mismo registro en el lugar
+      (mismo `id`), sin dejar ningún rastro de quién vivía ahí antes.
+      `CobrosService.resumenMes()` (la tabla de "Inquilinos y Cobros")
+      mostraba siempre `p.inquilino` (el vigente) sin importar qué mes
+      se estuviera mirando.
+      - [x] **Fix**: `Factura` y `Pago` suman `inquilinoNombre String?`
+        (migración `20261002222010_inquilino_nombre_snapshot`) — copia
+        del nombre del inquilino AL EMITIR la factura
+        (`FacturasService.emitir()`) y AL REGISTRAR el pago
+        (`CobrosService.registrarPago()`). `resumenMes()` ahora arma el
+        `inquilino` de cada fila priorizando esa copia (factura del mes
+        primero, pago del mes como respaldo si no se emitió factura ese
+        mes) y solo cae al inquilino vigente si no existe ninguna de las
+        dos todavía (mes actual/futuro sin facturar, caso en el que no
+        hay ambigüedad real).
+      - [~] **Límite real, no recuperable**: facturas/pagos ya emitidos
+        ANTES de este fix quedan con `inquilinoNombre: null` para
+        siempre — no hay forma de reconstruir quién era el inquilino en
+        ese momento, esa información ya se perdió cuando se pisó el
+        registro. Esos meses van a seguir mostrando el inquilino vigente
+        hasta que se carguen facturas/pagos nuevos (que sí van a quedar
+        con la copia correcta de acá en adelante).
+      - [x] **Verificado con curl, datos `TEST` creados y borrados al
+        final**: propiedad con inquilino "TEST Inquilino Julio",
+        factura y pago de julio emitidos con ese nombre (confirmado en
+        la respuesta: `inquilinoNombre: "TEST Inquilino Julio"`). Se
+        cambió `contratoInicio` a octubre y se reemplazó el inquilino por
+        "TEST Inquilino Octubre" — `GET /cobros/mes/2026-07` después del
+        cambio siguió devolviendo `inquilino.nombre: "TEST Inquilino
+        Julio"` y `GET /cobros/mes/2026-10` devolvió `"TEST Inquilino
+        Octubre"`.
+
 ## Cómo actualizar este archivo
 
 Cada vez que se implemente una conexión: marcarla `[x]`, agregar la fecha y

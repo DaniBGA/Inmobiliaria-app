@@ -121,6 +121,12 @@ export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: 
     // más arriba), pero una hoja 2+ armada acá "a mano" no lo hereda solo
     // por rebanar la imagen larga en franjas.
     const MARGEN_SALTO_HOJA = 18;
+    // Aire reservado entre el pie y el borde físico de la hoja (pedido del
+    // usuario 2026-10-02: con 3 propiedades — que no llenan la hoja entera
+    // desde que se achicó el diseño — el pie quedaba pegado del todo abajo,
+    // con un hueco enorme antes — sin tocar el pie de la ÚLTIMA hoja (ese
+    // sigue con `margin-top:auto`, no se quejaron de ese).
+    const MARGEN_PIE_INFERIOR = 40;
     // Pie repetido al final de CADA hoja (pedido del usuario 2026-10-01:
     // antes solo aparecía una vez, al final de TODO el comprobante, por el
     // `margin-top:auto` de más arriba) — se mide una sola vez acá (mismo
@@ -140,28 +146,27 @@ export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: 
     // Orden de los 4 elementos insertados antes de `el` (cada
     // `insertBefore(X, el)` dejar a `X` pegado justo antes de `el`, en el
     // mismo orden en que se llama): espaciador1 → pie → espaciador2
-    // (margen) → membrete → el. Los primeros DOS espaciadores separan la
-    // altura restante de la hoja actual en dos partes: lo que sobra ANTES
-    // del pie (`espaciador1`, puede ser 0 si el contenido llega justo hasta
-    // donde empieza el pie) y el margen de aire DESPUÉS del pie, antes del
-    // membrete de la hoja nueva (`espaciador2` = `MARGEN_SALTO_HOJA`, el
-    // mismo margen que ya existía antes de este cambio). Bug encontrado
-    // 2026-10-01 ("el footer se ve cortado cuando hay 3 propiedades"): la
-    // primera versión de este fix metía el `MARGEN_SALTO_HOJA` DENTRO del
-    // primer espaciador (antes del pie) en vez de en uno aparte después —
-    // eso empujaba el pie exactamente `MARGEN_SALTO_HOJA` píxeles de más,
-    // así que terminaba `MARGEN_SALTO_HOJA` px DENTRO de la hoja siguiente
-    // en vez de justo en el borde de la hoja actual, y la rebanada de
-    // `pdf.addImage()` lo cortaba a la mitad. Con el margen en su propio
-    // espaciador DESPUÉS del pie, el pie siempre termina en una posición
-    // que es múltiplo exacto de `alturaPaginaEnClon` (el borde real de la
-    // hoja), sin importar cuánto aire haya antes.
+    // (margen) → membrete → el. `espaciador1` reserva lo que sobra ANTES
+    // del pie, dejando el pie `MARGEN_PIE_INFERIOR` px antes del borde real
+    // de la hoja (puede ser 0 de espacio si el contenido llega justo hasta
+    // ahí). `espaciador2` tiene que CERRAR ese hueco de
+    // `MARGEN_PIE_INFERIOR` Y SUMAR `MARGEN_SALTO_HOJA` — si solo sumara
+    // `MARGEN_SALTO_HOJA` (como en la versión original de este mecanismo,
+    // antes de que existiera `MARGEN_PIE_INFERIOR`), el membrete arrancaría
+    // antes del borde real de la hoja siguiente. Bug encontrado 2026-10-01
+    // ("el footer se ve cortado cuando hay 3 propiedades") y de nuevo
+    // 2026-10-02 ("se corta el encabezado"), mismo mecanismo las dos veces:
+    // CUALQUIER elemento que se inserte acá tiene que terminar en una
+    // posición múltiplo exacto de `alturaPaginaEnClon` (el borde real de la
+    // hoja) — unos pocos px de más o de menos "a ojo" y la rebanada de
+    // `pdf.addImage()` (que corta la imagen larga en franjas de una hoja
+    // física exacta) lo parte a la mitad entre dos hojas.
     function empujarAHojaNueva(el: HTMLElement) {
       const top = posicionEnClon(el);
       const resto = top % alturaPaginaEnClon;
       if (resto <= 1) return; // ya arranca (o casi) al principio de una hoja
       const espacioAntesDelPie = document.createElement('div');
-      espacioAntesDelPie.style.height = `${Math.max(alturaPaginaEnClon - resto - alturaPie, 0)}px`;
+      espacioAntesDelPie.style.height = `${Math.max(alturaPaginaEnClon - resto - alturaPie - MARGEN_PIE_INFERIOR, 0)}px`;
       espacioAntesDelPie.style.flexShrink = '0';
       el.parentElement?.insertBefore(espacioAntesDelPie, el);
       if (pie) {
@@ -169,8 +174,16 @@ export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: 
         Object.assign(pieClon.style, { flexShrink: '0', marginTop: '0' });
         el.parentElement?.insertBefore(pieClon, el);
       }
+      // El pie terminó `MARGEN_PIE_INFERIOR` antes del borde real de la
+      // hoja (no pegado al borde, ver más arriba) — este espaciador tiene
+      // que cerrar ESE hueco Y sumar el margen de la hoja nueva, si no el
+      // membrete clonado arranca antes del borde real y la rebanada de
+      // `pdf.addImage()` lo corta a la mitad (bug encontrado 2026-10-02,
+      // mismo mecanismo que el del pie cortado del 2026-10-01: CUALQUIER
+      // elemento insertado acá tiene que terminar en un múltiplo exacto de
+      // `alturaPaginaEnClon`, nunca unos px antes o después "a ojo").
       const margenHojaNueva = document.createElement('div');
-      margenHojaNueva.style.height = `${MARGEN_SALTO_HOJA}px`;
+      margenHojaNueva.style.height = `${MARGEN_PIE_INFERIOR + MARGEN_SALTO_HOJA}px`;
       margenHojaNueva.style.flexShrink = '0';
       el.parentElement?.insertBefore(margenHojaNueva, el);
       if (membrete) {

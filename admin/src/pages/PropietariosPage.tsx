@@ -666,12 +666,11 @@ function LiquidacionModal({
                       />
                       <input
                         className="itemliq"
-                        inputMode="numeric"
                         placeholder="Liq"
                         title="Número de liquidación"
                         value={it.numeroLiquidacion}
                         onChange={(e) =>
-                          actualizarItem(d.propiedadId, idx, 'numeroLiquidacion', e.target.value.replace(/\D/g, ''))
+                          actualizarItem(d.propiedadId, idx, 'numeroLiquidacion', e.target.value.replace(/[^\d-]/g, ''))
                         }
                       />
                       <button className="btn-sm ghostred" onClick={() => quitarItem(d.propiedadId, idx)} title="Quitar ítem">
@@ -730,11 +729,10 @@ function LiquidacionModal({
                     />
                     <input
                       className="itemliq"
-                      inputMode="numeric"
                       placeholder="Liq"
                       title="Número de liquidación"
                       value={a.numeroLiquidacion}
-                      onChange={(e) => actualizarAjuste(idx, 'numeroLiquidacion', e.target.value.replace(/\D/g, ''))}
+                      onChange={(e) => actualizarAjuste(idx, 'numeroLiquidacion', e.target.value.replace(/[^\d-]/g, ''))}
                     />
                     <button className="btn-sm ghostred" onClick={() => quitarAjuste(idx)} title="Quitar">
                       ✕
