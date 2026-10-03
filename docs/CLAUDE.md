@@ -281,6 +281,43 @@ revisarlas antes de reimplementar algo que suene a "normalizar un mes" o
   `inquilinoNombre: null` para siempre (no hay forma de saber quién era),
   así que esos meses van a seguir mostrando el inquilino vigente hasta que
   se sobrescriban con datos nuevos.
+- **"Servicios a descontar" de una Liquidación se precarga de la
+  liquidación YA EMITIDA del mes, no de una heurística recalculada** (fix
+  2026-10-03 de un bug real: "cuando emito una liquidación los datos de
+  'Servicios a descontar' no quedan guardados de lo que se emitió
+  anteriormente"). `LiquidacionModal`
+  (`admin/src/pages/PropietariosPage.tsx`) pide además
+  `GET /liquidaciones/propietarios/:id/:mes` (`liquidacionExistente`,
+  mismo endpoint que ya usaba `obtenerDelMes`) junto con el `/preview`; si
+  ya existe liquidación ese mes, `ajustesServicios` se precarga tal cual
+  quedó guardada (montos y N° de liquidación reales) — la heurística vieja
+  ("servicios comunes a todas las propiedades, monto vacío") solo corre
+  cuando NO hay liquidación previa. Mismo criterio que `facturaExistente`
+  en `FacturaModal`. `itemsPorPropiedad` (el lado "Cobrado" por propiedad)
+  sigue viniendo del `/preview` sin cambios — ese ya refleja lo persistido
+  porque sale de la Factura real de cada propiedad, que tiene su propio
+  mecanismo de precarga independiente. Además de esa precarga (que solo
+  corre una vez al abrir), hay un segundo `useEffect` independiente con
+  dependencia en `itemsPorPropiedad` (fix 2026-10-03 (2): "necesito que
+  me actualice en tiempo real los precios... cuando el N° de liq
+  coincide en todas las propiedades") que recalcula en cada edición qué
+  servicios tienen el mismo N° de liquidación en todas las propiedades y
+  sincroniza el monto de ese renglón de `ajustesServicios` a la suma en
+  vivo — sin esperar a reabrir el modal. Solo sincroniza renglones que ya
+  existen (no agrega/borra ninguno) y no pisa el campo si la suma da 0.
+- **Badge "Emitido"**: tanto "Inquilinos y Cobros" (tabla "COBROS DEL
+  MES") como "Propietarios y Liquidaciones" muestran un badge `Emitido`
+  (CSS `.badge.emitido`, indigo) cuando ya existe una Factura/Liquidación
+  de ese mes — pedido del usuario 2026-10-03, independiente del badge de
+  estado de COBRO (Pagado/Pendiente/Impago). `CobrosService.resumenMes()`
+  agrega `facturaEmitida: boolean` a cada fila (reusa el mismo
+  `facturaExistente` que ya pedía para `esperado`/`inquilinoNombre`, sin
+  query extra). Para Liquidación, que es por-propietario (no hay una fila
+  por mes como en Cobros), se agregó
+  `LiquidacionesService.propietariosConLiquidacion(mesStr)` +
+  `GET /liquidaciones/mes/:mes` (un solo query para toda la lista, no un
+  `obtenerDelMes` por tarjeta) que devuelve los `propietarioId` con
+  liquidación ya emitida ese mes.
 
 ### Verificar cambios (no hay test suite)
 

@@ -17,6 +17,11 @@ export class LiquidacionesController {
     return this.liquidacionesService.obtenerDelMes(propietarioId, mes);
   }
 
+  @Get('mes/:mes')
+  propietariosConLiquidacion(@Param('mes') mes: string) {
+    return this.liquidacionesService.propietariosConLiquidacion(mes);
+  }
+
   @Get('propietarios/:propietarioId/:mes/preview')
   previsualizar(@Param('propietarioId') propietarioId: string, @Param('mes') mes: string) {
     return this.liquidacionesService.previsualizar(propietarioId, mes);

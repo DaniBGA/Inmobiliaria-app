@@ -4091,6 +4091,109 @@ el diseño de liquidación" (que ya la había sacado el 2026-09-30).
         Julio"` y `GET /cobros/mes/2026-10` devolvió `"TEST Inquilino
         Octubre"`.
 
+## 2026-10-03 — "Servicios a descontar" no se guardaba al reabrir + badge "Emitido" en Cobros y Liquidaciones
+
+Dos pedidos del usuario en un mismo mensaje:
+
+1. *"Cuando emito una liquidacion los datos de 'Servicios a descontar' no
+   quedan guardados de lo que se emitio anteriormente"*.
+2. *"Tanto en 'Liquidacion' como en 'COBROS DEL MES' cuando emitis una
+   liquidacion o una factura de algun inquilino que te ponga un estado de
+   'emitido' para saber que ya se emitió"*.
+
+- [x] **Causa del bug (1)**: `LiquidacionModal`
+  (`admin/src/pages/PropietariosPage.tsx`) solo pedía
+  `GET /liquidaciones/propietarios/:id/:mes/preview` para precargar el
+  formulario. `ajustesServicios` ("Servicios a descontar") nunca se leía
+  de una liquidación YA emitida ese mes (a diferencia de
+  `itemsPorPropiedad`, que sale de la Factura real vía `/preview` y por
+  eso sí sobrevivía) — siempre se recalculaba con la heurística
+  "servicios comunes a todas las propiedades, monto vacío". Reabrir el
+  modal de un mes ya liquidado perdía los montos y N° de liquidación
+  cargados a mano la vez anterior.
+  - [x] **Fix**: se agregó una segunda query,
+    `GET /liquidaciones/propietarios/:id/:mes` (el mismo endpoint que ya
+    usa `obtenerDelMes`, sin cambios en el backend). El efecto de
+    precarga ahora espera a que ambas resuelvan: si ya hay una
+    liquidación emitida, `ajustesServicios` se precarga tal cual quedó
+    guardada (`descripcion`/`monto`/`numeroLiquidacion` reales); si no
+    hay ninguna, sigue corriendo la heurística de siempre.
+  - [x] **Verificado con curl, datos `TEST` creados y borrados al
+    final**: se emitió una liquidación de octubre con
+    `ajustesServicios: [{descripcion: "Obras Sanitarias", monto: 5000,
+    numeroLiquidacion: "3-112312321-23"}]` — `GET
+    /liquidaciones/propietarios/:id/2026-10` devolvió ese mismo
+    `ajustesServicios` con el monto y el N° con guion intactos, que es
+    exactamente lo que el frontend ahora usa para precargar el form al
+    reabrir.
+
+- [x] **Pedido (2) — badge "Emitido"**: nuevo campo
+  `facturaEmitida: boolean` en cada fila de
+  `CobrosService.resumenMes()` (reusa el `facturaExistente` que ya se
+  pedía ahí, sin query nueva) — la tabla "COBROS DEL MES" de
+  `InquilinosPage.tsx` ahora muestra un badge `Emitido` (clase CSS nueva
+  `.badge.emitido`, indigo) junto al badge de estado de cobro cuando ya
+  hay factura ese mes. Para Liquidación (que es por-propietario, no por
+  fila-mes) se agregó `LiquidacionesService.propietariosConLiquidacion(
+  mesStr)` + endpoint `GET /liquidaciones/mes/:mes`, que devuelve los
+  `propietarioId` con liquidación ya emitida ese mes en un solo query;
+  `PropietariosPage.tsx` lo pide una vez para toda la lista y muestra el
+  mismo badge junto al botón "▤ Imprimir liquidación de {mes}" de cada
+  tarjeta. Ambos se invalidan al emitir (`qc.invalidateQueries`) para que
+  el badge aparezca sin recargar la página.
+  - [x] **Verificado con curl**: `GET /cobros/mes/2026-10` devolvió
+    `facturaEmitida: true` para la propiedad de prueba después de emitir
+    su factura; `GET /liquidaciones/mes/2026-10` devolvió el
+    `propietarioId` de prueba en la lista después de emitir su
+    liquidación (junto con un propietario real que también tenía la suya
+    ya emitida ese mes).
+  - [x] **Datos de prueba borrados al final**: propietario, propiedad,
+    inquilino, factura y liquidación `TEST *` eliminados por completo
+    tras verificar.
+
+### 2026-10-03 (2) — "Servicios a descontar" en vivo mientras se edita
+
+Pedido de seguimiento, mismo día: *"Cuando le doy a emitir liquidacion
+necesito que me actualize en tiempo real el los precios en 'Servicios a
+descontar' cuando el numero de liq de el servicio coincide en todas las
+propiedades"*.
+
+La precarga de arriba (§1) solo corre UNA VEZ al abrir el modal. Si en ese
+momento el N° de liquidación de un servicio todavía no coincidía en todas
+las propiedades (p. ej. recién se está cargando), o coincidía pero con
+montos distintos a los que se terminan tipeando después, el monto de
+"Servicios a descontar" se quedaba con lo que se precargó — no se
+recalculaba más, aunque el usuario sigiera editando el monto o el N° de
+liquidación de cada propiedad.
+
+- [x] **Fix**: nuevo `useEffect` en `LiquidacionModal`
+  (`admin/src/pages/PropietariosPage.tsx`), separado del de precarga
+  inicial, con dependencia en `itemsPorPropiedad` (se dispara en cada
+  edición). Recalcula qué servicios de `SERVICIOS_BASE` tienen el MISMO
+  N° de liquidación, no vacío, en TODAS las propiedades (mismo criterio
+  que la precarga) y, para cada renglón de `ajustesServicios` cuya
+  descripción coincida con uno de esos servicios, sincroniza su monto a
+  la suma real de esa propiedad en todas las propiedades — en vivo, sin
+  esperar a reabrir el modal.
+  - No toca renglones cuya descripción no matchea ningún servicio común
+    (los que el usuario escribió a mano siguen siendo 100% manuales).
+  - No agrega ni borra renglones — solo sincroniza el monto de los que
+    ya existen (precargados al abrir o agregados a mano con
+    "+ Agregar servicio a descontar").
+  - Si la suma da 0 (todavía no se cargó ningún monto en las
+    propiedades), no pisa el campo — se deja vacío (o lo que hubiera)
+    en vez de mostrar "0" antes de tiempo.
+  - Si el N° de liquidación deja de coincidir en algún momento (se tipea
+    distinto en una propiedad), deja de tocar ese renglón — no lo borra
+    ni lo pone en blanco, el usuario pasa a tener control manual de ahí
+    en más.
+  - [x] **Verificado**: `npx tsc --noEmit` en `admin/` sin errores. Es
+    lógica pura de estado de React (sin llamadas a la API), así que no
+    aplica verificación con curl — se revisó a mano el cálculo con dos
+    propiedades de ejemplo (montos 1000 y 2000, mismo N° de liquidación)
+    confirmando que el total sincronizado da 3000 y que deja de
+    actualizarse si el N° diverge.
+
 ## Cómo actualizar este archivo
 
 Cada vez que se implemente una conexión: marcarla `[x]`, agregar la fecha y

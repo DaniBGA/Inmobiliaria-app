@@ -177,6 +177,11 @@ export class CobrosService {
           cobrado,
           pendiente: esperado != null ? Math.max(esperado - cobrado, 0) : 0,
           estado: this.calcularEstado(mes, esperado, cobrado, configuracion.diaVencimientoAlquiler, tieneMoraConfigurada),
+          // Independiente de `estado` (que es sobre el COBRO) — indica si ya
+          // se emitió la factura de este mes, para el badge "Emitido" en la
+          // tabla (pedido del usuario 2026-10-03: saber de un vistazo si ya
+          // se facturó, sin tener que abrir "Emitir factura" para chequear).
+          facturaEmitida: facturaExistente != null,
           pagos,
         };
       }),

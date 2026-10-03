@@ -147,6 +147,7 @@ tbody tr:last-child td{border-bottom:0}
 .badge.pendiente{background:var(--bg2);color:var(--ink2)}
 .badge.impago{background:var(--red-soft);color:var(--red)}
 .badge.impago-mora{background:var(--orange-soft);color:var(--orange)}
+.badge.emitido{background:var(--indigo-soft);color:var(--indigo)}
 .rowactions{display:flex;gap:8px;opacity:0;transition:opacity .15s;justify-content:flex-end}
 tr:hover .rowactions{opacity:1}
 .iconbtn{width:34px;height:34px;border-radius:9px;border:1px solid var(--border);background:var(--card);display:inline-flex;align-items:center;justify-content:center;color:var(--ink2);text-decoration:none;transition:all .15s}

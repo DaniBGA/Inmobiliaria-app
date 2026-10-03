@@ -312,6 +312,17 @@ export class LiquidacionesService {
     }
   }
 
+  // Para el badge "Emitido" en la lista de Propietarios y Liquidaciones
+  // (pedido del usuario 2026-10-03) — un solo query para todos los
+  // propietarios en vez de pedir `obtenerDelMes` uno por uno por tarjeta.
+  async propietariosConLiquidacion(mesStr: string): Promise<string[]> {
+    const liquidaciones = await this.prisma.liquidacion.findMany({
+      where: { mes: mesStringAFecha(mesStr) },
+      select: { propietarioId: true },
+    });
+    return liquidaciones.map((l) => l.propietarioId);
+  }
+
   obtenerDelMes(propietarioId: string, mesStr: string) {
     return this.prisma.liquidacion.findUnique({
       where: { propietarioId_mes: { propietarioId, mes: mesStringAFecha(mesStr) } },

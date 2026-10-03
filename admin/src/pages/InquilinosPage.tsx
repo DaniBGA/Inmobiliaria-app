@@ -29,6 +29,9 @@ interface FilaCobro {
   cobrado: number;
   pendiente: number;
   estado: 'PAGADO' | 'PENDIENTE' | 'IMPAGO' | 'IMPAGO_CON_MORA' | 'NO_CORRESPONDE';
+  // Independiente de `estado` (que es sobre el COBRO): si ya se emitió la
+  // factura de este mes (pedido del usuario 2026-10-03, badge "Emitido").
+  facturaEmitida: boolean;
   pagos: Pago[];
 }
 
@@ -294,7 +297,14 @@ export function InquilinosPage() {
                       </div>
                     </td>
                     <td>
-                      {clase ? <span className={`badge ${clase}`}><span className="dot"></span>{texto}</span> : '—'}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {clase ? <span className={`badge ${clase}`}><span className="dot"></span>{texto}</span> : '—'}
+                        {f.facturaEmitida && (
+                          <span className="badge emitido" title={`Factura de ${mesLabel(mes)} ya emitida`}>
+                            Emitido
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>

@@ -142,6 +142,12 @@ export function PropietariosPage() {
     queryKey: ['cobros', 'mes', mes],
     queryFn: () => api.get<ResumenMes>(`/cobros/mes/${mes}`),
   });
+  // IDs de propietarios que ya tienen la liquidación de este mes emitida —
+  // badge "Emitido" en la tarjeta (pedido del usuario 2026-10-03).
+  const liquidacionesDelMes = useQuery({
+    queryKey: ['liquidaciones', 'mes', mes],
+    queryFn: () => api.get<string[]>(`/liquidaciones/mes/${mes}`),
+  });
 
   const eliminarPropietario = useMutation({
     mutationFn: (id: string) => api.delete(`/propietarios/${id}`),
@@ -175,6 +181,7 @@ export function PropietariosPage() {
   }
 
   const estadoPorId = new Map((resumenMes.data?.filas ?? []).map((f) => [f.propiedadId, f.estado]));
+  const propietariosConLiquidacion = new Set(liquidacionesDelMes.data ?? []);
   const propiedadesPorPropietario = new Map<string, Propiedad[]>();
   for (const p of propiedades.data ?? []) {
     const lista = propiedadesPorPropietario.get(p.propietarioId) ?? [];
@@ -311,9 +318,16 @@ export function PropietariosPage() {
                     );
                   })}
                 </div>
-                <button className="btn-invoice" onClick={() => setLiqDe(o)}>
-                  ▤ Imprimir liquidación de {mesLabel(mes)}
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+                  <button className="btn-invoice" style={{ marginTop: 0, flex: 1 }} onClick={() => setLiqDe(o)}>
+                    ▤ Imprimir liquidación de {mesLabel(mes)}
+                  </button>
+                  {propietariosConLiquidacion.has(o.id) && (
+                    <span className="badge emitido" title={`Liquidación de ${mesLabel(mes)} ya emitida`}>
+                      Emitido
+                    </span>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -420,10 +434,27 @@ function LiquidacionModal({
     queryFn: () => api.get<DetallePreview[]>(`/liquidaciones/propietarios/${propietario.id}/${mes}/preview`),
   });
 
+  // Si este mes ya se emitió una liquidación (p. ej. se reabre para
+  // revisarla o reemitirla), "Servicios a descontar" tiene que precargarse
+  // de ESA liquidación, no recalcularse de cero — antes siempre armaba la
+  // lista heurística de abajo (servicios comunes a todas las propiedades,
+  // con el monto vacío), así que reabrir el mismo mes perdía los montos y
+  // N° de liquidación que ya se habían cargado a mano (bug reportado por el
+  // usuario 2026-10-03). Mismo criterio que `facturaExistente` en
+  // `FacturaModal` (PropiedadFichaDrawer.tsx).
+  const liquidacionExistente = useQuery({
+    queryKey: ['liquidacion-mes', propietario.id, mes],
+    queryFn: () => api.get<Liquidacion | null>(`/liquidaciones/propietarios/${propietario.id}/${mes}`),
+  });
+
   const [itemsPorPropiedad, setItemsPorPropiedad] = useState<Record<string, ItemEditable[]> | null>(null);
   const [ajustesServicios, setAjustesServicios] = useState<AjusteEditable[]>([]);
 
   useEffect(() => {
+    // Espera a que ambos pedidos resuelvan antes de precargar nada: si
+    // `preview` llega primero, no hay forma de saber todavía si hay que usar
+    // la heurística o los datos de la liquidación ya emitida.
+    if (!liquidacionExistente.isSuccess) return;
     if (preview.data && itemsPorPropiedad === null) {
       const inicial: Record<string, ItemEditable[]> = {};
       for (const d of preview.data) {
@@ -446,43 +477,101 @@ function LiquidacionModal({
       }
       setItemsPorPropiedad(inicial);
 
-      // Precarga de "Servicios a descontar" (pedido del usuario 2026-09-19):
-      // solo los servicios que están en TODAS las propiedades de esta
-      // liquidación, no alcanza con que los tenga alguna — si una propiedad
-      // no factura "Usina" y otra sí, no se agrega solo. El monto arranca
-      // vacío a propósito: acá va el total combinado de TODAS las
-      // propiedades del propietario, incluidas las que la inmobiliaria no
-      // administra en alquiler — precargarlo ya con solo la suma de estas
-      // podría hacer que se emita incompleto si el usuario no lo nota.
-      const serviciosPorPropiedad = preview.data.map(
-        (d) =>
-          new Map(
-            d.items
-              .map((it) => ({ base: splitDescripcionCuenta(it.descripcion).base, numeroLiquidacion: it.numeroLiquidacion ?? '' }))
-              .filter((it) => SERVICIOS_BASE.has(it.base))
-              .map((it) => [it.base, it.numeroLiquidacion] as const),
-          ),
-      );
-      const comunes =
-        serviciosPorPropiedad.length > 0
-          ? [...serviciosPorPropiedad[0].keys()].filter((s) => serviciosPorPropiedad.every((m) => m.has(s)))
-          : [];
-      setAjustesServicios(
-        comunes.map((descripcion) => {
-          // Si todas las propiedades cargaron el mismo N° de liquidación
-          // para este servicio puntual, se precarga solo (pedido del
-          // usuario 2026-09-19) — si alguna lo tiene distinto o vacío, se
-          // deja en blanco para no adivinar.
-          const numeros = serviciosPorPropiedad.map((m) => m.get(descripcion) ?? '');
-          const mismoNumero = numeros[0] !== '' && numeros.every((n) => n === numeros[0]);
-          return { descripcion, monto: '', numeroLiquidacion: mismoNumero ? numeros[0] : '' };
-        }),
-      );
+      if (liquidacionExistente.data) {
+        // Ya hay una liquidación emitida este mes: se precarga tal cual
+        // quedó guardada, con sus montos y N° de liquidación reales — no la
+        // heurística de más abajo, que arranca siempre con el monto vacío.
+        setAjustesServicios(
+          liquidacionExistente.data.ajustesServicios.map((a) => ({
+            descripcion: a.descripcion,
+            monto: String(a.monto),
+            numeroLiquidacion: a.numeroLiquidacion ?? '',
+          })),
+        );
+      } else {
+        // Precarga de "Servicios a descontar" (pedido del usuario
+        // 2026-09-19): solo los servicios que están en TODAS las
+        // propiedades de esta liquidación, no alcanza con que los tenga
+        // alguna — si una propiedad no factura "Usina" y otra sí, no se
+        // agrega solo. El monto arranca vacío a propósito: acá va el total
+        // combinado de TODAS las propiedades del propietario, incluidas las
+        // que la inmobiliaria no administra en alquiler — precargarlo ya
+        // con solo la suma de estas podría hacer que se emita incompleto si
+        // el usuario no lo nota.
+        const serviciosPorPropiedad = preview.data.map(
+          (d) =>
+            new Map(
+              d.items
+                .map((it) => ({ base: splitDescripcionCuenta(it.descripcion).base, numeroLiquidacion: it.numeroLiquidacion ?? '' }))
+                .filter((it) => SERVICIOS_BASE.has(it.base))
+                .map((it) => [it.base, it.numeroLiquidacion] as const),
+            ),
+        );
+        const comunes =
+          serviciosPorPropiedad.length > 0
+            ? [...serviciosPorPropiedad[0].keys()].filter((s) => serviciosPorPropiedad.every((m) => m.has(s)))
+            : [];
+        setAjustesServicios(
+          comunes.map((descripcion) => {
+            // Si todas las propiedades cargaron el mismo N° de liquidación
+            // para este servicio puntual, se precarga solo (pedido del
+            // usuario 2026-09-19) — si alguna lo tiene distinto o vacío, se
+            // deja en blanco para no adivinar.
+            const numeros = serviciosPorPropiedad.map((m) => m.get(descripcion) ?? '');
+            const mismoNumero = numeros[0] !== '' && numeros.every((n) => n === numeros[0]);
+            return { descripcion, monto: '', numeroLiquidacion: mismoNumero ? numeros[0] : '' };
+          }),
+        );
+      }
     }
-    // Solo precarga la primera vez que llega la vista previa; después el
-    // usuario es dueño del estado.
+    // Solo precarga la primera vez que llegan los datos; después el usuario
+    // es dueño del estado.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preview.data]);
+  }, [preview.data, liquidacionExistente.isSuccess]);
+
+  // Actualización en vivo de "Servicios a descontar" (pedido del usuario
+  // 2026-10-03): mientras se edita el monto/N° de liquidación de un
+  // servicio en cada propiedad, si el N° de liquidación termina
+  // coincidiendo en TODAS las propiedades (mismo criterio que la precarga
+  // de arriba, pero recalculado en cada cambio en vez de una sola vez al
+  // abrir), el monto del renglón de "Servicios a descontar" con esa misma
+  // descripción se mantiene sincronizado con la suma real de esas
+  // propiedades — así no hay que volver a sumar a mano cada vez que se
+  // corrige un monto. Solo toca renglones que ya existen (no agrega ni
+  // borra ninguno) y solo cuando la suma da distinto de 0 — si todavía no
+  // se cargó ningún monto, se deja el campo como esté (vacío al precargar,
+  // o lo que el usuario haya tocado) en vez de pisarlo con "0".
+  useEffect(() => {
+    if (!itemsPorPropiedad) return;
+    const listas = Object.values(itemsPorPropiedad);
+    if (listas.length === 0) return;
+    const serviciosPorPropiedad = listas.map(
+      (items) =>
+        new Map(
+          items
+            .filter((it) => SERVICIOS_BASE.has(it.descripcion.trim()))
+            .map((it) => [it.descripcion.trim(), { monto: Number(it.monto) || 0, numeroLiquidacion: it.numeroLiquidacion.trim() }]),
+        ),
+    );
+    const comunes = [...SERVICIOS_BASE].filter((base) => {
+      if (!serviciosPorPropiedad.every((m) => m.has(base))) return false;
+      const numeros = serviciosPorPropiedad.map((m) => m.get(base)!.numeroLiquidacion);
+      return numeros[0] !== '' && numeros.every((n) => n === numeros[0]);
+    });
+    if (comunes.length === 0) return;
+    setAjustesServicios((prev) => {
+      let cambio = false;
+      const siguiente = prev.map((a) => {
+        const base = a.descripcion.trim();
+        if (!comunes.includes(base)) return a;
+        const total = serviciosPorPropiedad.reduce((acc, m) => acc + (m.get(base)?.monto ?? 0), 0);
+        if (total === 0 || String(total) === a.monto) return a;
+        cambio = true;
+        return { ...a, monto: String(total) };
+      });
+      return cambio ? siguiente : prev;
+    });
+  }, [itemsPorPropiedad]);
 
   const generar = useMutation({
     mutationFn: () =>
@@ -513,6 +602,8 @@ function LiquidacionModal({
       qc.invalidateQueries({ queryKey: ['caja'] });
       qc.invalidateQueries({ queryKey: ['reportes'] });
       qc.invalidateQueries({ queryKey: ['avisos'] });
+      qc.invalidateQueries({ queryKey: ['liquidaciones', 'mes', mes] });
+      qc.invalidateQueries({ queryKey: ['liquidacion-mes', propietario.id, mes] });
     },
   });
 
@@ -611,7 +702,9 @@ function LiquidacionModal({
 
   return (
     <Modal open onClose={onClose} title={`Liquidación — ${propietario.nombre} (${mesLabel(mes)})`} width={620}>
-      {preview.isPending && <div className="loadstate">Calculando liquidación…</div>}
+      {(preview.isPending || liquidacionExistente.isPending) && (
+        <div className="loadstate">Calculando liquidación…</div>
+      )}
       {preview.isError && <div className="errstate">No se pudo calcular la liquidación.</div>}
       {generar.isError && (
         <div className="errstate">
