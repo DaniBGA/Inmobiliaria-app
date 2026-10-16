@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { EstadoCliente } from '@prisma/client';
+import { Configuracion, EstadoCliente } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CobrosService } from '../cobros/cobros.service';
 import { IncidenciasService } from '../incidencias/incidencias.service';
 import { PropiedadesService } from '../propiedades/propiedades.service';
 import { ConfiguracionService } from '../configuracion/configuracion.service';
 import { primerDiaMes } from '../common/fecha.util';
+import { aplicarPlantilla } from '../common/plantilla.util';
 
 function formatearFecha(fecha: Date): string {
   return fecha.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -29,7 +30,7 @@ export class AvisosService {
   // `clave` incluye el monto: si la deuda de la misma propiedad cambia
   // (sube un mes más, o se salda parcialmente), es un aviso distinto y
   // vuelve a aparecer aunque el anterior se haya descartado.
-  private async reclamosDeuda() {
+  private async reclamosDeuda(configuracion: Configuracion) {
     const fichas = await this.cobrosService.fichasInquilinos();
     return fichas
       .filter((f) => f.deudaAcumulada > 0)
@@ -40,15 +41,16 @@ export class AvisosService {
         inquilino: f.inquilino,
         deuda: f.deudaAcumulada,
         mesesImpagos: f.mesesImpagos,
-        texto:
-          `Hola ${f.inquilino?.nombre ?? ''}, te escribimos de la inmobiliaria para recordarte ` +
-          `que tenés una deuda acumulada de $${formatearMonto(f.deudaAcumulada)} ` +
-          `correspondiente a ${f.mesesImpagos} mes(es). Por favor comunicate a la brevedad para regularizar la situación. Saludos.`,
+        texto: aplicarPlantilla(configuracion.avisoReclamoDeudaMensaje, {
+          nombre: f.inquilino?.nombre ?? '',
+          deuda: formatearMonto(f.deudaAcumulada),
+          mesesImpagos: String(f.mesesImpagos),
+        }),
       }));
   }
 
   // §2.8 / §3.3: pedidos de presupuesto — incidencias sin proveedor asignado
-  private async pedidosPresupuesto() {
+  private async pedidosPresupuesto(configuracion: Configuracion) {
     const incidencias = await this.incidenciasService.findSinProveedor();
     return incidencias.map((i) => ({
       grupo: 'PEDIDO_PRESUPUESTO' as const,
@@ -56,7 +58,11 @@ export class AvisosService {
       incidenciaId: i.id,
       propiedad: i.propiedad,
       titulo: i.titulo,
-      texto: `Solicitamos presupuesto para: "${i.titulo}" (rubro: ${i.rubro}) en ${i.propiedad.nombre}.`,
+      texto: aplicarPlantilla(configuracion.avisoPedidoPresupuestoMensaje, {
+        titulo: i.titulo,
+        rubro: i.rubro,
+        propiedad: i.propiedad.nombre,
+      }),
     }));
   }
 
@@ -64,8 +70,7 @@ export class AvisosService {
   // configurada (diasAnticipacionAumento). `clave` incluye la fecha: al
   // aplicar el aumento, el próximo cambia y el aviso descartado no vuelve a
   // ocultar el siguiente.
-  private async avisosAumento() {
-    const configuracion = await this.configuracionService.get();
+  private async avisosAumento(configuracion: Configuracion) {
     const hoy = new Date();
     const limite = new Date(hoy);
     limite.setDate(limite.getDate() + configuracion.diasAnticipacionAumento);
@@ -89,10 +94,12 @@ export class AvisosService {
           propiedadId: p.id,
           inquilino: p.inquilino,
           fecha: proxima,
-          texto:
-            `Hola ${p.inquilino?.nombre ?? ''}, te avisamos que el ${formatearFecha(proxima)} ` +
-            `corresponde actualizar el alquiler de ${p.nombre} ` +
-            `(valor vigente actual: $${formatearMonto(Number(rentaVigenteRaw ?? 0))}). Te contactaremos con el nuevo monto.`,
+          texto: aplicarPlantilla(configuracion.avisoAumentoMensaje, {
+            nombre: p.inquilino?.nombre ?? '',
+            fecha: formatearFecha(proxima),
+            propiedad: p.nombre,
+            monto: formatearMonto(Number(rentaVigenteRaw ?? 0)),
+          }),
         };
       }),
     );
@@ -102,8 +109,7 @@ export class AvisosService {
   // §2.8: renovaciones de contrato dentro de la ventana configurada
   // (diasAnticipacionVencimiento). `clave` incluye la fecha de fin: al
   // renovar el contrato cambia y el aviso vuelve a aparecer para la próxima.
-  private async renovacionesContrato() {
-    const configuracion = await this.configuracionService.get();
+  private async renovacionesContrato(configuracion: Configuracion) {
     const hoy = new Date();
     const limite = new Date(hoy);
     limite.setDate(limite.getDate() + configuracion.diasAnticipacionVencimiento);
@@ -119,14 +125,16 @@ export class AvisosService {
       propiedadId: p.id,
       inquilino: p.inquilino,
       contratoFin: p.contratoFin,
-      texto:
-        `El contrato de ${p.nombre} vence el ${formatearFecha(p.contratoFin!)}. ` +
-        `Coordinemos la renovación con ${p.inquilino?.nombre ?? 'el inquilino'}.`,
+      texto: aplicarPlantilla(configuracion.avisoRenovacionMensaje, {
+        propiedad: p.nombre,
+        fecha: formatearFecha(p.contratoFin!),
+        nombre: p.inquilino?.nombre ?? 'el inquilino',
+      }),
     }));
   }
 
   // §2.8 / §2.6: clientes sin contactar
-  private async clientesSinContactar() {
+  private async clientesSinContactar(configuracion: Configuracion) {
     const clientes = await this.prisma.cliente.findMany({
       where: { estado: EstadoCliente.SIN_CONTACTAR, eliminadoEn: null },
     });
@@ -137,13 +145,13 @@ export class AvisosService {
       nombre: c.nombre,
       telefono: c.telefono,
       email: c.email,
-      texto: `Hola ${c.nombre}, te contactamos de la inmobiliaria respecto a tu búsqueda. ¿Seguís interesado/a?`,
+      texto: aplicarPlantilla(configuracion.avisoClienteSinContactarMensaje, { nombre: c.nombre }),
     }));
   }
 
   // §2.8: recordatorios — eventos de agenda manuales pendientes de los
   // próximos 7 días
-  private async recordatorios() {
+  private async recordatorios(configuracion: Configuracion) {
     const hoy = new Date();
     const limite = new Date(hoy);
     limite.setDate(limite.getDate() + 7);
@@ -161,7 +169,10 @@ export class AvisosService {
       eventoId: e.id,
       titulo: e.titulo,
       fecha: e.fecha,
-      texto: `Recordatorio: ${e.titulo} — ${formatearFecha(e.fecha)}.`,
+      texto: aplicarPlantilla(configuracion.avisoRecordatorioMensaje, {
+        titulo: e.titulo,
+        fecha: formatearFecha(e.fecha),
+      }),
     }));
   }
 
@@ -170,7 +181,7 @@ export class AvisosService {
   // liquidación de un propietario borra la anterior y crea una fila nueva
   // (LiquidacionesService.generar()), así que nunca queda un descarte
   // apuntando a un monto viejo.
-  private async liquidacionesListas() {
+  private async liquidacionesListas(configuracion: Configuracion) {
     const mesActual = primerDiaMes(new Date());
     const liquidaciones = await this.prisma.liquidacion.findMany({
       where: { mes: mesActual },
@@ -183,9 +194,10 @@ export class AvisosService {
       liquidacionId: l.id,
       propietario: l.propietario,
       netoAGirar: Number(l.netoAGirar),
-      texto:
-        `Hola ${l.propietario.nombre}, tu liquidación de este mes ya está lista. ` +
-        `Neto a girar: $${formatearMonto(Number(l.netoAGirar))}.`,
+      texto: aplicarPlantilla(configuracion.avisoLiquidacionListaMensaje, {
+        nombre: l.propietario.nombre,
+        monto: formatearMonto(Number(l.netoAGirar)),
+      }),
     }));
   }
 
@@ -193,8 +205,13 @@ export class AvisosService {
   // el usuario ya descartó. El texto es editable en el frontend antes de
   // enviar, pero eso no se persiste acá (§2.8: "la edición no se guarda, al
   // recargar vuelve el texto generado") — lo único que se persiste es el
-  // descarte explícito de un aviso puntual (ver `descartar()`).
+  // descarte explícito de un aviso puntual (ver `descartar()`). El texto en
+  // sí sale de las plantillas editables en Configuración (§ pedido del
+  // usuario 2026-10-15), sustituidas acá con `aplicarPlantilla()` — se pide
+  // `configuracion` UNA sola vez y se pasa a cada método privado, en vez de
+  // que cada uno la pida por su cuenta.
   async generar() {
+    const configuracion = await this.configuracionService.get();
     const [
       reclamosDeuda,
       pedidosPresupuesto,
@@ -205,13 +222,13 @@ export class AvisosService {
       liquidacionesListas,
       descartados,
     ] = await Promise.all([
-      this.reclamosDeuda(),
-      this.pedidosPresupuesto(),
-      this.avisosAumento(),
-      this.renovacionesContrato(),
-      this.clientesSinContactar(),
-      this.recordatorios(),
-      this.liquidacionesListas(),
+      this.reclamosDeuda(configuracion),
+      this.pedidosPresupuesto(configuracion),
+      this.avisosAumento(configuracion),
+      this.renovacionesContrato(configuracion),
+      this.clientesSinContactar(configuracion),
+      this.recordatorios(configuracion),
+      this.liquidacionesListas(configuracion),
       this.prisma.avisoDescartado.findMany(),
     ]);
 

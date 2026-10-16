@@ -88,4 +88,34 @@ export class UpdateConfiguracionDto {
   @IsInt()
   @Min(0)
   diasMostrarDespuesVentaAlquiler?: number;
+
+  // Plantillas de los 7 tipos de aviso — ver el comentario en
+  // schema.prisma junto a estos mismos campos.
+  @IsOptional()
+  @IsString()
+  avisoReclamoDeudaMensaje?: string;
+
+  @IsOptional()
+  @IsString()
+  avisoAumentoMensaje?: string;
+
+  @IsOptional()
+  @IsString()
+  avisoRenovacionMensaje?: string;
+
+  @IsOptional()
+  @IsString()
+  avisoClienteSinContactarMensaje?: string;
+
+  @IsOptional()
+  @IsString()
+  avisoRecordatorioMensaje?: string;
+
+  @IsOptional()
+  @IsString()
+  avisoLiquidacionListaMensaje?: string;
+
+  @IsOptional()
+  @IsString()
+  avisoPedidoPresupuestoMensaje?: string;
 }

@@ -6,12 +6,12 @@ import { useConfiguracion } from '../hooks/useConfiguracion';
 import { useEnviarComprobantePorWhatsapp } from '../hooks/useEnviarComprobantePorWhatsapp';
 import { ESTADO_VENTA_LABEL, ESTADO_VENTA_CLASE, type EstadoVenta } from '../lib/ventaEnums';
 import { Modal } from './Modal';
-import { formatMoney, formatUsd, formatDate, mesActualStr, sumarMesesStr, mesLabel, parseMontoArgentino, fechaVencimientoAlquiler } from '../lib/format';
+import { formatMoney, formatUsd, formatDate, mesActualStr, sumarMesesStr, mesLabel, nombreArchivoComprobante, parseMontoArgentino, fechaVencimientoAlquiler } from '../lib/format';
 import { resolverPorcentajeHonorariosAdministracion, type TipoHonorarios } from '../lib/honorarios';
 import { FotosPropiedad, type FotoPropiedadItem } from './FotosPropiedad';
 import { FotoHeroPropiedad } from './FotoHeroPropiedad';
 import { ComprobanteImpreso } from './ComprobanteImpreso';
-import { descargarPdfComprobante } from '../lib/pdfComprobante';
+import { guardarPdfComprobante } from '../lib/pdfComprobante';
 import { ServiciosCuentaInputs, SERVICIOS_OPCIONES_ALQUILER, type ServicioFacturable } from './ServiciosCuentaInputs';
 import { splitDescripcionCuenta, combinarDescripcionCuenta, esServicioConCuenta } from '../lib/itemServicioCuenta';
 import {
@@ -1596,6 +1596,7 @@ export function FacturaModal({
   honorariosAdministracionActual,
   honorariosAdministracionPorcentajeActual,
   mes: mesProp,
+  soloVer = false,
   onClose,
 }: {
   propiedadId: string;
@@ -1619,6 +1620,14 @@ export function FacturaModal({
   // navegador de mes — pedido del usuario 2026-08-28). Si no se manda, es
   // el mes en curso (comportamiento de siempre desde la ficha).
   mes?: string;
+  // Modo "Ver factura" (pedido del usuario 2026-10-15, botón 👁 al lado del
+  // badge "Emitido" en "COBROS DEL MES") — salta directo al comprobante de
+  // la factura YA emitida de `mes` (requiere que `mes` venga con un valor
+  // real, no el auto-resuelto), sin mostrar nunca el formulario de edición
+  // ni permitir reemitir desde acá. Si por algún motivo no hay factura ese
+  // mes (se borró entre que se abrió la tabla y se hizo clic), no muestra
+  // nada en vez de caer al formulario de "Emitir".
+  soloVer?: boolean;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -1674,13 +1683,16 @@ export function FacturaModal({
   // Retributivas desde "Editar Datos" y guardar no se reflejaba al volver
   // a abrir "Emitir factura" del mismo mes, porque ese N° queda pegado
   // como texto fijo en la descripción de la factura ya emitida).
+  // En modo "Ver factura" no hace falta pedir esto — no se muestra ningún
+  // formulario editable, así que recalcular deuda/mora/servicios acá sería
+  // trabajo tirado.
   const predeterminados = useQuery({
     queryKey: ['items-predeterminados', propiedadId, mes],
     queryFn: () =>
       api.get<{ descripcion: string; monto: number; numeroLiquidacion?: string | null }[]>(
         `/facturacion/propiedades/${propiedadId}/items-predeterminados?mes=${mes}`,
       ),
-    enabled: facturaExistente.isSuccess,
+    enabled: facturaExistente.isSuccess && !soloVer,
   });
 
   const [items, setItems] = useState<ItemEditable[] | null>(null);
@@ -1832,7 +1844,9 @@ export function FacturaModal({
     },
   });
 
-  const F = emitir.data;
+  // En modo "Ver factura" (`soloVer`) nunca se llega a llamar `emitir` —
+  // el comprobante sale directo de la factura ya persistida.
+  const F = emitir.data ?? (soloVer ? facturaExistente.data : undefined);
   const comprobanteRef = useRef<HTMLDivElement>(null);
   const { enviando: enviandoWhatsapp, enviar: enviarComprobante } = useEnviarComprobantePorWhatsapp();
   const [descargando, setDescargando] = useState(false);
@@ -1847,7 +1861,7 @@ export function FacturaModal({
     if (!F || !comprobanteRef.current) return;
     setDescargando(true);
     try {
-      await descargarPdfComprobante(comprobanteRef.current, `Factura ${F.numero} - ${propiedadNombre}.pdf`);
+      await guardarPdfComprobante(comprobanteRef.current, nombreArchivoComprobante(inquilino?.nombre ?? propiedadNombre, mes));
     } finally {
       setDescargando(false);
     }
@@ -1868,7 +1882,7 @@ export function FacturaModal({
     await enviarComprobante({
       elemento: comprobanteRef.current,
       telefono: inquilino.telefono,
-      nombreArchivo: `Factura ${F.numero} - ${propiedadNombre}.pdf`,
+      nombreArchivo: nombreArchivoComprobante(inquilino.nombre, mes),
       texto,
     });
   }
@@ -1887,9 +1901,12 @@ export function FacturaModal({
 
   // `predeterminados` queda deshabilitada mientras no se sepa si este mes
   // ya tiene factura propia — su propio `isPending` no sirve solo para
-  // decidir si mostrar "Cargando…".
-  const cargandoItems = facturaExistente.isPending || (facturaExistente.isSuccess && predeterminados.isPending);
-  const errorItems = facturaMesActualQuery.isError || facturaExistente.isError || predeterminados.isError;
+  // decidir si mostrar "Cargando…". En modo "Ver factura" ni se pide (ver
+  // más arriba), así que acá solo importa si `facturaExistente` resolvió.
+  const cargandoItems = soloVer
+    ? facturaExistente.isPending
+    : facturaExistente.isPending || (facturaExistente.isSuccess && predeterminados.isPending);
+  const errorItems = facturaMesActualQuery.isError || facturaExistente.isError || (!soloVer && predeterminados.isError);
 
   return (
     <Modal open onClose={onClose} title={`Factura — ${propiedadNombre}`} width={620}>
@@ -1899,7 +1916,11 @@ export function FacturaModal({
         <div className="errstate">{emitir.error instanceof ApiError ? emitir.error.message : 'No se pudo emitir la factura.'}</div>
       )}
 
-      {!F && items && (
+      {soloVer && !cargandoItems && !errorItems && !F && (
+        <div className="errstate">No hay ninguna factura emitida de este mes para mostrar.</div>
+      )}
+
+      {!F && items && !soloVer && (
         <>
           <div className="formgrid" style={{ marginBottom: 14 }}>
             <div className="fg">
@@ -2146,7 +2167,7 @@ function ReciboModal({
     if (!R || !comprobanteRef.current) return;
     setDescargando(true);
     try {
-      await descargarPdfComprobante(comprobanteRef.current, `Recibo ${R.numero} - ${propiedadNombre}.pdf`);
+      await guardarPdfComprobante(comprobanteRef.current, nombreArchivoComprobante(inquilino?.nombre ?? propiedadNombre, mes));
     } finally {
       setDescargando(false);
     }

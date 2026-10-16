@@ -92,3 +92,44 @@ export function mesLabel(mesStr: string): string {
 export function hoyLabel(): string {
   return new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 }
+
+// Cartel de "alerta de aumento" (pedido del usuario 2026-10-15, en las
+// tarjetas de "Inquilinos y Cobros" y al lado de ESPERADO en "COBROS DEL
+// MES") — mismo criterio que ya usaba a mano `PropiedadFichaDrawer.tsx`
+// (`aumentoInminente`/`vencido`), centralizado acá para no repetir la
+// cuenta en cada pantalla nueva que lo necesite. `proximoAumento` es la
+// fecha que ya devuelve `PropiedadesService.proximoAumento()` en el
+// backend (null si no corresponde: vacante, sin frecuencia/contrato, o el
+// contrato termina antes de que llegue el próximo aumento).
+export type EstadoAumento = 'VENCIDO' | 'PROXIMO' | null;
+
+export function estadoAumento(
+  proximoAumento: string | Date | null | undefined,
+  diasAnticipacionAumento: number,
+): EstadoAumento {
+  if (!proximoAumento) return null;
+  const dias = Math.ceil((new Date(proximoAumento).getTime() - Date.now()) / 86400000);
+  // "Vencido" (ya se pasó la fecha y todavía no se cargó el aumento nuevo)
+  // es más urgente que "Próximo" (todavía falta, pero ya entró en la
+  // ventana de aviso configurada) — un mismo cartel no puede ser las dos
+  // cosas a la vez, así que vencido gana.
+  if (dias < 0) return 'VENCIDO';
+  if (dias <= diasAnticipacionAumento) return 'PROXIMO';
+  return null;
+}
+
+// Nombre de archivo por defecto al descargar un comprobante (pedido del
+// usuario 2026-10-15: "el nombre de el archivo sea por defecto: (nombre
+// de el cliente/propietario) + mes + año", en vez del "Liquidacion 172 -
+// Juan Perez.pdf"/"Factura 86 - depto urlingam.pdf" de antes). `nombre` es
+// el inquilino para Factura/Recibo o el propietario para Liquidación —
+// decide el caller, acá solo arma y sanea el string final. Se sacan los
+// caracteres inválidos en un nombre de archivo de Windows (`\ / : * ? " <
+// > |`) y se recortan espacios/puntos sueltos al final (tampoco válidos
+// ahí) — un nombre de propietario/inquilino nunca debería tener ninguno
+// de estos, pero mejor no confiar en que el dato cargado a mano sea
+// siempre limpio.
+export function nombreArchivoComprobante(nombre: string, mesStr: string): string {
+  const base = `${nombre} ${mesLabel(mesStr)}`.replace(/[\\/:*?"<>|]/g, '').trim().replace(/[. ]+$/, '');
+  return `${base}.pdf`;
+}

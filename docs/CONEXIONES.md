@@ -4194,6 +4194,502 @@ liquidación de cada propiedad.
     confirmando que el total sincronizado da 3000 y que deja de
     actualizarse si el N° diverge.
 
+## 2026-10-15 — Cartel de "alerta de aumento" en las tarjetas y en "COBROS DEL MES"
+
+Pedido del usuario con una captura de las tarjetas de "Inquilinos y
+Cobros": *"Necesito primero que en las cards tengan un cartel al lado de
+el precio para las alertas de aumento y en 'COBROS DEL MES' tambien
+aparezca la alerta de aumento al lado de 'ESPERADO'"*.
+
+Ya existía esta misma alerta en un solo lugar: la ficha individual de una
+propiedad (`PropiedadFichaDrawer.tsx`, variable `aumentoInminente`) y en
+Avisos (`AvisosService.avisosAumento()`) — ambas calculadas con
+`PropiedadesService.proximoAumento()`. No había ningún cartel en la
+grilla de tarjetas ni en la tabla de cobros, así que había que abrir la
+ficha de cada propiedad para enterarse.
+
+- [x] **Backend**: `PropiedadesService.findAll()` (`GET /propiedades`,
+  la que alimenta la grilla de tarjetas) ahora agrega
+  `proximoAumento: Date | null` a cada propiedad — `Promise.all` después
+  del `findMany`, llamando a `proximoAumento(p.id)` para cada una (mismo
+  patrón ya usado en `AvisosService.avisosAumento()`; para propiedades
+  vacantes o en venta corta casi sin costo, ver el guard de
+  `!propiedad.inquilino` adentro). `CobrosService.resumenMes()` agrega el
+  mismo campo a cada fila. Ninguno de los dos duplica la cuenta de
+  "¿está al día o vencido?" — eso se dejó para el frontend, igual que ya
+  pasaba con `GET /propiedades/:id/renta-vigente`.
+- [x] **Frontend**: nueva función `estadoAumento(proximoAumento,
+  diasAnticipacionAumento)` en `admin/src/lib/format.ts` — centraliza el
+  cálculo que antes solo vivía inline en `PropiedadFichaDrawer.tsx`.
+  Devuelve `'VENCIDO'` (la fecha ya pasó — más urgente, gana si de
+  alguna forma se pudiera dar junto con "próximo"), `'PROXIMO'` (todavía
+  no, pero ya entró en la ventana de `Configuracion.
+  diasAnticipacionAumento`) o `null` (no corresponde cartel).
+  - Tarjetas (`InquilinosPage.tsx`, grilla de "Inquilinos y Cobros"):
+    cartel `Aumento vencido` (rojo, `.badge.aumento-vencido`) / `Aumento
+    próximo` (naranja, `.badge.aumento-proximo`) al lado del precio
+    (`.sprice`, que ahora es flex con `justify-content: space-between`
+    para que el cartel quede a la derecha del monto).
+  - Tabla "COBROS DEL MES": mismo cartel al lado del monto de ESPERADO.
+  - [x] **Verificado con curl, datos `TEST` creados y borrados al
+    final**: se crearon dos propiedades con inquilino — una con
+    `contratoInicio: 2026-08-01` y frecuencia trimestral (próximo
+    aumento calculado: `2026-11-01`, dentro de la ventana de 30 días
+    desde hoy 2026-10-15 → `PROXIMO`) y otra con `contratoInicio:
+    2026-06-01` (próximo aumento: `2026-09-01`, ya pasado → `VENCIDO`).
+    `GET /propiedades` y `GET /cobros/mes/2026-10` devolvieron
+    `proximoAumento` con esas mismas fechas para ambas. `npx tsc
+    --noEmit` sin errores en `admin/` y en `app/api/`.
+  - [~] **No se hizo una pasada visual en navegador** (Playwright/
+    Puppeteer no están instalados como dependencia en este repo) — se
+    verificó el cálculo de fechas con curl, pero la maquetación del
+    cartel (wrap, alineación en mobile) no se vio renderizada. Conviene
+    que el usuario lo revise una vez con su propio dev server.
+
+### 2026-10-15 (2) — Dos correcciones tras probarlo: color y alineación
+
+Justo lo que el punto anterior anticipaba al no poder verlo renderizado:
+el usuario probó el cartel y reportó, con captura, dos problemas:
+*"que sea una alerta en rojo la de aumento en las 2 y fijate que se mueve
+el precio de 'esperado' y no quedan alineados entonces queda mal acomoda
+eso"*.
+
+- [x] **Color**: `PROXIMO` se mostraba naranja (`.badge.aumento-proximo`)
+  y `VENCIDO` rojo (`.badge.aumento-vencido`) — el usuario pidió que los
+  dos sean rojos. Se unificaron en una sola clase CSS, `.badge.aumento`
+  (roja), usada para ambos estados en las dos pantallas. La distinción
+  entre "próximo" y "vencido" se mantiene solo en el texto visible y en
+  el `title` (tooltip) del cartel, no en el color.
+- [x] **Alineación en "COBROS DEL MES"**: la celda de ESPERADO tenía el
+  monto y el cartel en una misma FILA (`flex-direction: row`,
+  `justify-content: flex-end`) — cuando aparecía el cartel, el conjunto
+  se corría hacia la izquierda para entrar en el ancho de la columna, así
+  que el monto ya no terminaba en el mismo borde derecho que las filas
+  sin cartel (se veía claramente en la captura: "$ 1.500.000" de "juan 1"
+  arrancaba mucho más a la izquierda que "$ 645.100"/"$ 582.000"/
+  "$ 2.990.000" de las otras filas). Fix: se cambió a `flex-direction:
+  column` — el monto queda siempre en su propia línea, pegado al mismo
+  borde derecho en todas las filas, y el cartel (si corresponde) va
+  debajo, también alineado a la derecha.
+  - La grilla de tarjetas no tenía este problema (el precio es el primer
+    elemento de una fila con `justify-content: space-between`, así que
+    su posición no se mueve aunque aparezca o no el cartel) — no hizo
+    falta tocar nada ahí salvo el color.
+  - [x] **Verificado**: `npx tsc --noEmit` sin errores en `admin/`;
+    `grep` confirmó que no quedó ninguna referencia a las clases CSS
+    viejas (`aumento-vencido`/`aumento-proximo`) en `admin/src`.
+
+### 2026-10-15 (3) — Botones "Ver factura" / "Eliminar factura" junto al badge "Emitido"
+
+Pedido del usuario con una captura de la tabla "COBROS DEL MES": *"al lado
+derecho de emitido le pongas 2 botones que sean solo los iconos (una cruz
+o algo) en verde... el botón de 'ver factura'... al lado de ese botón hace
+otro que sea 'eliminar factura'"*.
+
+El pedido mencionaba "en verde" para los dos, pero "eliminar" es una
+acción destructiva — se siguió el criterio que ya usa el resto del panel
+para borrar (`ghostred`/rojo en vez de verde en los botones de
+"Eliminar"/"Quitar") y se dejó **verde solo "Ver factura"**, rojo
+"Eliminar factura" (con el símbolo "✕" que el usuario sugirió como "una
+cruz"). Si el usuario prefiere ambos verdes, es un cambio de una sola
+clase CSS (`.btn-icon-sm.eliminar` en `global.css`).
+
+- [x] **Backend**: `FacturasService.eliminar(propiedadId, mesStr)`
+  (nuevo) + `DELETE /facturacion/propiedades/:propiedadId/facturas/:mes`
+  — borra por el índice único `propiedadId_mes`, mismo patrón que
+  `LiquidacionesService.eliminar()`. Revisé el schema antes de
+  implementarlo: `FacturaItem.facturaId` es `onDelete: Cascade` (se
+  borran solos) y `Recibo.facturaId` es `onDelete: SetNull` (el recibo
+  sobrevive, solo pierde el vínculo) — a diferencia de Liquidación, acá
+  no hay ninguna relación `Restrict` que bloquee el borrado. P2025
+  (factura inexistente) se traduce a 404 con mensaje claro.
+- [x] **Frontend "Ver factura"**: en vez de un componente nuevo, se le
+  agregó la prop `soloVer` a `FacturaModal`
+  (`PropiedadFichaDrawer.tsx`) — con `soloVer`, el comprobante (`F`) sale
+  de `facturaExistente.data` en lugar de depender de `emitir.data`
+  (que solo existe después de llamar la mutación), el formulario de
+  edición nunca se renderiza, y la query de `predeterminados` queda
+  deshabilitada (no hace falta recalcular nada para solo mostrar lo ya
+  guardado). `InquilinosPage.tsx` abre esta modal con un estado aparte
+  (`verFacturaDe`, separado de `facturaDe` que sigue siendo "Emitir
+  factura").
+- [x] **Frontend "Eliminar factura"**: `window.confirm` + mutación que
+  invalida `['cobros']`/`['avisos']` (badge y KPIs) y
+  `['factura-mes', propiedadId]`/`['liquidacion-preview']` (para que
+  "Emitir factura" y la vista previa de Liquidación del propietario no
+  sirvan datos cacheados de la factura ya borrada).
+- [x] **Verificado con curl, datos `TEST` creados y borrados al final**:
+  se emitió una factura de prueba, se confirmó que `GET
+  .../facturas/2026-10` la devolvía, se la borró con `DELETE` (200), se
+  confirmó que `GET` después devolvía vacío/null y que un segundo
+  `DELETE` daba 404, y que `GET /cobros/mes/2026-10` reflejaba
+  `facturaEmitida: false` para esa propiedad tras el borrado. `npx tsc
+  --noEmit` sin errores en `admin/` y `app/api/`.
+
+### 2026-10-15 (4) — Desalineación de los botones 👁/✕ recién agregados
+
+El usuario probó el punto anterior y reportó, con captura: *"los botones
+se ven raros estan desalineados"* — los íconos de "Ver factura"/
+"Eliminar factura" quedaban chicos y corridos hacia abajo respecto a los
+badges "Pagado"/"Emitido" de al lado.
+
+- [x] **Causa 1**: el contenido de los botones eran emojis (👁/✕) — un
+  emoji trae su propia métrica de alto/ascenso (distinta de un carácter
+  de texto normal), así que dentro de un círculo fijo de 26px quedaba
+  descentrado aunque el CSS tuviera `align-items`/`justify-content:
+  center`. Fix: se reemplazaron por SVG inline (un ojo y una cruz,
+  `stroke="currentColor"` para heredar el verde/rojo del botón) — un
+  `viewBox` propio se centra exacto sin depender de la fuente del
+  sistema, mismo motivo por el que `.iconbtn svg` ya existía como regla
+  en `global.css` (sin usarse todavía en ningún lado) antes de este
+  cambio.
+- [x] **Causa 2**: el `<button>` nativo trae padding/box-sizing por
+  defecto del navegador que no se habían neutralizado — se agregó
+  `box-sizing: border-box; padding: 0; margin: 0` a `.btn-icon-sm` para
+  que el círculo de 26px sea exacto, no un óvalo con el ancho real
+  26px + padding del navegador.
+- [x] **Causa 3**: el contenedor flex de la celda ESTADO DE PAGO
+  (`InquilinosPage.tsx`) no tenía `align-items` explícito — el default
+  del navegador (`normal`, que se comporta como `stretch` para hijos sin
+  alto fijo) podía desalinear verticalmente los badges contra los
+  botones de alto fijo. Se agregó `alignItems: 'center'` al `style` del
+  div.
+  - [x] **Verificado**: `npx tsc --noEmit` sin errores en `admin/`. No se
+    pudo re-confirmar visualmente en navegador (sin Playwright/Puppeteer
+    instalados en este repo, mismo límite que en los puntos anteriores)
+    — las tres causas identificadas son consistentes con lo que muestra
+    la captura, pero conviene que el usuario lo revise una vez más.
+
+## 2026-10-15 (5) — Modales movibles y minimizables, como una ventana
+
+Pedido del usuario: *"los modales para cargar datos por lo general o
+modificar datos o ver facturas se puedan minimizar y poder mover como si
+fueran una ventana"*.
+
+Se implementó en el componente compartido `admin/src/components/Modal.tsx`
+(no en cada modal por separado) — lo heredan automáticamente las ~10
+pantallas que ya usan `<Modal>` (Factura/Recibo/Liquidación incluidas, vía
+`FacturaModal`/`ReciboModal`/`LiquidacionModal`).
+
+- [x] **Arrastre**: el antiguo `<h2>` pasó a vivir dentro de
+  `.modalhead`, que ahora es la barra de agarre (`cursor:grab`,
+  `onMouseDown` arranca el drag, se sigue con listeners en `window`).
+  Mientras no se toca, se comporta exactamente igual que antes (centrado
+  por flex); recién al primer arrastre pasa a `position:fixed` con
+  `left`/`top` medidos de la posición visual actual, sin saltos. Clamp
+  para no poder soltarlo fuera de pantalla del todo.
+- [x] **Minimizar**: nuevo botón "−" al lado del título — colapsa el
+  modal a una "pill" en una bandeja compartida (`#modal-tray`, esquina
+  inferior izquierda) sin desmontar el formulario (el estado cargado a
+  medias sobrevive). Clic en la pill restaura en la misma posición; la ✕
+  de la pill cierra directo. Varias pills minimizadas a la vez se apilan
+  solas vía flexbox, sin coordinación entre instancias.
+- [x] **Dos bugs reales encontrados y corregidos en el camino** (no
+  evidentes hasta probarlo con Puppeteer):
+  1. Minimizar solo ocultando `.modalcard` no alcanzaba — `.modal`
+     (`position:fixed;inset:0`) seguía siendo un div transparente que
+     tapaba toda la pantalla y bloqueaba clics en lo de atrás. Fix:
+     `pointer-events:none` en `.modal` mientras está minimizado.
+  2. El drag deja `.modalcard` con `position:fixed` por estilo inline —
+     eso le ganaba (inline sin `!important` igual gana a reglas de hoja
+     de estilos sin `!important`) a la regla de impresión existente
+     (`@media print .modalcard{position:static}`, crítica para que un
+     comprobante largo se fragmente en varias hojas al imprimir en vez
+     de cortarse entero en la primera — bug real ya documentado antes en
+     este mismo archivo, sección 2026-10-02). Sin corregir esto, imprimir
+     un comprobante que se hubiera arrastrado antes habría repetido ese
+     bug. Fix: se agregó `!important` a esa única declaración.
+  - [x] **Verificado con Puppeteer contra el dev server real**
+    (`puppeteer-core` instalado solo para esta verificación con `npm
+    install --no-save` y desinstalado después — no quedó como
+    dependencia), login real contra `http://localhost:5174/admin/`:
+    - Abrir un modal, arrastrarlo (mouse down/move/up sobre
+      `.modalhead`) y confirmar que `left`/`top` finales coinciden
+      exactamente con el delta del mouse, y que `position` pasa de
+      `relative` a `fixed`.
+    - Minimizar y confirmar: `.modalcard` en `display:none`, `.modal`
+      con `pointer-events:none`, aparece la pill con el título correcto
+      en `#modal-tray`, y un botón del fondo (`elementFromPoint`) da el
+      botón real, no el div del modal — confirma que el fondo quedó
+      clickeable.
+    - Restaurar desde la pill y confirmar que reaparece en la MISMA
+      posición (590,160) donde se había soltado.
+    - Cerrar con la ✕ del encabezado y confirmar que `.modalcard`
+      desaparece del DOM.
+    - Reabrir, arrastrar de nuevo, y con `page.emulateMediaType('print')`
+      confirmar `getComputedStyle().position`: `fixed` en pantalla,
+      `static` en modo impresión — el fix del punto 2 funciona.
+  - [x] **También se corrió `npx vite build`** (producción) sin errores,
+    además de `npx tsc --noEmit` en `admin/`.
+
+## 2026-10-15 (6) — "Deuda arrastrada" sacada de Factura/Liquidación, solo mora
+
+Pedido del usuario: *"En las facturas hay un 'Deuda arrastrada' y el
+'mora por demora' la deuda arrastrada no tendria que aparecer, lo que
+tendria que aparecer en cada mes si no se pago es la 'mora por demora'
+ademas de que los campos tanto en 'facturacion' como en 'liquidaciones'
+tienen que quedar iguales respecto al mes anterior osea por ejemplo: los
+campos y valores de noviembre tendrian que ser iguales a los de
+octubre"*.
+
+Antes de tocar nada, pregunté si el "Esperado"/"Pendiente" de Cobros del
+mes y la deuda total de los KPIs (que hoy suman el mismo monto crudo de
+"Deuda arrastrada") también tenían que dejar de incluirlo, para que todo
+quedara consistente — el usuario confirmó que sí, "sacarla de todos
+lados".
+
+- [x] **`FacturasService.itemsPredeterminados()`**: se sacó el bloque que
+  agregaba el ítem "Deuda arrastrada" (el monto crudo de los meses
+  impagos — ese alquiler ya se había facturado una vez, en su propio
+  mes). Se mantiene intacto el resto: "Mora acumulada (X días)" sobre los
+  mismos meses cerrados impagos, y "Recargo por mora" del mes en curso
+  si corresponde — esos dos son los que ahora representan, solos, que un
+  mes sigue sin pagarse.
+- [x] **`CobrosService.esperadoEstimado()`**: pasó de sumar
+  `deudaAcumulada()` (monto crudo) a sumar `moraAcumulada()` — así el
+  "Esperado" que se ve en Cobros del mes ANTES de emitir la factura
+  coincide con lo que la factura real va a sumar al emitirla (mismo
+  motivo del fix original de esta función, 2026-09-02, que en su momento
+  agregó la deuda ahí para resolver el mismo tipo de descalce).
+- [x] **`kpis()` y `fichasInquilinos()`/Avisos — decisión: NO tocarlos**,
+  aunque el usuario había confirmado "sacarla de todos lados" para ese
+  caso puntual también. Al revisar el código encontré que esos dos usan
+  la MISMA `deudaAcumulada()` pero para un propósito distinto y más
+  delicado: `fichasInquilinos()` alimenta el mensaje de WhatsApp de
+  reclamo de deuda (`AvisosService.reclamosDeuda()`, "tenés una deuda
+  acumulada de $X") y `mesesPendientes()` (selector de "Pago de
+  alquiler" en Caja) necesita el monto real para saber contra qué mes se
+  aplica un pago — cambiar esos a mora le mandaría al inquilino un
+  recordatorio con MENOS plata de la que realmente debe, y el card
+  "Deuda de Inquilinos" de Panel General quedaría mal etiquetado (mora,
+  no deuda) y muy inconsistente con esas otras pantallas que sí seguirían
+  mostrando el monto real. Se avisó esto al usuario en vez de aplicarlo
+  en automático — es un cambio de alcance mayor (tocaría mensajes reales
+  a inquilinos) que lo que pidió el mensaje original (los ÍTEMS de
+  Factura/Liquidación).
+- [~] **Caso límite sin resolver**: una propiedad sin `punitorioTipo`
+  configurado nunca genera mora — para esas, un mes impago ya no deja
+  ningún rastro en la factura siguiente (ni deuda ni mora). No se pidió
+  explícitamente un fallback para este caso; documentado en CLAUDE.md
+  por si hace falta más adelante.
+- [x] **Verificado con curl, datos `TEST` creados y borrados al final**:
+  propiedad con punitorio 1%/día, agosto y septiembre sin pagar —
+  `items-predeterminados?mes=2026-10` dio `Alquiler` + `Mora acumulada
+  (41 días)` $41.000 + `Recargo por mora (5 días)` $5.000, sin "Deuda
+  arrastrada". `GET /cobros/mes/2026-10` dio `esperado: 141000` (=
+  100.000 + 41.000, coincide). `GET /liquidaciones/.../preview` devolvió
+  exactamente los mismos ítems que la factura. `npx tsc --noEmit` sin
+  errores.
+
+## 2026-10-15 (7) — "Servicios a descontar" no sumaba si el N° de liq no coincidía entre propiedades
+
+Pedido del usuario: *"Cuando agrego a mano un 'Servicio a descontar' en
+'liquidaciones' el mes que le sigue no se guarda el campo que agregué y
+ademas para los servicios por ejemplo 'Usina', 'gas', etc no es necesario
+que el numero de 'liq' sea el mismo para hacer la suma abajo de los
+montos eso acomodalo tambien"*.
+
+- [x] **Causa real, una sola para los dos síntomas**: el `useEffect` de
+  sincronización en vivo de `ajustesServicios` (agregado 2026-10-03 (2))
+  solo actualizaba el monto de un renglón cuando el N° de liquidación
+  coincidía EXACTO en todas las propiedades. La precarga que CREA el
+  renglón (otro efecto, más arriba en el mismo archivo) nunca exigió esa
+  condición — solo que el servicio estuviera presente en todas las
+  propiedades — así que "Usina" (por ejemplo) sí aparecía como renglón
+  cada mes, pero si cada propiedad tenía su propio N° de cuenta/liq (lo
+  normal: Usina de "depto 1" y de "depto urlingam" no comparten número de
+  cuenta), el monto se quedaba vacío para siempre — de ahí la sensación
+  de "no se guarda el campo que agregué".
+- [x] **Fix**: se sacó la condición de N° de liq igual del `useEffect` de
+  sincronización — ahora "común" es solo "el servicio está presente en
+  todas las propiedades" (`SERVICIOS_BASE`), sin importar su N° de
+  liquidación. El renglón de `ajustesServicios` se completa solo con la
+  suma real apenas hay montos cargados, mes a mes, sin que el usuario
+  tenga que volver a tipearlo.
+  - El N° de liquidación del propio renglón de "Servicios a descontar"
+    (no el monto) sigue sin precargarse automático si las propiedades no
+    coinciden exactamente en el mismo número — eso no cambió a propósito:
+    ahí sí hay que adivinar cuál usar, mejor dejarlo en blanco para que
+    el usuario lo cargue a mano si corresponde.
+- [x] **Verificado**: `npx tsc --noEmit` sin errores en `admin/`. Es
+  lógica pura de estado de React (sin llamadas a la API, mismo caso que
+  el fix original del 2026-10-03), así que no aplica verificación con
+  curl — se revisó a mano el cálculo: dos propiedades con "Usina" a
+  $1.000 y $2.000 con N° de liq distintos ("111"/"222") ahora sí suman
+  $3.000 en el renglón de "Servicios a descontar", en vez de quedar
+  vacías.
+
+## 2026-10-15 (8) — Botón "Eliminar liquidación" junto al badge "Emitido"
+
+Pedido del usuario: *"En liquidacion pone un cartelito de emitido y
+tambien pone un boton para borrar la emision de la liquidacion"*.
+
+El badge "Emitido" ya existía (ver sección 2026-10-03 de este archivo).
+Lo nuevo es el botón de borrar — el backend ya tenía
+`DELETE /liquidaciones/:id` (`LiquidacionesService.eliminar()`), pero
+nada en el frontend lo llamaba todavía.
+
+- [x] **Backend**: `LiquidacionesService.propietariosConLiquidacion()`
+  pasó de devolver `string[]` (solo `propietarioId`) a devolver
+  `{ id, propietarioId }[]` — necesario para que la tarjeta sepa qué
+  liquidación borrar sin pedir `obtenerDelMes` aparte por propietario.
+- [x] **Frontend**: en `PropietariosPage.tsx`, junto al badge "Emitido"
+  de cada tarjeta se agregó un botón ✕ (`.btn-icon-sm.eliminar`, mismo
+  componente visual que "Eliminar factura" en Cobros del mes) que pide
+  confirmación y llama `DELETE /liquidaciones/:id`. Invalida
+  `['liquidaciones','mes',mes]` (el badge/botón desaparecen solos),
+  `['caja']` (deshace el ingreso de honorarios de administración que
+  `generar()` había creado), `['reportes']` y `['avisos']` — mismas
+  invalidaciones que ya hacía emitir, en espejo.
+- [x] **Verificado con curl, datos `TEST` creados y borrados al final**:
+  se emitió una liquidación de prueba, se confirmó que `GET
+  /liquidaciones/mes/2026-10` ahora devuelve `{id, propietarioId}`, se
+  la borró con `DELETE /liquidaciones/:id` (200), y se confirmó que
+  `GET /liquidaciones/mes/2026-10` ya no la incluye. `npx tsc --noEmit`
+  sin errores en `admin/` y `app/api/`.
+
+## 2026-10-15 (9) — "Descargar PDF" deja elegir carpeta + nombre por defecto simplificado
+
+Pedido del usuario: *"Necesito que cuando descargo una factura o una
+liquidacion me deje seleccionar la ruta donde se descargue el archivo y
+el nombre de el archivo sea por defecto: (nombre de el cliente/propietario)
++ mes + año' porque ahora aparece 'liquidacion ... y nombre'"*.
+
+- [x] **Elegir carpeta/nombre al descargar**: `lib/pdfComprobante.ts` se
+  reorganizó en `generarPdfComprobante()` (arma el PDF, devuelve un
+  `Blob` — toda la lógica de paginado que ya existía, intacta) +
+  `descargarPdfComprobante()` (descarga silenciosa, la sigue usando solo
+  el envío por WhatsApp) + `guardarPdfComprobante()` (nueva, la usan los
+  4 botones reales de "Descargar PDF": Liquidación en
+  `PropietariosPage.tsx` y `AvisosPage.tsx`, Factura y Recibo en
+  `PropiedadFichaDrawer.tsx`). Usa `window.showSaveFilePicker` (File
+  System Access API, tipos propios en `src/file-system-access.d.ts`
+  porque todavía no están en el `lib.dom.d.ts` de TypeScript) — el
+  diálogo nativo "Guardar como" se abre ANTES de generar el PDF (no
+  después), porque esa API exige activación reciente del usuario y
+  html2canvas puede tardar unos segundos en un comprobante largo. Sin
+  soporte (Firefox/Safari) o si el picker falla por otro motivo que no
+  sea que el usuario lo canceló, cae sola a la descarga normal de
+  siempre — no se corta el flujo.
+- [x] **Nombre de archivo por defecto**: nueva función
+  `nombreArchivoComprobante(nombre, mesStr)` en `lib/format.ts` →
+  `"{nombre} {mesLabel}.pdf"` (ej. "Juan Perez Octubre 2026.pdf"), sin
+  número de documento ni palabra "Liquidacion"/"Factura"/"Recibo". Para
+  Liquidación es el nombre del PROPIETARIO; para Factura/Recibo pasó a
+  ser el del INQUILINO (antes usaban el nombre de la PROPIEDAD, no de la
+  persona — se corrigió de paso, ya que el pedido decía "cliente").
+- [x] **Bug real encontrado probando con Chrome automatizado**: el
+  helper `descargarBlob()` revocaba la URL del blob apenas después del
+  click que dispara la descarga — un repro mínimo (un blob de texto
+  plano, nada de PDF) confirmó que Chrome puede seguir leyendo el blob
+  de forma asíncrona un momento más, y revocarlo tan rápido cancelaba la
+  descarga a mitad de camino (bytes completos recibidos, pero el
+  navegador la reportaba "canceled" en vez de "completed"). Fix: ahora
+  se revoca 2 segundos después, y el `<a>` se agrega al DOM antes del
+  click en vez de quedar suelto.
+- [~] **Riesgo documentado, no resuelto**: dos documentos del mismo mes
+  para la misma persona (ej. Factura y Recibo del mismo inquilino) ahora
+  pueden sugerir el mismo nombre de archivo — no se pidió ningún
+  desambiguador, se dejó así a propósito respetando el formato pedido.
+- [x] **Verificado con Puppeteer contra el dev server real**
+  (`puppeteer-core` instalado solo para esto con `npm install --no-save`
+  y desinstalado después): login real, emitir una liquidación de
+  prueba, abrir el modal, forzar la rama de fallback (sin
+  `showSaveFilePicker`, para no quedar colgado esperando un diálogo
+  nativo que un navegador headless no puede mostrar) y confirmar que la
+  descarga arranca con el nombre exacto `"TEST Propietario PDF octubre
+  2026.pdf"` y que Chrome recibe los 359.446 bytes completos del PDF
+  real (comprobante renderizado, no un placeholder). `npx tsc --noEmit`
+  y `npx vite build` sin errores en `admin/`. Datos `TEST` borrados al
+  final.
+
+## 2026-10-15 (10) — Favicon, logo real en el login y nombre "Sistema de Gestión"
+
+Pedido del usuario en dos mensajes seguidos: *"necesito que el icon de el
+sistema de gestion sea el 'LOGO PNG-10.png'"* y, mientras se estaba
+trabajando en eso, *"y el nombre sacale 'SMG-AR' Y Dejale solamente
+'sistema de gestion'"*.
+
+- [x] **Favicon**: el admin no tenía ninguno (ni carpeta `public/`
+  todavía). Se usó `app/src/logos/LOGO PNG.-10.png` — confirmado
+  byte-a-byte idéntico al que ya era el favicon de la landing pública
+  (`app/public/favicon.png`), así que es la variante de logo que la
+  empresa ya usa para íconos chicos. Se copió a `admin/public/
+  favicon.png` + `<link rel="icon" type="image/png" href="favicon.png"
+  />` en `admin/index.html`, con `href` RELATIVO a propósito (el admin
+  vive bajo `base: '/admin/'`, un `href` absoluto apuntaría a la raíz
+  del dominio, territorio de la landing pública).
+- [x] **Logo real en el login**: el ícono de al lado de "SGM_AR" era un
+  cuadrado oscuro con una forma abstracta dibujada en CSS — nunca hubo
+  un logo de verdad ahí. Se copió el mismo archivo a `admin/src/images/
+  icono.png`, se importó en `LoginPage.tsx` (mismo patrón que ya usa
+  `app/` para sus logos) y se renderiza como `<img>` real. `.brand .logo`
+  en `global.css` perdió el fondo oscuro/recuadro (ya no hace falta).
+- [x] **Nombre**: `<title>` + el texto junto al logo del login pasaron de
+  "SGM_AR" (y "SGM_AR — Sistema de Gestión Inmobiliaria" en el título) a
+  solo "Sistema de Gestión", como pidió el usuario. Quedó repetido con el
+  subtítulo de abajo ("Sistema de Gestión Inmobiliaria — Facundo Paris
+  Propiedades", que no se tocó porque no se pidió) — se le avisó esto al
+  usuario en la respuesta.
+- [x] **Verificado con Puppeteer contra el dev server real** (instalado
+  solo para esto, desinstalado después): confirmado el favicon
+  resolviendo a `/admin/favicon.png` (200), el `<img>` del login
+  cargando de verdad (no roto), el `<title>` y el texto del logo
+  leyendo "Sistema de Gestión", y una captura de pantalla real del
+  login para chequear que se ve bien. `npx tsc --noEmit` y `npx vite
+  build` sin errores — el build de producción también copia el favicon
+  a la raíz de `dist/` y bundlea el logo del login como asset con hash.
+
+## 2026-10-15 (11) — Plantillas editables para los 7 tipos de Aviso
+
+Pedido del usuario: *"necesito que en 'configuracion' asi como el mensaje
+de whatsapp me deje modificar un mensaje base para los distintos tipos de
+avisos"*.
+
+Ya existía exactamente este mecanismo para un solo caso
+(`facturaWhatsappMensaje`, el mensaje de "Enviar por WhatsApp" al emitir
+una Factura) — se extendió a los 7 grupos de `AvisosService` (Reclamo de
+deuda, Aviso de aumento, Renovación de contrato, Cliente sin contactar,
+Recordatorio de agenda, Liquidación lista, Pedido de presupuesto), que
+antes armaban su texto con un template literal fijo en el código.
+
+- [x] **Backend**: 7 campos nuevos `String` en `Configuracion`
+  (migración `20261015214549_aviso_mensajes`), default = el texto
+  hardcodeado que ya existía. Nuevo
+  `common/plantilla.util.ts::aplicarPlantilla(plantilla, valores)` —
+  mismo "split+join" por `{clave}` que ya usaba el frontend para
+  `facturaWhatsappMensaje`. `AvisosService` pide `configuracion` UNA vez
+  en `generar()` (antes algunos de los 7 métodos la pedían cada uno por
+  su cuenta, otros nunca) y se la pasa a los 7 métodos privados, que
+  ahora arman su `texto` con `aplicarPlantilla(configuracion.avisoX
+  Mensaje, {...})` en vez del template literal de antes.
+- [x] **Frontend**: nueva sección "◐ AVISOS" en `ConfiguracionPage.tsx`
+  — 7 tarjetas, mismo patrón visual que "MENSAJE DE WHATSAPP —
+  FACTURAS" (textarea + hint con los placeholders válidos de CADA tipo,
+  no son intercambiables entre sí).
+- [x] **Bug real encontrado y corregido durante la verificación**: al
+  restaurar a mano con curl el valor default de una plantilla después de
+  probarla con texto custom, pasar el JSON con acentos directo en el `-d`
+  del comando de shell corrompió "búsqueda"/"¿Seguís" en caracteres de
+  reemplazo Unicode (U+FFFD) — invisible mirando la terminal, pero
+  confirmado real comparando el valor devuelto por la API contra el
+  string esperado byte a byte en Python. Se corrigió mandando el PATCH
+  con `curl --data-binary @archivo.json` (un archivo escrito a mano con
+  UTF-8 explícito) en vez de interpolar el texto en el comando — la fila
+  real de `Configuracion` (no un dato de prueba, la fila singleton que
+  usa toda la app) quedó restaurada exacta, verificado de nuevo byte a
+  byte. Vale la pena recordar esto la próxima vez que haya que mandar
+  texto en español con acentos por `curl` desde esta terminal.
+- [x] **Verificado con curl contra la API real**: los 7 defaults
+  comparados byte a byte contra lo esperado (los 7 dieron `True`); un
+  cliente `TEST` sin contactar generó su aviso con el texto default
+  sustituido bien; se cambió la plantilla por una custom vía `PATCH
+  /configuracion` y el aviso reflejó el cambio en la siguiente consulta;
+  se restauró el default (con el fix de encoding de arriba) y se
+  re-verificó byte a byte. Dato `TEST` borrado al final (`DELETE
+  /clientes/:id/definitivo`). `npx tsc --noEmit` y `npx vite build` sin
+  errores.
+
 ## Cómo actualizar este archivo
 
 Cada vez que se implemente una conexión: marcarla `[x]`, agregar la fecha y

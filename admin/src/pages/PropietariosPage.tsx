@@ -7,8 +7,8 @@ import { PageHeader } from '../components/PageHeader';
 import { Modal } from '../components/Modal';
 import { ComprobanteImpreso } from '../components/ComprobanteImpreso';
 import { LiquidacionComprobanteBody, type Liquidacion, type GastoDetalle, type LiquidacionItem } from '../components/LiquidacionComprobante';
-import { descargarPdfComprobante } from '../lib/pdfComprobante';
-import { formatMoney, mesActualStr, mesLabel, sumarMesesStr } from '../lib/format';
+import { guardarPdfComprobante } from '../lib/pdfComprobante';
+import { formatMoney, mesActualStr, mesLabel, nombreArchivoComprobante, sumarMesesStr } from '../lib/format';
 import { splitDescripcionCuenta, combinarDescripcionCuenta, esServicioConCuenta } from '../lib/itemServicioCuenta';
 import { SeccionGuia } from '../components/SeccionGuia';
 
@@ -142,11 +142,13 @@ export function PropietariosPage() {
     queryKey: ['cobros', 'mes', mes],
     queryFn: () => api.get<ResumenMes>(`/cobros/mes/${mes}`),
   });
-  // IDs de propietarios que ya tienen la liquidación de este mes emitida —
-  // badge "Emitido" en la tarjeta (pedido del usuario 2026-10-03).
+  // Propietarios que ya tienen la liquidación de este mes emitida — badge
+  // "Emitido" en la tarjeta (pedido del usuario 2026-10-03) + su `id` para
+  // poder borrarla directo desde ahí (pedido del usuario 2026-10-15: "pone
+  // un boton para borrar la emision de la liquidacion").
   const liquidacionesDelMes = useQuery({
     queryKey: ['liquidaciones', 'mes', mes],
-    queryFn: () => api.get<string[]>(`/liquidaciones/mes/${mes}`),
+    queryFn: () => api.get<{ id: string; propietarioId: string }[]>(`/liquidaciones/mes/${mes}`),
   });
 
   const eliminarPropietario = useMutation({
@@ -157,6 +159,35 @@ export function PropietariosPage() {
     },
     onError: (err) => alert(err instanceof ApiError ? err.message : 'No se pudo eliminar el propietario.'),
   });
+
+  // "✕ Eliminar liquidación" junto al badge "Emitido" — por si se emitió
+  // por error (propietario o mes equivocado). El backend ya tenía
+  // `DELETE /liquidaciones/:id` (usado desde el modal de "Imprimir
+  // liquidación" para reemitir) pero no estaba expuesto acá todavía.
+  const eliminarLiquidacion = useMutation({
+    mutationFn: (liquidacionId: string) => api.delete(`/liquidaciones/${liquidacionId}`),
+    onSuccess: (_data, liquidacionId) => {
+      qc.invalidateQueries({ queryKey: ['liquidaciones', 'mes', mes] });
+      // Misma invalidación que ya hace `LiquidacionModal` al emitir —
+      // borrar deshace el movimiento de Caja (honorarios de
+      // administración) que `generar()` había creado.
+      qc.invalidateQueries({ queryKey: ['caja'] });
+      qc.invalidateQueries({ queryKey: ['reportes'] });
+      qc.invalidateQueries({ queryKey: ['avisos'] });
+      qc.invalidateQueries({ queryKey: ['liquidacion-mes'] });
+    },
+    onError: (err) => alert(err instanceof ApiError ? err.message : 'No se pudo eliminar la liquidación.'),
+  });
+
+  function pedirEliminarLiquidacion(propietarioNombre: string, liquidacionId: string) {
+    if (
+      window.confirm(
+        `¿Eliminar la liquidación de ${propietarioNombre} (${mesLabel(mes)})? Esto también deshace el ingreso de honorarios de administración que generó en Caja, si tenía. No toca los cobros/gastos reales usados para calcularla — se puede volver a liquidar el mes.`,
+      )
+    ) {
+      eliminarLiquidacion.mutate(liquidacionId);
+    }
+  }
 
   function pedirEliminar(o: Propietario, cantidadPropiedades: number) {
     const avisoPropiedades =
@@ -181,7 +212,9 @@ export function PropietariosPage() {
   }
 
   const estadoPorId = new Map((resumenMes.data?.filas ?? []).map((f) => [f.propiedadId, f.estado]));
-  const propietariosConLiquidacion = new Set(liquidacionesDelMes.data ?? []);
+  const liquidacionIdPorPropietario = new Map(
+    (liquidacionesDelMes.data ?? []).map((l) => [l.propietarioId, l.id]),
+  );
   const propiedadesPorPropietario = new Map<string, Propiedad[]>();
   for (const p of propiedades.data ?? []) {
     const lista = propiedadesPorPropietario.get(p.propietarioId) ?? [];
@@ -322,10 +355,23 @@ export function PropietariosPage() {
                   <button className="btn-invoice" style={{ marginTop: 0, flex: 1 }} onClick={() => setLiqDe(o)}>
                     ▤ Imprimir liquidación de {mesLabel(mes)}
                   </button>
-                  {propietariosConLiquidacion.has(o.id) && (
-                    <span className="badge emitido" title={`Liquidación de ${mesLabel(mes)} ya emitida`}>
-                      Emitido
-                    </span>
+                  {liquidacionIdPorPropietario.has(o.id) && (
+                    <>
+                      <span className="badge emitido" title={`Liquidación de ${mesLabel(mes)} ya emitida`}>
+                        Emitido
+                      </span>
+                      <button
+                        type="button"
+                        className="btn-icon-sm eliminar"
+                        title={`Eliminar liquidación de ${mesLabel(mes)}`}
+                        disabled={eliminarLiquidacion.isPending}
+                        onClick={() => pedirEliminarLiquidacion(o.nombre, liquidacionIdPorPropietario.get(o.id)!)}
+                      >
+                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M18 6 6 18M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -530,17 +576,25 @@ function LiquidacionModal({
   }, [preview.data, liquidacionExistente.isSuccess]);
 
   // Actualización en vivo de "Servicios a descontar" (pedido del usuario
-  // 2026-10-03): mientras se edita el monto/N° de liquidación de un
-  // servicio en cada propiedad, si el N° de liquidación termina
-  // coincidiendo en TODAS las propiedades (mismo criterio que la precarga
-  // de arriba, pero recalculado en cada cambio en vez de una sola vez al
-  // abrir), el monto del renglón de "Servicios a descontar" con esa misma
-  // descripción se mantiene sincronizado con la suma real de esas
-  // propiedades — así no hay que volver a sumar a mano cada vez que se
-  // corrige un monto. Solo toca renglones que ya existen (no agrega ni
-  // borra ninguno) y solo cuando la suma da distinto de 0 — si todavía no
-  // se cargó ningún monto, se deja el campo como esté (vacío al precargar,
-  // o lo que el usuario haya tocado) en vez de pisarlo con "0".
+  // 2026-10-03, ajustado 2026-10-16): mientras se edita el monto de un
+  // servicio en cada propiedad, el monto del renglón de "Servicios a
+  // descontar" con esa misma descripción se mantiene sincronizado con la
+  // suma real de esas propiedades — así no hay que volver a sumar a mano
+  // cada vez que se corrige un monto. "Común" acá es solo que el servicio
+  // esté presente en TODAS las propiedades (mismo criterio que la
+  // precarga de arriba) — YA NO exige que el N° de liquidación coincida
+  // entre propiedades (pedido del usuario: "para los servicios... no es
+  // necesario que el numero de liq sea el mismo para hacer la suma"; es
+  // normal que cada propiedad tenga su propio N° de cuenta/liq para el
+  // mismo servicio, p. ej. Usina). Esto también resuelve el reporte de
+  // "el mes que le sigue no se guarda el campo que agregué": antes, si los
+  // N° de liq no coincidían, el renglón se creaba (la precarga de arriba
+  // nunca exigió esto) pero su monto quedaba vacío para siempre — ahora se
+  // completa solo apenas hay datos, mes a mes. Solo toca renglones que ya
+  // existen (no agrega ni borra ninguno) y solo cuando la suma da distinto
+  // de 0 — si todavía no se cargó ningún monto, se deja el campo como esté
+  // (vacío al precargar, o lo que el usuario haya tocado) en vez de
+  // pisarlo con "0".
   useEffect(() => {
     if (!itemsPorPropiedad) return;
     const listas = Object.values(itemsPorPropiedad);
@@ -550,14 +604,10 @@ function LiquidacionModal({
         new Map(
           items
             .filter((it) => SERVICIOS_BASE.has(it.descripcion.trim()))
-            .map((it) => [it.descripcion.trim(), { monto: Number(it.monto) || 0, numeroLiquidacion: it.numeroLiquidacion.trim() }]),
+            .map((it) => [it.descripcion.trim(), { monto: Number(it.monto) || 0 }]),
         ),
     );
-    const comunes = [...SERVICIOS_BASE].filter((base) => {
-      if (!serviciosPorPropiedad.every((m) => m.has(base))) return false;
-      const numeros = serviciosPorPropiedad.map((m) => m.get(base)!.numeroLiquidacion);
-      return numeros[0] !== '' && numeros.every((n) => n === numeros[0]);
-    });
+    const comunes = [...SERVICIOS_BASE].filter((base) => serviciosPorPropiedad.every((m) => m.has(base)));
     if (comunes.length === 0) return;
     setAjustesServicios((prev) => {
       let cambio = false;
@@ -622,7 +672,7 @@ function LiquidacionModal({
     if (!L || !comprobanteRef.current) return;
     setDescargando(true);
     try {
-      await descargarPdfComprobante(comprobanteRef.current, `Liquidacion ${L.numero} - ${propietario.nombre}.pdf`);
+      await guardarPdfComprobante(comprobanteRef.current, nombreArchivoComprobante(propietario.nombre, mes));
     } finally {
       setDescargando(false);
     }
@@ -634,7 +684,7 @@ function LiquidacionModal({
     await enviarComprobante({
       elemento: comprobanteRef.current,
       telefono: propietario.telefono,
-      nombreArchivo: `Liquidacion ${L.numero} - ${propietario.nombre}.pdf`,
+      nombreArchivo: nombreArchivoComprobante(propietario.nombre, mes),
       texto,
     });
   }

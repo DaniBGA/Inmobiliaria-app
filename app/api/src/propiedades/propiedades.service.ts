@@ -33,8 +33,8 @@ export class PropiedadesService {
   // ambas, lo único que le compete es la cartera en venta que el admin le
   // asignó (pedido del usuario 2026-09-04: "que solo puedan ver las
   // propiedades en venta que ellos son designados para la muestra").
-  findAll(usuario?: { rol: RolUsuario; integranteEquipoId: string | null }) {
-    return this.prisma.propiedad.findMany({
+  async findAll(usuario?: { rol: RolUsuario; integranteEquipoId: string | null }) {
+    const propiedades = await this.prisma.propiedad.findMany({
       where:
         usuario?.rol === RolUsuario.EQUIPO
           ? { modalidad: 'VENTA', designadoId: usuario.integranteEquipoId }
@@ -55,6 +55,14 @@ export class PropiedadesService {
       },
       orderBy: { nombre: 'asc' },
     });
+    // Cartel de "alerta de aumento" en las tarjetas de "Inquilinos y Cobros"
+    // (pedido del usuario 2026-10-15) — reusa `proximoAumento()` (misma
+    // cuenta que ya usa la ficha individual y Avisos), no una heurística
+    // nueva. Para propiedades vacantes/en venta devuelve `null` casi sin
+    // costo (corta apenas entra, ver `proximoAumento()`).
+    return Promise.all(
+      propiedades.map(async (p) => ({ ...p, proximoAumento: await this.proximoAumento(p.id) })),
+    );
   }
 
   findOne(id: string) {

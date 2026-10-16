@@ -110,6 +110,23 @@ model Configuracion {
   // placeholders {nombre} {numero} {propiedad} {mes}, reemplazados al vuelo.
   facturaWhatsappMensaje String @default("Hola {nombre}, te comparto la Factura N° {numero} de {propiedad} correspondiente a {mes}. Te dejo el PDF descargado — adjuntalo acá mismo en el chat.")
 
+  // Plantillas de los 7 tipos de aviso (ver AvisosService — cada método
+  // privado arma uno) — mismo mecanismo de placeholders `{clave}` que
+  // `facturaWhatsappMensaje` de arriba, sustituidos con
+  // `common/plantilla.util.ts::aplicarPlantilla()` en el momento de
+  // generar la lista de Avisos (pedido del usuario 2026-10-15: "asi como
+  // el mensaje de whatsapp me deje modificar un mensaje base para los
+  // distintos tipos de avisos"). El texto generado sigue siendo editable
+  // a mano en la tarjeta antes de enviar (AvisosPage.tsx), sin guardar esa
+  // edición puntual — lo que se guarda acá es la plantilla BASE.
+  avisoReclamoDeudaMensaje String @default("Hola {nombre}, te escribimos de la inmobiliaria para recordarte que tenés una deuda acumulada de ${deuda} correspondiente a {mesesImpagos} mes(es). Por favor comunicate a la brevedad para regularizar la situación. Saludos.")
+  avisoAumentoMensaje String @default("Hola {nombre}, te avisamos que el {fecha} corresponde actualizar el alquiler de {propiedad} (valor vigente actual: ${monto}). Te contactaremos con el nuevo monto.")
+  avisoRenovacionMensaje String @default("El contrato de {propiedad} vence el {fecha}. Coordinemos la renovación con {nombre}.")
+  avisoClienteSinContactarMensaje String @default("Hola {nombre}, te contactamos de la inmobiliaria respecto a tu búsqueda. ¿Seguís interesado/a?")
+  avisoRecordatorioMensaje String @default("Recordatorio: {titulo} — {fecha}.")
+  avisoLiquidacionListaMensaje String @default("Hola {nombre}, tu liquidación de este mes ya está lista. Neto a girar: ${monto}.")
+  avisoPedidoPresupuestoMensaje String @default("Solicitamos presupuesto para: \"{titulo}\" (rubro: {rubro}) en {propiedad}.")
+
   updatedAt DateTime @updatedAt
 
   @@map("configuracion")

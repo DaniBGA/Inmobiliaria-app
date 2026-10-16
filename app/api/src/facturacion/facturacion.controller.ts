@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { FacturasService } from './facturas.service';
 import { RecibosService } from './recibos.service';
 import { EmitirFacturaDto } from './dto/emitir-factura.dto';
@@ -34,6 +34,11 @@ export class FacturacionController {
   @Post('propiedades/:propiedadId/facturas')
   emitirFactura(@Param('propiedadId') propiedadId: string, @Body() dto: EmitirFacturaDto) {
     return this.facturasService.emitir(propiedadId, dto.mes, dto.items, dto.numero);
+  }
+
+  @Delete('propiedades/:propiedadId/facturas/:mes')
+  eliminarFactura(@Param('propiedadId') propiedadId: string, @Param('mes') mes: string) {
+    return this.facturasService.eliminar(propiedadId, mes);
   }
 
   @Post('masivo')

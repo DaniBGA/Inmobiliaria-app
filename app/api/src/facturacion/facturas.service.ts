@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DestinoGasto, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PropiedadesService } from '../propiedades/propiedades.service';
@@ -107,21 +107,25 @@ export class FacturasService {
       items.push({ descripcion: g.descripcion, monto: Number(g.monto), orden: ordenGastos + i });
     });
 
-    // Deuda arrastrada de meses anteriores a este (§3.1, §5.4) — se calcula
-    // usando `mes` como referencia de "ahora", así la ventana de 12 meses
-    // cerrados queda exactamente en los meses previos a este período.
-    const { deuda } = await this.cobrosService.deudaAcumulada(propiedadId, mes);
-    if (deuda > 0) {
-      items.push({ descripcion: 'Deuda arrastrada', monto: deuda, orden: items.length });
-    }
-
-    // Mora acumulada (§5.6) sobre la misma ventana de 12 meses cerrados que
-    // "Deuda arrastrada" arriba (§ pedido del usuario 2026-09-04: antes solo
-    // se calculaba sobre el mes cerrado inmediato anterior, y encima solo si
-    // ya se había terminado de pagar — un inquilino que directamente nunca
-    // paga no generaba mora en ningún lado, por muchos meses que arrastrara).
-    // Ver `CobrosService.moraAcumulada()` para el detalle mes a mes. Igual
-    // que "Deuda arrastrada", es un ítem editable — no se fuerza.
+    // NO se re-factura el monto crudo de los meses impagos ("Deuda
+    // arrastrada", sacada del todo 2026-10-15 por pedido del usuario: "la
+    // deuda arrastrada no tendria que aparecer, lo que tendria que
+    // aparecer en cada mes si no se pago es la mora por demora") — ese
+    // alquiler ya se facturó una vez, en SU mes; repetirlo acá era
+    // pedírselo dos veces al inquilino. `CobrosService.deudaAcumulada()`
+    // sigue existiendo (la sigue usando `mesesPendientes()` en Caja para
+    // saber contra qué mes concreto se aplica un pago, y Avisos para los
+    // recordatorios de deuda) — lo único que cambia es que ya NO se
+    // imprime como ítem de Factura/Liquidación. Lo que SÍ sigue
+    // apareciendo cada mes mientras siga impago es la mora (abajo).
+    //
+    // Mora acumulada (§5.6) sobre la ventana de 12 meses cerrados (§
+    // pedido del usuario 2026-09-04: antes solo se calculaba sobre el mes
+    // cerrado inmediato anterior, y encima solo si ya se había terminado
+    // de pagar — un inquilino que directamente nunca paga no generaba
+    // mora en ningún lado, por muchos meses que arrastrara).
+    // Ver `CobrosService.moraAcumulada()` para el detalle mes a mes. Es un
+    // ítem editable — no se fuerza.
     const { mora, diasAtraso: diasAtrasoAcumulados } = await this.cobrosService.moraAcumulada(propiedadId, mes);
     if (mora > 0) {
       items.push({
@@ -212,6 +216,29 @@ export class FacturasService {
 
   async obtenerDelMes(propiedadId: string, mesStr: string) {
     return this.facturaVigente(propiedadId, mesStringAFecha(mesStr));
+  }
+
+  // Botón "✕ Eliminar factura" al lado del badge "Emitido" en "COBROS DEL
+  // MES" (pedido del usuario 2026-10-15) — por si se emitió por error (mes
+  // o propiedad equivocada, montos mal cargados) y hay que volver a
+  // "sin factura emitida" para ese mes, no solo reemitir encima. Borrado
+  // estructuralmente seguro: `FacturaItem` cae en cascada
+  // (`onDelete: Cascade`) y cualquier `Recibo` que la referenciaba pierde
+  // el vínculo (`facturaId` → `onDelete: SetNull`) pero NO se borra — un
+  // recibo ya cobrado es un comprobante propio, no depende de que la
+  // factura original siga existiendo. No toca Pagos ni Liquidaciones: esos
+  // quedan igual, se puede volver a emitir la factura de este mes después.
+  async eliminar(propiedadId: string, mesStr: string) {
+    try {
+      return await this.prisma.factura.delete({
+        where: { propiedadId_mes: { propiedadId, mes: mesStringAFecha(mesStr) } },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        throw new NotFoundException('No hay ninguna factura emitida ese mes para eliminar.');
+      }
+      throw error;
+    }
   }
 
   // §3.5: al emitir, sus ítems quedan guardados en la propiedad, uno por

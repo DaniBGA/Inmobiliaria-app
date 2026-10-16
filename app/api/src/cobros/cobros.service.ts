@@ -94,19 +94,30 @@ export class CobrosService {
 
   // "Esperado" de un mes sin factura emitida todavía — alquiler + servicios
   // + gastos trasladados, estimados con los últimos montos conocidos (ver
-  // el comentario de montoRegularEstimadoDelMes()), MÁS la deuda arrastrada
-  // de meses anteriores (`deudaAcumulada()`, mismo criterio que usa
-  // `FacturasService.itemsPredeterminados()` para sugerir el ítem "Deuda
-  // arrastrada" al abrir "Emitir factura"). Sin esto, si el inquilino
-  // arrastra un mes impago, "Esperado" mostraba un número (solo lo nuevo de
-  // este mes) y al emitir la factura con los ítems sugeridos el total daba
-  // otro completamente distinto (con la deuda ya incluida) — reportado por
-  // el usuario 2026-09-02 con "depto lukens" ($1.731.230,56 vs.
-  // $2.231.230,56 con $500.000 de deuda arrastrada de agosto). Si el mes YA
-  // tiene factura, resumenMes() usa `Factura.total` directamente (más
-  // preciso, refleja cualquier edición manual) en vez de llamar a esto —
-  // ese total YA incluye la deuda arrastrada si se aceptó el ítem sugerido
-  // al emitir, así que sumarla dos veces ahí sí sería un error.
+  // el comentario de montoRegularEstimadoDelMes()), MÁS la mora acumulada
+  // de meses anteriores (`moraAcumulada()`, mismo criterio que usa
+  // `FacturasService.itemsPredeterminados()` para sugerir el ítem "Mora
+  // acumulada" al abrir "Emitir factura"). Sin esto, "Esperado" mostraba
+  // un número (solo lo nuevo de este mes) y al emitir la factura con los
+  // ítems sugeridos el total daba otro completamente distinto (con la mora
+  // ya incluida) — mismo mecanismo de bug reportado por el usuario
+  // 2026-09-02 con "depto lukens", ver CONEXIONES.md. Si el mes YA tiene
+  // factura, resumenMes() usa `Factura.total` directamente (más preciso,
+  // refleja cualquier edición manual) en vez de llamar a esto — ese total
+  // YA incluye la mora si se aceptó el ítem sugerido al emitir, así que
+  // sumarla dos veces ahí sí sería un error.
+  //
+  // Hasta 2026-10-15 acá se sumaba `deudaAcumulada()` (el monto CRUDO de
+  // los meses impagos) en vez de la mora — se sacó junto con el ítem
+  // "Deuda arrastrada" de la factura (pedido del usuario: "la deuda
+  // arrastrada no tendria que aparecer... lo que tendria que aparecer en
+  // cada mes si no se pago es la mora por demora"): ese alquiler ya se
+  // facturó una vez, en SU mes, así que sumarlo de nuevo acá sobreestimaba
+  // "Esperado" por sobre lo que la factura real iba a terminar
+  // facturando. `deudaAcumulada()` en sí NO se borró — sigue siendo la
+  // fuente real de "cuánto debe en total" para `mesesPendientes()` (Caja)
+  // y Avisos (reclamos de deuda); lo único que cambió es que ya no se
+  // sugiere como ítem de Factura ni se cuenta acá en "Esperado".
   private async esperadoEstimado(propiedadId: string, mesStr: string): Promise<number | null> {
     const base = await montoRegularEstimadoDelMes(
       this.prisma,
@@ -116,8 +127,8 @@ export class CobrosService {
       mesStr,
     );
     if (base == null) return null;
-    const { deuda } = await this.deudaAcumulada(propiedadId, mesStringAFecha(mesStr));
-    return base + deuda;
+    const { mora } = await this.moraAcumulada(propiedadId, mesStringAFecha(mesStr));
+    return base + mora;
   }
 
   // §2.2 / §3.1: tabla "Cobros del mes" — esperado, cobrado, estado y pagos
@@ -168,6 +179,13 @@ export class CobrosService {
         // inquilino vigente tal cual, que es lo correcto para ese caso.
         const nombreDelMes = facturaExistente?.inquilinoNombre ?? pagos.find((pg) => pg.inquilinoNombre)?.inquilinoNombre ?? null;
         const inquilino = nombreDelMes ? { ...p.inquilino, nombre: nombreDelMes } : p.inquilino;
+        // Cartel de "alerta de aumento" al lado de ESPERADO (pedido del
+        // usuario 2026-10-15) — mismo `proximoAumento()` que ya usan la
+        // ficha individual, Avisos y las tarjetas de `findAll()`. El
+        // frontend decide si está "próximo" comparando contra
+        // `configuracion.diasAnticipacionAumento` (mismo criterio que
+        // `PropiedadFichaDrawer.tsx`), no se duplica esa cuenta acá.
+        const proximoAumento = await this.propiedadesService.proximoAumento(p.id);
         return {
           propiedadId: p.id,
           propiedadNombre: p.nombre,
@@ -182,6 +200,7 @@ export class CobrosService {
           // tabla (pedido del usuario 2026-10-03: saber de un vistazo si ya
           // se facturó, sin tener que abrir "Emitir factura" para chequear).
           facturaEmitida: facturaExistente != null,
+          proximoAumento,
           pagos,
         };
       }),

@@ -26,6 +26,13 @@ interface Configuracion {
   publicoMatricula: string;
   publicoFotoNosotrosUrl: string;
   facturaWhatsappMensaje: string;
+  avisoReclamoDeudaMensaje: string;
+  avisoAumentoMensaje: string;
+  avisoRenovacionMensaje: string;
+  avisoClienteSinContactarMensaje: string;
+  avisoRecordatorioMensaje: string;
+  avisoLiquidacionListaMensaje: string;
+  avisoPedidoPresupuestoMensaje: string;
   proximoNumeroFactura: number;
   proximoNumeroRecibo: number;
   proximoNumeroLiquidacion: number;
@@ -151,6 +158,17 @@ function ConfiguracionForm({ data, integrantes }: { data: Configuracion; integra
   const [publicoDireccion, setPublicoDireccion] = useState(data.publicoDireccion);
   const [publicoMatricula, setPublicoMatricula] = useState(data.publicoMatricula);
   const [facturaWhatsappMensaje, setFacturaWhatsappMensaje] = useState(data.facturaWhatsappMensaje);
+  const [avisoReclamoDeudaMensaje, setAvisoReclamoDeudaMensaje] = useState(data.avisoReclamoDeudaMensaje);
+  const [avisoAumentoMensaje, setAvisoAumentoMensaje] = useState(data.avisoAumentoMensaje);
+  const [avisoRenovacionMensaje, setAvisoRenovacionMensaje] = useState(data.avisoRenovacionMensaje);
+  const [avisoClienteSinContactarMensaje, setAvisoClienteSinContactarMensaje] = useState(
+    data.avisoClienteSinContactarMensaje,
+  );
+  const [avisoRecordatorioMensaje, setAvisoRecordatorioMensaje] = useState(data.avisoRecordatorioMensaje);
+  const [avisoLiquidacionListaMensaje, setAvisoLiquidacionListaMensaje] = useState(data.avisoLiquidacionListaMensaje);
+  const [avisoPedidoPresupuestoMensaje, setAvisoPedidoPresupuestoMensaje] = useState(
+    data.avisoPedidoPresupuestoMensaje,
+  );
   const [ipc, setIpc] = useState(String(data.ipc));
   const [icl, setIcl] = useState(String(data.icl));
   const [dolarReferencia, setDolarReferencia] = useState(String(data.dolarReferencia));
@@ -201,6 +219,13 @@ function ConfiguracionForm({ data, integrantes }: { data: Configuracion; integra
     setPublicoDireccion(data.publicoDireccion);
     setPublicoMatricula(data.publicoMatricula);
     setFacturaWhatsappMensaje(data.facturaWhatsappMensaje);
+    setAvisoReclamoDeudaMensaje(data.avisoReclamoDeudaMensaje);
+    setAvisoAumentoMensaje(data.avisoAumentoMensaje);
+    setAvisoRenovacionMensaje(data.avisoRenovacionMensaje);
+    setAvisoClienteSinContactarMensaje(data.avisoClienteSinContactarMensaje);
+    setAvisoRecordatorioMensaje(data.avisoRecordatorioMensaje);
+    setAvisoLiquidacionListaMensaje(data.avisoLiquidacionListaMensaje);
+    setAvisoPedidoPresupuestoMensaje(data.avisoPedidoPresupuestoMensaje);
     setIpc(String(data.ipc));
     setIcl(String(data.icl));
     setDolarReferencia(String(data.dolarReferencia));
@@ -228,6 +253,13 @@ function ConfiguracionForm({ data, integrantes }: { data: Configuracion; integra
         publicoDireccion,
         publicoMatricula,
         facturaWhatsappMensaje,
+        avisoReclamoDeudaMensaje,
+        avisoAumentoMensaje,
+        avisoRenovacionMensaje,
+        avisoClienteSinContactarMensaje,
+        avisoRecordatorioMensaje,
+        avisoLiquidacionListaMensaje,
+        avisoPedidoPresupuestoMensaje,
         ipc: Number(ipc),
         icl: Number(icl),
         dolarReferencia: Number(dolarReferencia),
@@ -654,6 +686,120 @@ function ConfiguracionForm({ data, integrantes }: { data: Configuracion; integra
             <span>
               Se carga una sola vez, al arrancar. Después el saldo lo lleva la vista de <b>Caja</b>.
             </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Pedido del usuario 2026-10-15: "asi como el mensaje de whatsapp me
+          deje modificar un mensaje base para los distintos tipos de
+          avisos" — mismo mecanismo que "MENSAJE DE WHATSAPP — FACTURAS" de
+          arriba (plantilla editable con placeholders `{clave}`, sustituidos
+          en AvisosService al generar la lista), uno por cada uno de los 7
+          grupos de Avisos. El texto generado se puede seguir editando a
+          mano en la tarjeta antes de enviar — lo que se guarda acá es
+          solo la plantilla BASE con la que arranca cada vez. */}
+      <div className="repsep">◐ AVISOS</div>
+      <div className="cfggrid">
+        <div className="cfgcard">
+          <h3>RECLAMO DE DEUDA</h3>
+          <div className="hint">
+            Placeholders: <b>{'{nombre}'}</b>, <b>{'{deuda}'}</b>, <b>{'{mesesImpagos}'}</b>.
+          </div>
+          <div className="cfgfields">
+            <div className="fg full">
+              <label>Mensaje</label>
+              <textarea rows={4} value={avisoReclamoDeudaMensaje} onChange={(e) => setAvisoReclamoDeudaMensaje(e.target.value)} />
+            </div>
+          </div>
+        </div>
+
+        <div className="cfgcard">
+          <h3>AVISO DE AUMENTO</h3>
+          <div className="hint">
+            Placeholders: <b>{'{nombre}'}</b>, <b>{'{fecha}'}</b>, <b>{'{propiedad}'}</b>, <b>{'{monto}'}</b>.
+          </div>
+          <div className="cfgfields">
+            <div className="fg full">
+              <label>Mensaje</label>
+              <textarea rows={4} value={avisoAumentoMensaje} onChange={(e) => setAvisoAumentoMensaje(e.target.value)} />
+            </div>
+          </div>
+        </div>
+
+        <div className="cfgcard">
+          <h3>RENOVACIÓN DE CONTRATO</h3>
+          <div className="hint">
+            Placeholders: <b>{'{propiedad}'}</b>, <b>{'{fecha}'}</b>, <b>{'{nombre}'}</b>.
+          </div>
+          <div className="cfgfields">
+            <div className="fg full">
+              <label>Mensaje</label>
+              <textarea rows={4} value={avisoRenovacionMensaje} onChange={(e) => setAvisoRenovacionMensaje(e.target.value)} />
+            </div>
+          </div>
+        </div>
+
+        <div className="cfgcard">
+          <h3>CLIENTE SIN CONTACTAR</h3>
+          <div className="hint">
+            Placeholder: <b>{'{nombre}'}</b>.
+          </div>
+          <div className="cfgfields">
+            <div className="fg full">
+              <label>Mensaje</label>
+              <textarea
+                rows={4}
+                value={avisoClienteSinContactarMensaje}
+                onChange={(e) => setAvisoClienteSinContactarMensaje(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="cfgcard">
+          <h3>RECORDATORIO DE AGENDA</h3>
+          <div className="hint">
+            Placeholders: <b>{'{titulo}'}</b>, <b>{'{fecha}'}</b>.
+          </div>
+          <div className="cfgfields">
+            <div className="fg full">
+              <label>Mensaje</label>
+              <textarea rows={4} value={avisoRecordatorioMensaje} onChange={(e) => setAvisoRecordatorioMensaje(e.target.value)} />
+            </div>
+          </div>
+        </div>
+
+        <div className="cfgcard">
+          <h3>LIQUIDACIÓN LISTA</h3>
+          <div className="hint">
+            Placeholders: <b>{'{nombre}'}</b>, <b>{'{monto}'}</b>.
+          </div>
+          <div className="cfgfields">
+            <div className="fg full">
+              <label>Mensaje</label>
+              <textarea
+                rows={4}
+                value={avisoLiquidacionListaMensaje}
+                onChange={(e) => setAvisoLiquidacionListaMensaje(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="cfgcard">
+          <h3>PEDIDO DE PRESUPUESTO</h3>
+          <div className="hint">
+            Placeholders: <b>{'{titulo}'}</b>, <b>{'{rubro}'}</b>, <b>{'{propiedad}'}</b>.
+          </div>
+          <div className="cfgfields">
+            <div className="fg full">
+              <label>Mensaje</label>
+              <textarea
+                rows={4}
+                value={avisoPedidoPresupuestoMensaje}
+                onChange={(e) => setAvisoPedidoPresupuestoMensaje(e.target.value)}
+              />
+            </div>
           </div>
         </div>
       </div>

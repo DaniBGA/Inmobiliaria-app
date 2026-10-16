@@ -312,15 +312,17 @@ export class LiquidacionesService {
     }
   }
 
-  // Para el badge "Emitido" en la lista de Propietarios y Liquidaciones
-  // (pedido del usuario 2026-10-03) — un solo query para todos los
-  // propietarios en vez de pedir `obtenerDelMes` uno por uno por tarjeta.
-  async propietariosConLiquidacion(mesStr: string): Promise<string[]> {
-    const liquidaciones = await this.prisma.liquidacion.findMany({
+  // Para el badge "Emitido" (+ botón "Eliminar liquidación") en la lista
+  // de Propietarios y Liquidaciones (pedido del usuario 2026-10-03,
+  // extendido 2026-10-15 para traer también el `id` — antes solo mandaba
+  // el `propietarioId`, pero borrar una liquidación necesita su propio id)
+  // — un solo query para todos los propietarios en vez de pedir
+  // `obtenerDelMes` uno por uno por tarjeta.
+  async propietariosConLiquidacion(mesStr: string): Promise<{ id: string; propietarioId: string }[]> {
+    return this.prisma.liquidacion.findMany({
       where: { mes: mesStringAFecha(mesStr) },
-      select: { propietarioId: true },
+      select: { id: true, propietarioId: true },
     });
-    return liquidaciones.map((l) => l.propietarioId);
   }
 
   obtenerDelMes(propietarioId: string, mesStr: string) {

@@ -32,8 +32,13 @@ a{color:inherit;text-decoration:none}
 /* ===== Sidebar ===== */
 .sidebar{position:fixed;left:0;top:0;bottom:0;width:224px;background:linear-gradient(to top,rgba(28,64,102,.32),rgba(28,64,102,0) 75%) var(--card);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:20px 14px 16px;z-index:50;transition:width .25s ease}
 .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:16px;letter-spacing:-.02em;flex-shrink:0;padding:0 8px 18px;border-bottom:1px solid var(--border2);overflow:hidden}
-.brand .logo{width:30px;height:30px;background:var(--ink);border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.brand .logo span{width:12px;height:12px;border:2.5px solid #fff;border-radius:4px;display:block}
+/* Antes era un cuadrado oscuro con un ícono abstracto dibujado en CSS
+   (placeholder, nunca hubo logo real) — ahora es el isotipo real de la
+   empresa (pedido del usuario 2026-10-15: "el icon de el sistema de
+   gestion sea el 'LOGO PNG-10.png'"), así que ya no hace falta el fondo
+   oscuro ni el recuadro: `object-fit:contain` deja que el logo se vea
+   completo sin recortarse, sea cual sea su proporción real. */
+.brand .logo{width:34px;height:34px;object-fit:contain;flex-shrink:0}
 nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;flex:1;margin-top:14px}
 nav::-webkit-scrollbar{display:none}
 nav button,nav a{border:0;background:transparent;padding:10px 12px;border-radius:10px;font-size:13px;font-weight:600;color:var(--ink2);display:flex;align-items:center;gap:9px;transition:background .18s,color .18s;white-space:nowrap;text-align:left;width:100%;position:relative}
@@ -148,6 +153,13 @@ tbody tr:last-child td{border-bottom:0}
 .badge.impago{background:var(--red-soft);color:var(--red)}
 .badge.impago-mora{background:var(--orange-soft);color:var(--orange)}
 .badge.emitido{background:var(--indigo-soft);color:var(--indigo)}
+.badge.aumento{background:var(--red-soft);color:var(--red)}
+.btn-icon-sm{box-sizing:border-box;width:26px;height:26px;padding:0;margin:0;border-radius:99px;border:none;display:inline-flex;align-items:center;justify-content:center;font-size:12px;line-height:1;cursor:pointer;transition:all .15s;flex-shrink:0}
+.btn-icon-sm.ver{background:var(--green-soft);color:var(--green)}
+.btn-icon-sm.ver:hover{background:var(--green);color:#fff}
+.btn-icon-sm.eliminar{background:var(--red-soft);color:var(--red)}
+.btn-icon-sm.eliminar:hover{background:var(--red);color:#fff}
+.btn-icon-sm:disabled{opacity:.5;cursor:not-allowed}
 .rowactions{display:flex;gap:8px;opacity:0;transition:opacity .15s;justify-content:flex-end}
 tr:hover .rowactions{opacity:1}
 .iconbtn{width:34px;height:34px;border-radius:9px;border:1px solid var(--border);background:var(--card);display:inline-flex;align-items:center;justify-content:center;color:var(--ink2);text-decoration:none;transition:all .15s}
@@ -235,6 +247,31 @@ tfoot .money{font-size:15px}
 .modal.on{display:flex}
 .modalcard{background:var(--card);border-radius:18px;box-shadow:var(--shadow-lg);width:min(720px,100%);padding:30px 34px;position:relative;z-index:111}
 .modalcard h2{font-size:19px;margin-bottom:22px}
+
+/* Modal movible/minimizable (pedido del usuario 2026-10-15) — ver
+   Modal.tsx. `.modalhead` reemplaza al `<h2>` suelto de antes como barra
+   de arrastre (`cursor:grab`, mousedown ahí arranca el drag); los botones
+   de minimizar/cerrar quedan en `.modalhead-actions`. `margin-bottom:0` en
+   el `h2` cancela el que ya pone `.modalcard h2` de arriba (ahora lo pone
+   `.modalhead` para que las dos acciones no queden con doble espacio). */
+.modalhead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:22px;cursor:grab;user-select:none}
+.modalhead:active{cursor:grabbing}
+.modalhead h2{margin-bottom:0}
+.modalhead-actions{display:flex;gap:6px;flex-shrink:0}
+.modalhead-btn{width:26px;height:26px;border-radius:8px;border:1px solid var(--border);background:var(--card);display:inline-flex;align-items:center;justify-content:center;color:var(--ink2);cursor:pointer;transition:all .15s;flex-shrink:0;padding:0;box-sizing:border-box}
+.modalhead-btn:hover{background:var(--bg2)}
+.modalhead-btn.cerrar:hover{background:var(--red-soft);color:var(--red);border-color:#FECACA}
+
+/* Bandeja de modales minimizados: cada uno se porta ACÁ (no cada uno con
+   su propio `position:fixed` suelto), así se apilan solos con flexbox sin
+   necesidad de coordinar posiciones entre instancias de `Modal` que no se
+   conocen entre sí. */
+.modal-tray{position:fixed;bottom:16px;left:16px;z-index:130;display:flex;flex-direction:column-reverse;gap:8px;pointer-events:none}
+.modal-pill{pointer-events:auto;display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--border);box-shadow:var(--shadow-lg);border-radius:12px;padding:10px 14px;cursor:pointer;max-width:260px;transition:all .15s}
+.modal-pill:hover{border-color:var(--ink)}
+.modal-pill span{font-size:12.5px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.modal-pill button{flex-shrink:0;width:20px;height:20px;padding:0;border:none;background:transparent;color:var(--muted);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;border-radius:6px}
+.modal-pill button:hover{background:var(--red-soft);color:var(--red)}
 .formgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px 16px}
 .fg{display:flex;flex-direction:column;gap:6px;min-width:0}
 .fg.full{grid-column:1/-1}
@@ -850,8 +887,19 @@ textarea.avmsg:focus{outline:2px solid var(--indigo);border-color:transparent;ba
   html,body{height:auto}
   #root{display:none}
   .modal{position:static;display:block;padding:0;background:none}
-  .modalcard{position:static;box-shadow:none;border:0;width:100%!important;max-width:100%!important;max-height:none!important;padding:0;margin:0}
+  /* `position:static!important` (pedido del usuario 2026-10-15: modales
+     movibles/minimizables): mover un modal lo deja con `position:fixed` y
+     `left`/`top` puestos a mano por JS (ver Modal.tsx) — sin el
+     `!important` acá, esa posición fija ganaría por sobre esta regla
+     (misma especificidad, pero la de pantalla pisa en cascada) y se
+     repetiría el bug original que este comentario ya documentaba: un
+     comprobante largo se corta entero en la primera hoja al imprimir. */
+  .modalcard{position:static!important;box-shadow:none;border:0;width:100%!important;max-width:100%!important;max-height:none!important;padding:0;margin:0}
   .overlay{display:none}
+  /* La bandeja de modales minimizados vive fuera de `.modal` (se porta a
+     su propio contenedor, ver Modal.tsx) — no la alcanza `#root{display:
+     none}` de arriba, así que se oculta a mano. */
+  .modal-tray{display:none}
   /* Los botones de acción (Imprimir/Cerrar/Cancelar) no son parte del
      comprobante: en el papel solo debe quedar el detalle facturado. */
   .noprint{display:none!important}

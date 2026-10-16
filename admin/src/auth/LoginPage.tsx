@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useAuth, ApiError } from './AuthContext';
+import icono from '../images/icono.png';
 
 export function LoginPage() {
   const { login, sesionExpirada } = useAuth();
@@ -25,10 +26,8 @@ export function LoginPage() {
     <div className="loginwrap">
       <div className="logincard">
         <div className="brand">
-          <div className="logo">
-            <span></span>
-          </div>
-          <span className="btxt">SGM_AR</span>
+          <img src={icono} alt="" className="logo" />
+          <span className="btxt">Sistema de Gestión</span>
         </div>
         <h1>Iniciar sesión</h1>
         <p className="sub">Sistema de Gestión Inmobiliaria — Facundo Paris Propiedades</p>

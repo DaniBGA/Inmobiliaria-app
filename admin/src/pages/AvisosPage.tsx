@@ -6,8 +6,8 @@ import { PageHeader } from '../components/PageHeader';
 import { SeccionGuia } from '../components/SeccionGuia';
 import { ComprobanteImpreso } from '../components/ComprobanteImpreso';
 import { LiquidacionComprobanteBody, type Liquidacion } from '../components/LiquidacionComprobante';
-import { descargarPdfComprobante } from '../lib/pdfComprobante';
-import { formatMoney, formatDate, mesActualStr, mesLabel } from '../lib/format';
+import { guardarPdfComprobante } from '../lib/pdfComprobante';
+import { formatMoney, formatDate, mesActualStr, mesLabel, nombreArchivoComprobante } from '../lib/format';
 
 interface Configuracion {
   empresaNombre: string;
@@ -283,7 +283,7 @@ export function AvisosPage() {
 
   useEffect(() => {
     if (pdfData && comprobanteRef.current) {
-      descargarPdfComprobante(comprobanteRef.current, `Liquidacion ${pdfData.L.numero} - ${pdfData.propietarioNombre}.pdf`).finally(
+      guardarPdfComprobante(comprobanteRef.current, nombreArchivoComprobante(pdfData.propietarioNombre, mes)).finally(
         () => setPdfData(null),
       );
     }

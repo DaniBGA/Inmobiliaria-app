@@ -22,7 +22,18 @@ import html2canvas from 'html2canvas';
 // El pie se repite en TODAS las hojas, no solo la última (pedido del
 // usuario 2026-10-01) — ver el comentario de `empujarAHojaNueva()` más
 // abajo para el cómo exacto.
-export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: string): Promise<void> {
+// Arma el PDF y devuelve el `Blob` listo para guardar/adjuntar — no decide
+// QUÉ hacer con él (eso lo resuelven `descargarPdfComprobante()` y
+// `guardarPdfComprobante()` más abajo). Separado así (pedido del usuario
+// 2026-10-15: "que me deje seleccionar la ruta donde se descargue el
+// archivo") porque `window.showSaveFilePicker()` (el diálogo nativo
+// "Guardar como") tiene que llamarse LO MÁS CERCA POSIBLE del clic del
+// usuario — si se llama recién acá, después de generar el canvas con
+// html2canvas (que para un comprobante de varias hojas puede tardar unos
+// segundos), Chrome puede rechazarlo por haberse quedado sin "user
+// activation". `guardarPdfComprobante()` abre el diálogo PRIMERO (síncrono
+// con el clic) y recién después llama acá a generar el PDF de verdad.
+async function generarPdfComprobante(nodo: HTMLElement): Promise<Blob> {
   const clon = nodo.cloneNode(true) as HTMLElement;
   clon.style.position = 'fixed';
   clon.style.left = '-10000px';
@@ -266,8 +277,73 @@ export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: 
       pdf.addImage(imgData, 'JPEG', 0, y, imgWidth, imgHeight);
       alturaRestante -= pageHeight;
     }
-    pdf.save(nombreArchivo);
+    return pdf.output('blob');
   } finally {
     document.body.removeChild(clon);
+  }
+}
+
+function descargarBlob(blob: Blob, nombreArchivo: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nombreArchivo;
+  // Insertarlo al DOM antes del click (y sacarlo después) en vez de
+  // clickear un `<a>` suelto — más robusto para que el navegador lo
+  // reconozca bien como una descarga real.
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  // Revocar la URL un toque después, no al instante: aunque el click ya
+  // disparó la descarga, el navegador puede seguir leyendo del blob de
+  // forma asíncrona un momento más (encontrado probando con Chrome
+  // automatizado: revocar enseguida dejaba la descarga arrancada pero
+  // nunca terminaba de escribirse el archivo a disco).
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+// Descarga silenciosa de siempre (sin diálogo de "Guardar como") — la usa
+// el envío por WhatsApp (`useEnviarComprobantePorWhatsapp.ts`), donde el
+// archivo es un intermedio descartable (se adjunta a mano en el chat
+// después) y preguntar dónde guardarlo sería fricción de más.
+export async function descargarPdfComprobante(nodo: HTMLElement, nombreArchivo: string): Promise<void> {
+  const blob = await generarPdfComprobante(nodo);
+  descargarBlob(blob, nombreArchivo);
+}
+
+// "Descargar PDF" de verdad (pedido del usuario 2026-10-15) — deja elegir
+// la carpeta y el nombre con el diálogo nativo del sistema operativo. Solo
+// disponible en navegadores con File System Access API (Chrome/Edge, no
+// Firefox/Safari); donde no está, cae sola a la descarga silenciosa de
+// siempre (mismo resultado que antes de este cambio, solo sin el diálogo).
+export async function guardarPdfComprobante(nodo: HTMLElement, nombreArchivo: string): Promise<void> {
+  let handle: FileSystemFileHandle | null = null;
+  if (window.showSaveFilePicker) {
+    try {
+      handle = await window.showSaveFilePicker({
+        suggestedName: nombreArchivo,
+        types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }],
+      });
+    } catch (err) {
+      // El usuario cerró/canceló el diálogo a propósito (botón Cancelar o
+      // Esc) — no es un error real, no hay nada que avisar ni loguear, y
+      // tampoco corresponde caer a la descarga normal (eligió no guardar
+      // nada, no "guardalo donde quieras vos").
+      if (err instanceof Error && err.name === 'AbortError') return;
+      // Cualquier otro motivo (Chrome rechaza el diálogo si ya pasó
+      // demasiado tiempo desde el clic del usuario — "user activation"
+      // perdida, p. ej. en `AvisosPage.tsx`, donde el PDF se arma recién
+      // después de un pedido de red) — no se corta la descarga entera por
+      // esto, se cae a la descarga silenciosa de siempre.
+      handle = null;
+    }
+  }
+  const blob = await generarPdfComprobante(nodo);
+  if (handle) {
+    const writable = await handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+  } else {
+    descargarBlob(blob, nombreArchivo);
   }
 }

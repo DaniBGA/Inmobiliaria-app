@@ -6,7 +6,8 @@ import { Modal } from '../components/Modal';
 import { AlquilarPropiedadModal, type PropiedadParaAlquilar } from '../components/AlquilarPropiedadModal';
 import { PropiedadFichaDrawer, FacturaModal } from '../components/PropiedadFichaDrawer';
 import { SeccionGuia } from '../components/SeccionGuia';
-import { formatMoney, formatDate, mesActualStr, sumarMesesStr, mesLabel } from '../lib/format';
+import { useConfiguracion } from '../hooks/useConfiguracion';
+import { formatMoney, formatDate, mesActualStr, sumarMesesStr, mesLabel, estadoAumento } from '../lib/format';
 
 interface Inquilino {
   nombre: string;
@@ -32,6 +33,10 @@ interface FilaCobro {
   // Independiente de `estado` (que es sobre el COBRO): si ya se emitió la
   // factura de este mes (pedido del usuario 2026-10-03, badge "Emitido").
   facturaEmitida: boolean;
+  // Cartel de alerta de aumento al lado de ESPERADO (pedido del usuario
+  // 2026-10-15) — misma fecha que ya calcula `PropiedadesService.
+  // proximoAumento()` para la ficha individual y Avisos.
+  proximoAumento: string | null;
   pagos: Pago[];
 }
 
@@ -46,6 +51,10 @@ interface KpisInquilinos {
   alDia: number;
   conDeuda: number;
   deudaTotalAcumulada: number;
+}
+
+interface Configuracion {
+  diasAnticipacionAumento: number;
 }
 
 const ESTADO_LABEL: Record<FilaCobro['estado'], { texto: string; clase: string }> = {
@@ -79,6 +88,9 @@ interface PropiedadDb extends PropiedadParaAlquilar {
   contratoFin: string | null;
   indice: 'IPC' | 'ICL' | null;
   frecuenciaAumentoMeses: number | null;
+  // Cartel de alerta de aumento junto al precio (pedido del usuario
+  // 2026-10-15) — ver comentario en `FilaCobro.proximoAumento`.
+  proximoAumento: string | null;
 }
 
 // Mismos períodos que ofrece `AgregarPropiedadPage.tsx`/`AlquilarPropiedadModal.tsx`
@@ -104,6 +116,10 @@ export function InquilinosPage() {
   const [busqueda, setBusqueda] = useState('');
   const [modalFila, setModalFila] = useState<FilaCobro | null>(null);
   const [facturaDe, setFacturaDe] = useState<FilaCobro | null>(null);
+  // "Ver factura" (pedido del usuario 2026-10-15, botón 👁 al lado del badge
+  // "Emitido") — modal aparte de `facturaDe` porque abre `FacturaModal` en
+  // modo `soloVer` (comprobante directo, nunca el formulario de edición).
+  const [verFacturaDe, setVerFacturaDe] = useState<FilaCobro | null>(null);
   const [alquilarModal, setAlquilarModal] = useState(false);
   const [fichaId, setFichaId] = useState<string | null>(null);
   const qc = useQueryClient();
@@ -120,12 +136,43 @@ export function InquilinosPage() {
     queryKey: ['propiedades'],
     queryFn: () => api.get<PropiedadDb[]>('/propiedades'),
   });
+  const configuracion = useConfiguracion<Configuracion>();
+  const diasAnticipacionAumento = configuracion.data?.diasAnticipacionAumento ?? 30;
 
   function invalidarTodo() {
     qc.invalidateQueries({ queryKey: ['cobros'] });
     // Un pago cambia la deuda del inquilino, que es justamente lo que
     // "Avisos" usa para armar los reclamos de deuda.
     qc.invalidateQueries({ queryKey: ['avisos'] });
+  }
+
+  // Botón "✕ Eliminar factura" al lado del badge "Emitido" (pedido del
+  // usuario 2026-10-15) — por si se emitió por error. `mes` siempre es el
+  // elegido en el navegador de arriba, que es justo el que tiene el badge.
+  const eliminarFactura = useMutation({
+    mutationFn: (propiedadId: string) => api.delete(`/facturacion/propiedades/${propiedadId}/facturas/${mes}`),
+    onSuccess: (_data, propiedadId) => {
+      invalidarTodo();
+      // "Emitir factura"/"Ver factura" de esta propiedad+mes quedan
+      // cacheadas como "ya existe" — sin esto, reabrir cualquiera de las
+      // dos modales serviría ese dato viejo un instante.
+      qc.invalidateQueries({ queryKey: ['factura-mes', propiedadId] });
+      // La liquidación del propietario (si todavía no se emitió) recalcula
+      // sus ítems predeterminados a partir de la factura — su vista previa
+      // también queda vieja.
+      qc.invalidateQueries({ queryKey: ['liquidacion-preview'] });
+    },
+    onError: (err) => alert(err instanceof ApiError ? err.message : 'No se pudo eliminar la factura.'),
+  });
+
+  function pedirEliminarFactura(f: FilaCobro) {
+    if (
+      window.confirm(
+        `¿Eliminar la factura de ${f.propiedadNombre} (${mesLabel(mes)})? Esto no borra los pagos ya registrados ese mes — se puede volver a emitir después.`,
+      )
+    ) {
+      eliminarFactura.mutate(f.propiedadId);
+    }
   }
 
   // Toda la cartera de alquiler (ocupada y vacante) vive acá — Ventas y
@@ -149,6 +196,9 @@ export function InquilinosPage() {
   });
 
   const propiedadFacturaDe = facturaDe ? (propiedades.data ?? []).find((p) => p.id === facturaDe.propiedadId) : undefined;
+  const propiedadVerFacturaDe = verFacturaDe
+    ? (propiedades.data ?? []).find((p) => p.id === verFacturaDe.propiedadId)
+    : undefined;
 
   return (
     <>
@@ -275,6 +325,7 @@ export function InquilinosPage() {
               {filasVisibles.map((f) => {
                 const ultimoPago = f.pagos[f.pagos.length - 1];
                 const { texto, clase } = ESTADO_LABEL[f.estado];
+                const aumento = estadoAumento(f.proximoAumento, diasAnticipacionAumento);
                 return (
                   <tr key={f.propiedadId}>
                     <td>
@@ -282,7 +333,28 @@ export function InquilinosPage() {
                     </td>
                     <td>{f.inquilino?.nombre ?? <span style={{ color: 'var(--muted)' }}>—</span>}</td>
                     <td style={{ textAlign: 'right' }}>
-                      <span className="money">{formatMoney(f.esperado ?? 0)}</span>
+                      {/* Columna, no fila: el monto siempre queda en su propia
+                          línea pegado a la derecha, con el mismo borde derecho
+                          que las filas sin cartel — si el cartel se pusiera al
+                          lado (fila), el monto se corría hacia la izquierda y
+                          dejaba de alinear con el resto de la columna ESPERADO
+                          (pedido del usuario 2026-10-15, reportado con
+                          captura). El cartel va debajo, también a la derecha. */}
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                        <span className="money">{formatMoney(f.esperado ?? 0)}</span>
+                        {aumento && (
+                          <span
+                            className="badge aumento"
+                            title={
+                              aumento === 'VENCIDO'
+                                ? 'El aumento de alquiler ya debería haberse aplicado'
+                                : `Aumento de alquiler próximo (${formatDate(f.proximoAumento)})`
+                            }
+                          >
+                            {aumento === 'VENCIDO' ? 'Aumento vencido' : 'Aumento próximo'}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <div className="paycell" style={{ alignItems: 'flex-end' }}>
@@ -297,12 +369,43 @@ export function InquilinosPage() {
                       </div>
                     </td>
                     <td>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
                         {clase ? <span className={`badge ${clase}`}><span className="dot"></span>{texto}</span> : '—'}
                         {f.facturaEmitida && (
-                          <span className="badge emitido" title={`Factura de ${mesLabel(mes)} ya emitida`}>
-                            Emitido
-                          </span>
+                          <>
+                            <span className="badge emitido" title={`Factura de ${mesLabel(mes)} ya emitida`}>
+                              Emitido
+                            </span>
+                            <button
+                              type="button"
+                              className="btn-icon-sm ver"
+                              title={`Ver factura de ${mesLabel(mes)}`}
+                              onClick={() => setVerFacturaDe(f)}
+                            >
+                              {/* SVG en vez de emoji (pedido del usuario 2026-10-15,
+                                  "los botones se ven raros estan desalineados"): el
+                                  glyph 👁 trae su propia métrica de alto/ascenso que
+                                  lo corre del centro dentro de un círculo de 26px —
+                                  un SVG con viewBox propio se centra exacto con
+                                  align-items/justify-content, sin depender de la
+                                  fuente del sistema. */}
+                              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" />
+                                <circle cx="12" cy="12" r="3" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-icon-sm eliminar"
+                              title={`Eliminar factura de ${mesLabel(mes)}`}
+                              disabled={eliminarFactura.isPending}
+                              onClick={() => pedirEliminarFactura(f)}
+                            >
+                              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M18 6 6 18M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>
@@ -354,6 +457,7 @@ export function InquilinosPage() {
             // pedido del usuario 2026-09-30: ver comentario en
             // PropiedadesService.findAll()).
             const montoActual = p.historialAumentos[0]?.monto ?? p.montoAlquilerVigente;
+            const aumento = estadoAumento(p.proximoAumento, diasAnticipacionAumento);
             return (
               <div
                 className="salecard"
@@ -379,9 +483,24 @@ export function InquilinosPage() {
                       </span>
                     </span>
                   </div>
-                  <div className="sprice">
-                    {montoActual != null ? formatMoney(montoActual) : 'Consultar'}
-                    <small>ARS/mes</small>
+                  <div className="sprice" style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                    <span>
+                      {montoActual != null ? formatMoney(montoActual) : 'Consultar'}
+                      <small>ARS/mes</small>
+                    </span>
+                    {aumento && (
+                      <span
+                        className="badge aumento"
+                        style={{ fontFamily: 'var(--sans)' }}
+                        title={
+                          aumento === 'VENCIDO'
+                            ? 'El aumento de alquiler ya debería haberse aplicado'
+                            : `Aumento de alquiler próximo (${formatDate(p.proximoAumento)})`
+                        }
+                      >
+                        {aumento === 'VENCIDO' ? 'Aumento vencido' : 'Aumento próximo'}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="sbody">
@@ -449,6 +568,21 @@ export function InquilinosPage() {
           honorariosAdministracionPorcentajeActual={propiedadFacturaDe?.honorariosAdministracionPorcentaje ?? null}
           mes={mes}
           onClose={() => setFacturaDe(null)}
+        />
+      )}
+      {verFacturaDe && (
+        <FacturaModal
+          soloVer
+          propiedadId={verFacturaDe.propiedadId}
+          propiedadNombre={verFacturaDe.propiedadNombre}
+          direccion={propiedadVerFacturaDe?.direccion}
+          contratoInicio={propiedadVerFacturaDe?.contratoInicio}
+          contratoFin={propiedadVerFacturaDe?.contratoFin}
+          inquilino={verFacturaDe.inquilino}
+          honorariosAdministracionActual={propiedadVerFacturaDe?.honorariosAdministracion ?? false}
+          honorariosAdministracionPorcentajeActual={propiedadVerFacturaDe?.honorariosAdministracionPorcentaje ?? null}
+          mes={mes}
+          onClose={() => setVerFacturaDe(null)}
         />
       )}
     </>
