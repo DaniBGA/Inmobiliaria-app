@@ -95,27 +95,54 @@ export function hoyLabel(): string {
 
 // Cartel de "alerta de aumento" (pedido del usuario 2026-10-15, en las
 // tarjetas de "Inquilinos y Cobros" y al lado de ESPERADO en "COBROS DEL
-// MES") — mismo criterio que ya usaba a mano `PropiedadFichaDrawer.tsx`
-// (`aumentoInminente`/`vencido`), centralizado acá para no repetir la
-// cuenta en cada pantalla nueva que lo necesite. `proximoAumento` es la
-// fecha que ya devuelve `PropiedadesService.proximoAumento()` en el
-// backend (null si no corresponde: vacante, sin frecuencia/contrato, o el
-// contrato termina antes de que llegue el próximo aumento).
+// MES") — centralizado acá para no repetir la cuenta en cada pantalla
+// nueva que lo necesite. `proximoAumento` es la fecha que ya devuelve
+// `PropiedadesService.proximoAumento()` en el backend (null si no
+// corresponde: vacante, sin frecuencia/contrato, o el contrato termina
+// antes de que llegue el próximo aumento).
+//
+// Ajustado 2026-10-16 (pedido del usuario: "que la alerta de aumento...
+// aparezca solo en el mes que se va a realizar el aumento, no que se
+// muestre siempre"): antes "PROXIMO" se prendía hasta
+// `Configuracion.diasAnticipacionAumento` días ANTES de la fecha (30 por
+// default) — con eso, un aumento de noviembre ya aparecía en octubre y
+// seguía prendido todo noviembre, dando la sensación de estar "siempre"
+// encendido. Ahora "PROXIMO" es directamente "la fecha cae en el mes de
+// referencia", sin ventana de anticipación. `diasAnticipacionAumento`
+// sigue existiendo y se sigue usando tal cual para el aviso proactivo de
+// `AvisosService.avisosAumento()` (un recordatorio aparte, pensado para
+// avisarle al inquilino con anticipación) — no se tocó ese.
+//
+// Ajustado de nuevo 2026-10-16 (2) (pedido del usuario: "en 'COBROS DEL
+// MES' si me muevo al mes que tiene aumento aparezca... el aumento"):
+// `mesReferencia` (opcional, formato "YYYY-MM") deja elegir CONTRA QUÉ
+// mes se compara `proximoAumento` — las tarjetas de propiedades (sin
+// navegador de mes) siguen usando el default, "hoy" real; "COBROS DEL
+// MES" (que sí tiene navegador ‹ mes ›) le pasa el mes seleccionado, así
+// que si el usuario navega hacia adelante hasta el mes del aumento, el
+// cartel aparece ahí aunque todavía falten meses para que ese mes
+// llegue de verdad.
 export type EstadoAumento = 'VENCIDO' | 'PROXIMO' | null;
 
-export function estadoAumento(
-  proximoAumento: string | Date | null | undefined,
-  diasAnticipacionAumento: number,
-): EstadoAumento {
+export function estadoAumento(proximoAumento: string | Date | null | undefined, mesReferencia?: string): EstadoAumento {
   if (!proximoAumento) return null;
-  const dias = Math.ceil((new Date(proximoAumento).getTime() - Date.now()) / 86400000);
-  // "Vencido" (ya se pasó la fecha y todavía no se cargó el aumento nuevo)
-  // es más urgente que "Próximo" (todavía falta, pero ya entró en la
-  // ventana de aviso configurada) — un mismo cartel no puede ser las dos
-  // cosas a la vez, así que vencido gana.
-  if (dias < 0) return 'VENCIDO';
-  if (dias <= diasAnticipacionAumento) return 'PROXIMO';
-  return null;
+  const fecha = new Date(proximoAumento);
+  let referencia: Date;
+  if (mesReferencia) {
+    const [anio, mes] = mesReferencia.split('-').map(Number);
+    referencia = new Date(Date.UTC(anio, mes - 1, 1));
+  } else {
+    referencia = new Date();
+  }
+  // El chequeo de "mismo mes" va PRIMERO a propósito: `fecha` siempre es
+  // medianoche UTC del día 1 (así se normaliza todo "mes" en este
+  // sistema) — comparar `fecha < referencia` primero marcaría VENCIDO
+  // desde el minuto 1 del mes correcto (ya pasó esa medianoche), aunque
+  // siga siendo el mes en el que corresponde aplicarlo. "Mismo mes" tiene
+  // que ganar siempre que sea cierto.
+  const mismoMes = fecha.getUTCFullYear() === referencia.getUTCFullYear() && fecha.getUTCMonth() === referencia.getUTCMonth();
+  if (mismoMes) return 'PROXIMO';
+  return fecha.getTime() < referencia.getTime() ? 'VENCIDO' : null;
 }
 
 // Nombre de archivo por defecto al descargar un comprobante (pedido del

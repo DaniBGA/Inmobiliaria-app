@@ -407,6 +407,57 @@ revisarlas antes de reimplementar algo que suene a "normalizar un mes" o
   deuda). El texto generado se sigue editando a mano en la tarjeta de
   Avisos antes de enviar, sin persistir esa edición puntual — lo nuevo es
   la plantilla BASE con la que arranca cada vez.
+- **Badge "Aumento" acotado al mes calendario, no a una ventana de
+  días** (2026-10-16, reemplaza el criterio anterior de 2026-10-15) —
+  `estadoAumento(proximoAumento, mesReferencia?)`
+  (`admin/src/lib/format.ts`) ya NO recibe `diasAnticipacionAumento`:
+  "PROXIMO" es directamente "la fecha de `proximoAumento` cae en el mes
+  de referencia" (comparación en UTC, mismo criterio que normaliza todo
+  "mes" en este sistema), sin ventana de anticipación — antes se
+  prendía hasta 30 días antes y por eso daba la sensación de estar
+  siempre encendido. "VENCIDO" (la fecha de referencia ya pasó el mes
+  del aumento) sigue sin límite de tiempo — se mantiene como red de
+  seguridad para un aumento que se siguió sin aplicar. **Orden de los
+  chequeos importa**: "mismo mes" se evalúa ANTES que "¿ya pasó la
+  fecha?" — `proximoAumento` es siempre medianoche UTC del día 1, así
+  que comparar fechas primero marcaría VENCIDO desde el primer minuto
+  del mes correcto (ya pasó la medianoche).
+  - `mesReferencia` (opcional, "YYYY-MM") es contra qué mes se compara —
+    **2026-10-16 (2)** (pedido del usuario: "en 'COBROS DEL MES' si me
+    muevo al mes que tiene aumento aparezca... el aumento"): las
+    tarjetas de propiedades (`InquilinosPage.tsx`, sin navegador de mes)
+    siguen sin pasarlo, default a "hoy" real; "COBROS DEL MES" (que sí
+    tiene navegador ‹ mes ›) le pasa el `mes` seleccionado en el
+    navegador — así, si el usuario navega hacia un mes futuro donde cae
+    el aumento, el cartel aparece ahí aunque en la realidad todavía
+    falten meses para llegar a esa fecha. Las dos tablas/vistas
+    comparten la misma función, solo cambia contra qué fecha se mide.
+  - `Configuracion.diasAnticipacionAumento` sigue existiendo sin tocar
+    para el aviso proactivo de `AvisosService.avisosAumento()` (feature
+    distinta, pensada para avisarle al inquilino con anticipación).
+- **"Servicios a descontar" de Liquidación carga el mes anterior YA
+  EMITIDO cuando este mes todavía no tiene liquidación propia**
+  (2026-10-16) — antes, abrir un mes nuevo siempre recalculaba
+  `ajustesServicios` con la heurística de servicios comunes a todas las
+  propiedades, ignorando cualquier edición manual (borrar un servicio
+  automático, agregar uno a mano) hecha el mes anterior. Nuevo
+  `LiquidacionesService.ultimaLiquidacionAnterior(propietarioId, mesStr)`
+  + `GET /liquidaciones/propietarios/:id/:mes/ajustes-servicios-anterior`
+  — busca la liquidación más reciente con `mes < mesStr` para ese
+  propietario (no necesariamente el mes inmediato anterior; si se
+  salteó alguno, igual encuentra la última que sí existe). En
+  `LiquidacionModal` (`PropietariosPage.tsx`), el orden de precarga de
+  `ajustesServicios` quedó: (1) liquidación de ESTE mes si ya existe, (2)
+  si no, la de la última liquidación ANTERIOR si existe (reemplaza del
+  todo a la heurística, no se mezclan), (3) recién si no hay ninguna
+  liquidación previa, la heurística de siempre. Mismo criterio que ya
+  usa `FacturasService.itemsPredeterminados()` para los "ítems sueltos"
+  de Factura. El monto de cada renglón carried-forward se mantiene tal
+  cual (no se resetea a vacío) — si la descripción coincide con un
+  servicio de `SERVICIOS_BASE`, el `useEffect` de sincronización en vivo
+  ya existente lo actualiza solo a la suma real de este mes apenas
+  detecta los datos; si es un ítem cargado a mano, queda como estaba
+  hasta que el usuario lo corrija.
 
 ### Verificar cambios (no hay test suite)
 

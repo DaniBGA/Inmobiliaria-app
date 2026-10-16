@@ -341,6 +341,30 @@ export class LiquidacionesService {
     });
   }
 
+  // "Servicios a descontar" del mes anterior YA EMITIDO (pedido del
+  // usuario 2026-10-16: "si yo borro de manera manual esos servicios y
+  // pongo servicios de manera manual el mes que viene aparezcan los
+  // servicios que puse de manera manual en vez de lo que se calcula
+  // automaticamente") — antes, al abrir un mes que todavía no tiene
+  // liquidación propia, `ajustesServicios` siempre se recalculaba desde
+  // cero con la heurística de servicios comunes a todas las propiedades,
+  // ignorando cualquier edición manual (agregar un ítem suelto, borrar uno
+  // de los automáticos) que el usuario hubiera hecho el mes anterior. Esto
+  // devuelve el `ajustesServicios` de la ÚLTIMA liquidación emitida ANTES
+  // de `mesStr` para este propietario (no necesariamente el mes
+  // inmediato anterior — si se salteó alguno, trae la más reciente de las
+  // que sí existen) — el frontend la usa como base en vez de la
+  // heurística cuando existe, mismo criterio que ya usa
+  // `FacturasService.itemsPredeterminados()` para "ítems sueltos" de
+  // Factura.
+  async ultimaLiquidacionAnterior(propietarioId: string, mesStr: string) {
+    return this.prisma.liquidacion.findFirst({
+      where: { propietarioId, mes: { lt: mesStringAFecha(mesStr) } },
+      orderBy: { mes: 'desc' },
+      select: { ajustesServicios: { orderBy: { orden: 'asc' } } },
+    });
+  }
+
   // Por si se emite una liquidación por error (propietario o mes
   // equivocado) — borra la liquidación (el `detalle`/`items`/`gastos` caen
   // en cascada, schema.prisma) junto con el ingreso que generó en Caja, si

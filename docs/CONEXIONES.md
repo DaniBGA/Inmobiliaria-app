@@ -4690,6 +4690,99 @@ antes armaban su texto con un template literal fijo en el código.
   /clientes/:id/definitivo`). `npx tsc --noEmit` y `npx vite build` sin
   errores.
 
+## 2026-10-16 — Alerta de aumento acotada al mes + "Servicios a descontar" hereda ediciones manuales del mes anterior
+
+Dos pedidos del usuario:
+
+1. *"que la alerta de aumento el cartel en las cards de inquilinos
+   aparezca solo en el mes que se va a realizar el aumento, no que se
+   muestre siempre"*.
+2. *"En liquidacion... si yo borro de manera manual esos servicios y
+   pongo servicios de manera manual el mes que viene aparezcan los
+   servicios que puse de manera manual en vez de lo que se calcula
+   automaticamente"*.
+
+- [x] **Pedido 1 — `estadoAumento()` acotado al mes calendario**: antes
+  "PROXIMO" se prendía hasta `Configuracion.diasAnticipacionAumento`
+  días ANTES de la fecha del próximo aumento (30 por default) y seguía
+  prendido durante todo ese mes — con eso, un aumento de noviembre ya se
+  veía desde principios de octubre, dando la sensación de estar
+  "siempre" encendido. Se sacó la ventana de anticipación de esta
+  función — ahora "PROXIMO" es directamente "la fecha cae en el mes
+  calendario actual" (sin importar cuántos días faltan dentro de ese
+  mes), y arranca prendido recién el día 1. "VENCIDO" (la fecha ya pasó)
+  no se tocó — se sigue mostrando sin límite de tiempo, a propósito,
+  como red de seguridad para no perder de vista un aumento que se siguió
+  sin aplicar mes tras mes.
+  - `diasAnticipacionAumento` sigue existiendo tal cual y se sigue
+    usando para `AvisosService.avisosAumento()` (el recordatorio
+    proactivo de Avisos, pensado para avisarle al inquilino CON
+    anticipación) — esa es una feature distinta, no se tocó.
+  - [x] **Bug encontrado y corregido antes de darlo por terminado**: la
+    primera versión chequeaba "¿ya pasó la fecha?" ANTES que "¿mismo
+    mes?" — como `proximoAumento` siempre es medianoche UTC del día 1,
+    eso marcaba VENCIDO desde el primer minuto del mes CORRECTO (ya
+    había pasado esa medianoche), pisando el "PROXIMO" que debía
+    mostrarse todo ese mes. Se invirtió el orden: "mismo mes" se chequea
+    primero y gana siempre que sea cierto. Verificado con 6 casos de
+    prueba en Node (incluido el límite exacto: "unos minutos después de
+    medianoche del día 1 del mes del aumento" → `PROXIMO`, no
+    `VENCIDO`) — los 6 pasaron.
+- [x] **Pedido 2 — "Servicios a descontar" hereda el mes anterior**:
+  nuevo `LiquidacionesService.ultimaLiquidacionAnterior(propietarioId,
+  mesStr)` + `GET /liquidaciones/propietarios/:id/:mes/ajustes-servicios-anterior`
+  — busca la liquidación más reciente con `mes < mesStr` (no
+  necesariamente el mes inmediato anterior, salta meses sin liquidación
+  si hace falta). En `LiquidacionModal` (`PropietariosPage.tsx`), la
+  precarga de `ajustesServicios` para un mes SIN liquidación propia
+  ahora prioriza esto por sobre la heurística automática — si hay una
+  liquidación anterior, se usan SUS ítems tal cual (reemplazo completo,
+  no se mezcla con la heurística, así que un servicio automático borrado
+  a mano el mes pasado no vuelve a aparecer solo). La heurística
+  automática (servicios de `SERVICIOS_BASE` presentes en todas las
+  propiedades) queda como último recurso, solo para la primera
+  liquidación de un propietario nuevo que nunca tuvo una anterior.
+  - [x] **Verificado con curl, datos `TEST` creados y borrados al
+    final**: se emitió una liquidación de octubre con un ajuste manual
+    ("Gastos varios manual", $7.000, sin relación con ningún servicio
+    de `SERVICIOS_BASE`). `GET .../2026-11/ajustes-servicios-anterior`
+    devolvió ese mismo ajuste para noviembre (que todavía no tiene
+    liquidación propia). Se repitió saltando un mes:
+    `GET .../2026-12/ajustes-servicios-anterior` también devolvió el
+    ajuste de octubre (confirma que busca la ÚLTIMA liquidación
+    anterior, no exige que sea el mes inmediato). `npx tsc --noEmit` sin
+    errores en `admin/` y `app/api/`; `npx vite build` sin errores.
+
+## 2026-10-16 (2) — Alerta de aumento en "COBROS DEL MES" sigue al navegador de mes, no a "hoy"
+
+Pedido del usuario, seguimiento del fix anterior del mismo día: *"la
+alerta de aumento en la parte de 'COBROS DEL MES' si me muevo al mes que
+tiene aumento aparezca en las opciones el aumento"*.
+
+El fix anterior (punto previo de este mismo día) había acotado
+`estadoAumento()` al mes calendario, pero usando siempre "hoy" real como
+referencia — eso dejaba a "COBROS DEL MES" (que tiene su propio
+navegador ‹ mes ›, independiente del día de hoy) sin forma de ver el
+cartel al navegar hacia el mes futuro donde cae el aumento, porque seguía
+comparando contra la fecha real en vez de contra el mes que se estaba
+mirando en pantalla.
+
+- [x] **Fix**: `estadoAumento()` ahora acepta un segundo parámetro
+  opcional, `mesReferencia` ("YYYY-MM") — si se pasa, compara
+  `proximoAumento` contra el PRIMER DÍA de ese mes en vez de contra
+  "hoy". Las tarjetas de propiedades (sin navegador) no lo pasan, así
+  que siguen exactamente igual que antes (referencia = hoy real). La
+  tabla "COBROS DEL MES" (`InquilinosPage.tsx`) ahora le pasa el `mes`
+  seleccionado en su navegador — mismo criterio de "mismo mes"/"ya
+  pasó" que ya tenía la función, solo cambia contra qué fecha se mide.
+- [x] **Verificado con un script de Node** (lógica pura de fechas, sin
+  necesidad de levantar nada): navegar a un mes ANTERIOR al del aumento
+  da `null` (todavía no corresponde), navegar al mes EXACTO del aumento
+  da `PROXIMO`, navegar a un mes POSTERIOR sin que se haya aplicado da
+  `VENCIDO` (se mantiene varios meses después también) — los 5 casos de
+  prueba pasaron. `npx tsc --noEmit` y `npx vite build` sin errores en
+  `admin/`.
+
 ## Cómo actualizar este archivo
 
 Cada vez que se implemente una conexión: marcarla `[x]`, agregar la fecha y

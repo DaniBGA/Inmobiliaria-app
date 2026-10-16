@@ -6,7 +6,6 @@ import { Modal } from '../components/Modal';
 import { AlquilarPropiedadModal, type PropiedadParaAlquilar } from '../components/AlquilarPropiedadModal';
 import { PropiedadFichaDrawer, FacturaModal } from '../components/PropiedadFichaDrawer';
 import { SeccionGuia } from '../components/SeccionGuia';
-import { useConfiguracion } from '../hooks/useConfiguracion';
 import { formatMoney, formatDate, mesActualStr, sumarMesesStr, mesLabel, estadoAumento } from '../lib/format';
 
 interface Inquilino {
@@ -51,10 +50,6 @@ interface KpisInquilinos {
   alDia: number;
   conDeuda: number;
   deudaTotalAcumulada: number;
-}
-
-interface Configuracion {
-  diasAnticipacionAumento: number;
 }
 
 const ESTADO_LABEL: Record<FilaCobro['estado'], { texto: string; clase: string }> = {
@@ -136,9 +131,6 @@ export function InquilinosPage() {
     queryKey: ['propiedades'],
     queryFn: () => api.get<PropiedadDb[]>('/propiedades'),
   });
-  const configuracion = useConfiguracion<Configuracion>();
-  const diasAnticipacionAumento = configuracion.data?.diasAnticipacionAumento ?? 30;
-
   function invalidarTodo() {
     qc.invalidateQueries({ queryKey: ['cobros'] });
     // Un pago cambia la deuda del inquilino, que es justamente lo que
@@ -325,7 +317,7 @@ export function InquilinosPage() {
               {filasVisibles.map((f) => {
                 const ultimoPago = f.pagos[f.pagos.length - 1];
                 const { texto, clase } = ESTADO_LABEL[f.estado];
-                const aumento = estadoAumento(f.proximoAumento, diasAnticipacionAumento);
+                const aumento = estadoAumento(f.proximoAumento, mes);
                 return (
                   <tr key={f.propiedadId}>
                     <td>
@@ -457,7 +449,7 @@ export function InquilinosPage() {
             // pedido del usuario 2026-09-30: ver comentario en
             // PropiedadesService.findAll()).
             const montoActual = p.historialAumentos[0]?.monto ?? p.montoAlquilerVigente;
-            const aumento = estadoAumento(p.proximoAumento, diasAnticipacionAumento);
+            const aumento = estadoAumento(p.proximoAumento);
             return (
               <div
                 className="salecard"

@@ -27,6 +27,11 @@ export class LiquidacionesController {
     return this.liquidacionesService.previsualizar(propietarioId, mes);
   }
 
+  @Get('propietarios/:propietarioId/:mes/ajustes-servicios-anterior')
+  ultimaLiquidacionAnterior(@Param('propietarioId') propietarioId: string, @Param('mes') mes: string) {
+    return this.liquidacionesService.ultimaLiquidacionAnterior(propietarioId, mes);
+  }
+
   @Post('propietarios/:propietarioId/:mes')
   generar(
     @Param('propietarioId') propietarioId: string,

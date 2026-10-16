@@ -493,14 +493,32 @@ function LiquidacionModal({
     queryFn: () => api.get<Liquidacion | null>(`/liquidaciones/propietarios/${propietario.id}/${mes}`),
   });
 
+  // "Servicios a descontar" de la última liquidación YA EMITIDA antes de
+  // este mes (pedido del usuario 2026-10-16: "si yo borro de manera
+  // manual esos servicios y pongo servicios de manera manual el mes que
+  // viene aparezcan los servicios que puse de manera manual en vez de lo
+  // que se calcula automaticamente") — si existe, se usa como base en vez
+  // de la heurística de abajo, que ignoraba cualquier edición manual
+  // (agregar un ítem suelto, borrar uno de los automáticos) hecha el mes
+  // anterior. Independiente de `liquidacionExistente` (ese es ESTE mes, si
+  // ya se emitió; este es el mes ANTERIOR más reciente que sí se emitió).
+  const liquidacionAnterior = useQuery({
+    queryKey: ['liquidacion-anterior', propietario.id, mes],
+    queryFn: () =>
+      api.get<{ ajustesServicios: Liquidacion['ajustesServicios'] } | null>(
+        `/liquidaciones/propietarios/${propietario.id}/${mes}/ajustes-servicios-anterior`,
+      ),
+  });
+
   const [itemsPorPropiedad, setItemsPorPropiedad] = useState<Record<string, ItemEditable[]> | null>(null);
   const [ajustesServicios, setAjustesServicios] = useState<AjusteEditable[]>([]);
 
   useEffect(() => {
-    // Espera a que ambos pedidos resuelvan antes de precargar nada: si
+    // Espera a que los tres pedidos resuelvan antes de precargar nada: si
     // `preview` llega primero, no hay forma de saber todavía si hay que usar
-    // la heurística o los datos de la liquidación ya emitida.
-    if (!liquidacionExistente.isSuccess) return;
+    // la heurística, la liquidación ya emitida de este mes, o la del mes
+    // anterior.
+    if (!liquidacionExistente.isSuccess || !liquidacionAnterior.isSuccess) return;
     if (preview.data && itemsPorPropiedad === null) {
       const inicial: Record<string, ItemEditable[]> = {};
       for (const d of preview.data) {
@@ -529,6 +547,26 @@ function LiquidacionModal({
         // heurística de más abajo, que arranca siempre con el monto vacío.
         setAjustesServicios(
           liquidacionExistente.data.ajustesServicios.map((a) => ({
+            descripcion: a.descripcion,
+            monto: String(a.monto),
+            numeroLiquidacion: a.numeroLiquidacion ?? '',
+          })),
+        );
+      } else if (liquidacionAnterior.data && liquidacionAnterior.data.ajustesServicios.length > 0) {
+        // Este mes todavía no tiene liquidación propia, pero hay una
+        // anterior — se parte de SUS "Servicios a descontar" en vez de
+        // recalcular con la heurística: si el mes pasado se borró un
+        // servicio automático o se cargó uno a mano, eso es lo que el
+        // usuario realmente quiere ver de nuevo, no lo que la heurística
+        // detectaría hoy. El monto se mantiene (mismo criterio que
+        // `itemsPredeterminados()` para los "ítems sueltos" de Factura) —
+        // si la descripción corresponde a un servicio de `SERVICIOS_BASE`,
+        // el `useEffect` de sincronización en vivo de más abajo lo va a
+        // actualizar solo a la suma real apenas detecte los datos de este
+        // mes; si es un ítem cargado a mano, queda tal cual hasta que el
+        // usuario lo corrija.
+        setAjustesServicios(
+          liquidacionAnterior.data.ajustesServicios.map((a) => ({
             descripcion: a.descripcion,
             monto: String(a.monto),
             numeroLiquidacion: a.numeroLiquidacion ?? '',
@@ -573,7 +611,7 @@ function LiquidacionModal({
     // Solo precarga la primera vez que llegan los datos; después el usuario
     // es dueño del estado.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preview.data, liquidacionExistente.isSuccess]);
+  }, [preview.data, liquidacionExistente.isSuccess, liquidacionAnterior.isSuccess]);
 
   // Actualización en vivo de "Servicios a descontar" (pedido del usuario
   // 2026-10-03, ajustado 2026-10-16): mientras se edita el monto de un
@@ -752,7 +790,7 @@ function LiquidacionModal({
 
   return (
     <Modal open onClose={onClose} title={`Liquidación — ${propietario.nombre} (${mesLabel(mes)})`} width={620}>
-      {(preview.isPending || liquidacionExistente.isPending) && (
+      {(preview.isPending || liquidacionExistente.isPending || liquidacionAnterior.isPending) && (
         <div className="loadstate">Calculando liquidación…</div>
       )}
       {preview.isError && <div className="errstate">No se pudo calcular la liquidación.</div>}
