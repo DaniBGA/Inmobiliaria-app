@@ -4783,6 +4783,37 @@ mirando en pantalla.
   prueba pasaron. `npx tsc --noEmit` y `npx vite build` sin errores en
   `admin/`.
 
+## 2026-10-16 (3) — Se saca el estado "vencido" del badge de aumento + texto "Aplicar aumento"
+
+Pedido del usuario: *"No quiero que meses siguientes diga 'alerta
+vencimiento' que solo diga en el mes que corresponde el aumento y que
+diga 'Aplicar aumento' en vez de 'Proximo aumento'"*.
+
+El fix anterior (punto previo) acotó el badge al mes calendario exacto
+para el estado "PROXIMO", pero conservaba "VENCIDO" para cualquier mes
+POSTERIOR al del aumento sin aplicar — eso seguía prendiendo el cartel
+"para siempre" una vez pasado ese mes, que es justo lo que el usuario
+no quiere ver.
+
+- [x] **Fix**: `EstadoAumento` (`admin/src/lib/format.ts`) pasa de
+  `'VENCIDO' | 'PROXIMO' | null` a solo `'PROXIMO' | null`.
+  `estadoAumento()` ahora devuelve `'PROXIMO'` únicamente cuando
+  `proximoAumento` cae en el mismo mes (año+mes en UTC) que la
+  referencia, y `null` en cualquier otro caso — mes anterior O
+  posterior. Se sacó también el chequeo de "¿ya pasó la fecha?", que ya
+  no hace falta.
+- [x] Los dos call sites en `InquilinosPage.tsx` (tarjetas de
+  propiedades y tabla "COBROS DEL MES") se simplificaron: ya no hay
+  ternario `aumento === 'VENCIDO' ? ... : ...`, el texto del badge es
+  siempre fijo, `"Aplicar aumento"` (antes `"Aumento próximo"`/`"Aumento
+  vencido"`), con el tooltip actualizado a `"Corresponde aplicar el
+  aumento de alquiler este mes (fecha)"`.
+- [x] **Verificado con un script de Node** (5 casos): mes anterior al
+  aumento → `null`; mes exacto → `PROXIMO`; mes posterior sin aplicar →
+  `null` (antes daba `VENCIDO`); varios meses después sin aplicar →
+  sigue `null`; sin `proximoAumento` → `null`. Los 5 pasaron.
+  `npx tsc --noEmit` y `npx vite build` sin errores en `admin/`.
+
 ## Cómo actualizar este archivo
 
 Cada vez que se implemente una conexión: marcarla `[x]`, agregar la fecha y

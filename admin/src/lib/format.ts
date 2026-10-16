@@ -122,7 +122,17 @@ export function hoyLabel(): string {
 // que si el usuario navega hacia adelante hasta el mes del aumento, el
 // cartel aparece ahí aunque todavía falten meses para que ese mes
 // llegue de verdad.
-export type EstadoAumento = 'VENCIDO' | 'PROXIMO' | null;
+//
+// Ajustado de nuevo 2026-10-16 (3) (pedido del usuario: "no quiero que
+// meses siguientes diga 'alerta vencimiento' que solo diga en el mes
+// que corresponde el aumento"): se sacó el estado "VENCIDO" — antes, una
+// vez pasado el mes del aumento sin aplicarlo, el cartel quedaba
+// prendido para siempre en todos los meses futuros ("vencido"). Ahora
+// el cartel solo aparece cuando `proximoAumento` cae EXACTAMENTE en el
+// mes de referencia; cualquier otro mes (anterior o posterior) no
+// muestra nada. El texto también cambió de "Próximo aumento"/"Aumento
+// vencido" a "Aplicar aumento" en ambos call sites.
+export type EstadoAumento = 'PROXIMO' | null;
 
 export function estadoAumento(proximoAumento: string | Date | null | undefined, mesReferencia?: string): EstadoAumento {
   if (!proximoAumento) return null;
@@ -134,15 +144,8 @@ export function estadoAumento(proximoAumento: string | Date | null | undefined, 
   } else {
     referencia = new Date();
   }
-  // El chequeo de "mismo mes" va PRIMERO a propósito: `fecha` siempre es
-  // medianoche UTC del día 1 (así se normaliza todo "mes" en este
-  // sistema) — comparar `fecha < referencia` primero marcaría VENCIDO
-  // desde el minuto 1 del mes correcto (ya pasó esa medianoche), aunque
-  // siga siendo el mes en el que corresponde aplicarlo. "Mismo mes" tiene
-  // que ganar siempre que sea cierto.
   const mismoMes = fecha.getUTCFullYear() === referencia.getUTCFullYear() && fecha.getUTCMonth() === referencia.getUTCMonth();
-  if (mismoMes) return 'PROXIMO';
-  return fecha.getTime() < referencia.getTime() ? 'VENCIDO' : null;
+  return mismoMes ? 'PROXIMO' : null;
 }
 
 // Nombre de archivo por defecto al descargar un comprobante (pedido del

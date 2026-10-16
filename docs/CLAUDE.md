@@ -308,18 +308,17 @@ revisarlas antes de reimplementar algo que suene a "normalizar un mes" o
   `FacturaModal` con la prop `soloVer`: el comprobante sale directo de
   `facturaExistente.data` (no de `emitir.data`), nunca se renderiza el
   formulario de edición ni se pide `predeterminados`.
-- **Badge "Aumento próximo/vencido"**: en las tarjetas de "Inquilinos y
-  Cobros" (junto al precio) y en "COBROS DEL MES" (junto a ESPERADO).
-  Reusa `PropiedadesService.proximoAumento()` (misma que la ficha
-  individual y Avisos) — el backend solo manda la fecha cruda
+- **Badge "Aplicar aumento"**: en las tarjetas de "Inquilinos y Cobros"
+  (junto al precio) y en "COBROS DEL MES" (junto a ESPERADO). Reusa
+  `PropiedadesService.proximoAumento()` (misma que la ficha individual y
+  Avisos) — el backend solo manda la fecha cruda
   (`PropiedadesService.findAll()` y `CobrosService.resumenMes()` agregan
-  `proximoAumento: Date | null`), el frontend decide el estado con
-  `estadoAumento()` (`admin/src/lib/format.ts`) contra
-  `Configuracion.diasAnticipacionAumento`. Visualmente VENCIDO y PROXIMO
-  son iguales (una sola clase roja `.badge.aumento`) — la distinción
-  queda solo en el texto/tooltip. En "COBROS DEL MES" el monto de
-  ESPERADO y el cartel van en columna, no en fila, para que el monto no
-  se desalinee con las filas sin cartel.
+  `proximoAumento: Date | null`), el frontend decide si se muestra con
+  `estadoAumento()` (`admin/src/lib/format.ts`, ver detalle más abajo).
+  Un solo estado posible (`'PROXIMO' | null`, ya no hay "vencido") — el
+  texto es siempre "Aplicar aumento" con una clase roja `.badge.aumento`.
+  En "COBROS DEL MES" el monto de ESPERADO y el cartel van en columna, no
+  en fila, para que el monto no se desalinee con las filas sin cartel.
 - **`Modal.tsx` es movible y minimizable** — cambio en el componente
   compartido, todo `<Modal>` del panel lo hereda gratis. `.modalhead` es
   la barra de arrastre: `pos` queda `null` hasta el primer drag
@@ -415,13 +414,7 @@ revisarlas antes de reimplementar algo que suene a "normalizar un mes" o
   de referencia" (comparación en UTC, mismo criterio que normaliza todo
   "mes" en este sistema), sin ventana de anticipación — antes se
   prendía hasta 30 días antes y por eso daba la sensación de estar
-  siempre encendido. "VENCIDO" (la fecha de referencia ya pasó el mes
-  del aumento) sigue sin límite de tiempo — se mantiene como red de
-  seguridad para un aumento que se siguió sin aplicar. **Orden de los
-  chequeos importa**: "mismo mes" se evalúa ANTES que "¿ya pasó la
-  fecha?" — `proximoAumento` es siempre medianoche UTC del día 1, así
-  que comparar fechas primero marcaría VENCIDO desde el primer minuto
-  del mes correcto (ya pasó la medianoche).
+  siempre encendido.
   - `mesReferencia` (opcional, "YYYY-MM") es contra qué mes se compara —
     **2026-10-16 (2)** (pedido del usuario: "en 'COBROS DEL MES' si me
     muevo al mes que tiene aumento aparezca... el aumento"): las
@@ -432,6 +425,18 @@ revisarlas antes de reimplementar algo que suene a "normalizar un mes" o
     el aumento, el cartel aparece ahí aunque en la realidad todavía
     falten meses para llegar a esa fecha. Las dos tablas/vistas
     comparten la misma función, solo cambia contra qué fecha se mide.
+  - **2026-10-16 (3)** (pedido del usuario: "no quiero que meses
+    siguientes diga 'alerta vencimiento', que solo diga en el mes que
+    corresponde el aumento" + cambiar el texto a "Aplicar aumento") — se
+    sacó el estado "VENCIDO" por completo: `EstadoAumento` pasó de
+    `'VENCIDO' | 'PROXIMO' | null` a solo `'PROXIMO' | null`. Antes,
+    pasado el mes del aumento sin aplicarlo, el cartel quedaba prendido
+    para siempre en todos los meses futuros ("vencido") — ahora solo se
+    prende cuando `proximoAumento` cae EXACTAMENTE en el mes de
+    referencia; cualquier otro mes (antes o después) no muestra nada. El
+    texto en los dos call sites (`InquilinosPage.tsx`, tarjetas y
+    "COBROS DEL MES") pasó de "Aumento próximo"/"Aumento vencido" a
+    "Aplicar aumento" fijo.
   - `Configuracion.diasAnticipacionAumento` sigue existiendo sin tocar
     para el aviso proactivo de `AvisosService.avisosAumento()` (feature
     distinta, pensada para avisarle al inquilino con anticipación).

@@ -337,13 +337,9 @@ export function InquilinosPage() {
                         {aumento && (
                           <span
                             className="badge aumento"
-                            title={
-                              aumento === 'VENCIDO'
-                                ? 'El aumento de alquiler ya debería haberse aplicado'
-                                : `Aumento de alquiler próximo (${formatDate(f.proximoAumento)})`
-                            }
+                            title={`Corresponde aplicar el aumento de alquiler este mes (${formatDate(f.proximoAumento)})`}
                           >
-                            {aumento === 'VENCIDO' ? 'Aumento vencido' : 'Aumento próximo'}
+                            Aplicar aumento
                           </span>
                         )}
                       </div>
@@ -484,13 +480,9 @@ export function InquilinosPage() {
                       <span
                         className="badge aumento"
                         style={{ fontFamily: 'var(--sans)' }}
-                        title={
-                          aumento === 'VENCIDO'
-                            ? 'El aumento de alquiler ya debería haberse aplicado'
-                            : `Aumento de alquiler próximo (${formatDate(p.proximoAumento)})`
-                        }
+                        title={`Corresponde aplicar el aumento de alquiler este mes (${formatDate(p.proximoAumento)})`}
                       >
-                        {aumento === 'VENCIDO' ? 'Aumento vencido' : 'Aumento próximo'}
+                        Aplicar aumento
                       </span>
                     )}
                   </div>
