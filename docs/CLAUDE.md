@@ -505,3 +505,9 @@ para el backend), Postgres en Docker escuchando solo en `127.0.0.1`. Guía
 completa y al día en `docs/DEPLOY.md`; actualizar código en el VPS con
 `bash deploy/deploy.sh` (hace `git pull` + install + build de los tres
 workspaces + `prisma migrate deploy` + reinicio PM2 + reload de Caddy).
+
+**Versión mínima de Node**: `deploy.sh` aborta si el Node del VPS está
+por debajo del último security release (hoy v22.23.4 / v24.22.1 /
+v26.12.1, release del 2026-10-21). Ante un security release nuevo hay que
+subir los mínimos en tres lugares a la vez: `deploy/deploy.sh`,
+`engines` del `package.json` raíz y la sección 12 de `docs/DEPLOY.md`.

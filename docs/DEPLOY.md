@@ -82,8 +82,12 @@ sudo apt install -y git curl build-essential python3 ufw
 ```bash
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt install -y nodejs
-node --version   # debería dar v22.x
+node --version   # debería dar v22.23.4 o superior
 ```
+
+Mínimo **v22.23.4**: las versiones 22.x anteriores son vulnerables al
+security release de Node.js del 2026-10-21 (ver sección 12).
+`deploy/deploy.sh` se niega a correr con una versión vulnerable.
 
 ### Docker + Docker Compose (para Postgres)
 
@@ -290,6 +294,35 @@ tar -czf uploads_$(date +%Y%m%d).tar.gz -C /var/www/sgm/app/api uploads
 Si querés, en otra sesión armamos un cron para que esto se haga solo y se
 suba a algún storage externo (no lo dejé automatizado ahora para no
 inventar de más sin que lo pidas).
+
+---
+
+## 12. Actualizar Node.js (parches de seguridad)
+
+Cuando Node.js publica un security release, el VPS se actualiza a mano —
+`deploy.sh` no lo hace solo, pero sí aborta si detecta una versión por
+debajo del mínimo parcheado que tiene cargado.
+
+Último release aplicado: **2026-10-21** (10 CVEs, entre ellos un RCE en el
+decoder Brotli que alcanza a `fetch()`). Mínimos: v22.23.4 / v24.22.1 /
+v26.12.1.
+
+```bash
+sudo apt update
+sudo apt install --only-upgrade -y nodejs   # NodeSource trae el último 22.x
+node --version                              # confirmar >= v22.23.4
+
+cd /var/www/sgm
+npm rebuild        # recompila bcrypt/sharp contra el binario nuevo (por las dudas)
+pm2 update         # reinicia el daemon de PM2 con el Node nuevo, no solo la app
+pm2 logs sgm-api --lines 50   # confirmar que arrancó sin errores
+```
+
+`pm2 update` es importante: `pm2 restart` reinicia la app pero deja el
+daemon de PM2 corriendo con el binario viejo en memoria.
+
+Al aparecer un security release nuevo, actualizar también los mínimos en
+`deploy/deploy.sh`, en `engines` del `package.json` raíz y en esta sección.
 
 ---
 

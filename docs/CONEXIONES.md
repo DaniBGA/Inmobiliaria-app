@@ -4814,6 +4814,47 @@ no quiere ver.
   sigue `null`; sin `proximoAumento` → `null`. Los 5 pasaron.
   `npx tsc --noEmit` y `npx vite build` sin errores en `admin/`.
 
+## 2026-10-22 — Node.js actualizado por el security release del 2026-10-21
+
+Pedido del usuario: *"se detectaron versiones vulnerables este 21 de
+octubre de 2026 y la version que se esta utilizando es vulnerable"*.
+
+El [security release oficial](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases)
+parchea 10 CVEs (4 altos) en las líneas 26.x/24.x/22.x — el más grave,
+CVE-2026-111497, es un RCE en el decoder Brotli que alcanza a `fetch()`
+(lo usa `ConfiguracionService.cotizacionDolar()` contra dolarapi.com); hay
+además 3 fallas de verificación de hostname TLS/DNS (relevante para el
+SMTP de `EmailService`). Versiones parcheadas: **v26.12.1 / v24.22.1 /
+v22.23.4**; 20.x o menos no reciben parche.
+
+- [x] **Dev local**: estaba en v26.1.0 (nvm, vulnerable) → `nvm install
+      26.12.1` + `nvm alias default 26.12.1`. Verificado: `bcrypt`,
+      `sharp` y `@prisma/client` cargan bien con el binario nuevo, y
+      `tsc --noEmit` limpio en `app/api`, `admin` y `app`. (De paso:
+      `tsc` de `app/api` fallaba porque el cliente Prisma generado no
+      tenía `inquilinoNombre` — migración del 2026-10-02 sin `prisma
+      generate` local; se regeneró, nada que ver con Node.)
+- [x] **`package.json` raíz**: `engines.node: "^22.23.4 || ^24.22.1 ||
+      >=26.12.1"` — npm avisa (`EBADENGINE`) al instalar con una versión
+      vulnerable.
+- [x] **`deploy/deploy.sh`**: nuevo paso "verificar versión de Node"
+      antes del `git pull` — aborta el deploy si el Node del VPS está por
+      debajo del mínimo parcheado de su línea (o en una línea sin
+      soporte). Probado con 26.12.1 (pasa), 26.1.0 y 18.19.1 reales
+      (bloquean) y 10 versiones sintéticas en los bordes de cada mínimo.
+- [x] **`docs/DEPLOY.md`**: mínimo v22.23.4 en la instalación + nueva
+      sección 12 "Actualizar Node.js" (`apt install --only-upgrade
+      nodejs`, `npm rebuild`, `pm2 update` — este último hace falta
+      porque `pm2 restart` deja el daemon con el binario viejo).
+- [~] **Pendiente del usuario — el VPS de producción**: no se puede
+      actualizar desde acá. Hasta que se corran los comandos de la sección
+      12 de `DEPLOY.md`, producción sigue vulnerable (y `deploy.sh` va a
+      abortar si el VPS tiene una 22.x anterior a la 22.23.4).
+- [~] **Node 18 del sistema** (`/usr/bin/node`, apt de Ubuntu, sin
+      soporte y sin parche) sigue instalado en la máquina de dev, tapado
+      por nvm. No se tocó (requiere `sudo apt remove nodejs`, decisión
+      del usuario).
+
 ## Cómo actualizar este archivo
 
 Cada vez que se implemente una conexión: marcarla `[x]`, agregar la fecha y
