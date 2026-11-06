@@ -4855,6 +4855,53 @@ v22.23.4**; 20.x o menos no reciben parche.
       por nvm. No se tocó (requiere `sudo apt remove nodejs`, decisión
       del usuario).
 
+## 2026-11-06 — La mora ya facturada (o borrada a mano) no se vuelve a sugerir
+
+Pedido del usuario: *"esta todo pagado ya de meses anteriores y cuando se
+genera la factura dentro de el rango para pagar sigue apareciendo el campo
+de mora... si genero una factura y le borro la mora de la factura en el
+caso que no la quiera cobrar, que no aparezca cada vez que le doy a generar
+factura"*.
+
+- [x] **Causa**: la mora se recalculaba entera en cada factura, sin
+      memoria de lo ya facturado. `CobrosService.moraAcumulada()` sumaba
+      la mora de TODO mes de los últimos 12 pagado tarde, así que un mes
+      pagado con atraso volvía a cobrarse en las facturas de los 12 meses
+      siguientes aunque ya se hubiera cobrado. Y `FacturaModal`
+      (`PropiedadFichaDrawer.tsx`), al reabrir una factura ya emitida,
+      descartaba los ítems de mora guardados y les pegaba los recalculados:
+      una mora borrada a mano reaparecía siempre.
+- [x] **Fix backend**: `moraAcumulada()` + el bloque "Recargo por mora" de
+      `FacturasService.itemsPredeterminados()` se reemplazaron por
+      `CobrosService.moraPendiente(propiedadId, mesStr)` → `{ acumulada,
+      delMes }`. Regla: **cada factura emitida salda la mora que había
+      hasta su `fecha` de emisión** (se haya dejado el ítem o se lo haya
+      borrado), y solo se sugiere la mora posterior. Sin cambios de schema:
+      lo saldado se reconstruye con `Factura.fecha` y los pagos con `fecha`
+      anterior a esa (`facturaIncluyeMoraDe()`/`diasMoraDelMes()`/
+      `mesesEnVentanaDeMora()` en `common/mora.util.ts`). Se resta monto,
+      no días (frecuencias SEMANA/MES/UNICO no son proporcionales).
+      `esperadoEstimado()` usa `moraPendiente().acumulada`.
+- [x] **Fix frontend**: `FacturaModal` mantiene la mora guardada en la
+      factura tal cual (o su ausencia) y solo suma la nueva que devuelve
+      `items-predeterminados`.
+- [x] **Cambio de comportamiento menor**: el "Recargo por mora" del propio
+      mes ahora también aparece si el mes ya se pagó completo pero tarde y
+      la factura se emite después de ese pago (antes quedaba para la
+      factura siguiente). Se cobra una sola vez igual.
+- [x] **Verificado con la API local**, datos `TEST` creados y borrados al
+      final, facturas emitidas con número manual (el correlativo real no se
+      movió) y fecha de emisión ajustada por psql. 8 casos, antes del fix
+      fallaban 4: todo pagado → sin mora; mes pagado 10 días tarde → la
+      factura siguiente sugiere 10 días; emitida borrándola → reabrirla y
+      la del mes siguiente no la sugieren; mes impago cobrado con 21 días y
+      pagado después a los 26 → la siguiente cobra solo 5; recargo del
+      propio mes cobrado a los 10 días y pagado a los 15 → la siguiente
+      cobra 5 y la otra nada. `tsc --noEmit` limpio en `app/api` y `admin`.
+- [~] **No verificado en navegador** el cambio de `FacturaModal` (es sacar
+      un `.filter`). Eliminar una factura (✕) devuelve la mora que había
+      saldado — esperable, la factura ya no existe.
+
 ## Cómo actualizar este archivo
 
 Cada vez que se implemente una conexión: marcarla `[x]`, agregar la fecha y

@@ -1726,17 +1726,17 @@ export function FacturaModal({
           return [base, cuenta];
         }),
       );
-      // "Recargo por mora"/"Mora acumulada" (§ pedido del usuario
-      // 2026-09-04) traen pegados los días de atraso, que siguen corriendo
-      // día a día — si esta factura ya estaba emitida, el ítem guardado
-      // queda congelado con los días de cuando se emitió. Se sacan acá los
-      // que hubiera y se agregan los de `predeterminados` (recién
-      // recalculados), igual criterio que ya se usa arriba para refrescar
-      // el N° de cuenta/usuario de los servicios contra el valor actual.
+      // Mora: la que se guardó al emitir esta factura queda TAL CUAL —
+      // incluida su ausencia, si se borró a mano para no cobrarla (§ pedido
+      // del usuario 2026-11-06: antes se descartaba y se reemplazaba por una
+      // recalculada, así que una mora borrada volvía a aparecer cada vez que
+      // se reabría la factura). Lo único que se suma es la mora NUEVA desde
+      // que se emitió (días que se siguieron sumando), que es lo único que
+      // devuelve `predeterminados` para un mes que ya tiene factura — ver
+      // `CobrosService.moraPendiente()`.
       const esItemMora = (descripcion: string) =>
         descripcion.startsWith('Recargo por mora') || descripcion.startsWith('Mora acumulada');
       const itemsFactura = facturaExistente.data.items
-        .filter((it) => !esItemMora(it.descripcion))
         .map((it) => {
           const { base, cuenta } = splitDescripcionCuenta(it.descripcion);
           return {

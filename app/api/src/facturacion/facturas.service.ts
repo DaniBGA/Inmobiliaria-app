@@ -5,9 +5,8 @@ import { PropiedadesService } from '../propiedades/propiedades.service';
 import { GastosService } from '../gastos/gastos.service';
 import { CobrosService } from '../cobros/cobros.service';
 import { ConfiguracionService } from '../configuracion/configuracion.service';
-import { diasDeAtrasoEnMes, finDeMes, mesStringAFecha, primerDiaMes } from '../common/fecha.util';
+import { finDeMes, mesStringAFecha } from '../common/fecha.util';
 import { SERVICIO_DESCRIPCION, SERVICIO_ORDEN, datosCuentaSuffix, esServicioTrasladable } from '../common/servicios-facturables.util';
-import { calcularMontoMora } from '../common/mora.util';
 import { FacturaItemInputDto } from './dto/factura-item-input.dto';
 
 export interface ItemPredeterminado {
@@ -38,9 +37,6 @@ export class FacturasService {
       select: {
         serviciosHabilitados: true,
         responsablePagoServicios: true,
-        punitorioFrecuencia: true,
-        punitorioTipo: true,
-        punitorioValor: true,
         obrasSanitariasNumeroCuenta: true,
         camuzziNumeroCuenta: true,
         retributivasNumeroCuenta: true,
@@ -119,50 +115,25 @@ export class FacturasService {
     // imprime como ítem de Factura/Liquidación. Lo que SÍ sigue
     // apareciendo cada mes mientras siga impago es la mora (abajo).
     //
-    // Mora acumulada (§5.6) sobre la ventana de 12 meses cerrados (§
-    // pedido del usuario 2026-09-04: antes solo se calculaba sobre el mes
-    // cerrado inmediato anterior, y encima solo si ya se había terminado
-    // de pagar — un inquilino que directamente nunca paga no generaba
-    // mora en ningún lado, por muchos meses que arrastrara).
-    // Ver `CobrosService.moraAcumulada()` para el detalle mes a mes. Es un
-    // ítem editable — no se fuerza.
-    const { mora, diasAtraso: diasAtrasoAcumulados } = await this.cobrosService.moraAcumulada(propiedadId, mes);
-    if (mora > 0) {
-      items.push({
-        descripcion: `Mora acumulada (${diasAtrasoAcumulados} ${diasAtrasoAcumulados === 1 ? 'día' : 'días'} de atraso)`,
-        monto: mora,
-        orden: items.length,
-      });
+    // Mora (§5.6) — solo la que todavía no pasó por ninguna factura
+    // emitida (§ pedido del usuario 2026-11-06, ver
+    // `CobrosService.moraPendiente()`): un mes pagado en término no genera
+    // nada, y la mora que ya se cobró o se borró a mano en una factura
+    // anterior no se vuelve a sugerir. Dos ítems, ambos editables (no se
+    // fuerzan):
+    // - "Mora acumulada": meses cerrados de la ventana de 12 (§ pedido del
+    //   usuario 2026-09-04).
+    // - "Recargo por mora": el MES DE ESTA FACTURA (§ pedido del usuario
+    //   2026-09-03/04: tiene que estar en la factura del mes que
+    //   corresponde, no recién en la siguiente) — una vez pasado el día de
+    //   vencimiento de Configuración, nunca para un mes futuro.
+    const { acumulada, delMes } = await this.cobrosService.moraPendiente(propiedadId, mesStr);
+    const diasTexto = (dias: number) => `${dias} ${dias === 1 ? 'día' : 'días'} de atraso`;
+    if (acumulada.mora > 0) {
+      items.push({ descripcion: `Mora acumulada (${diasTexto(acumulada.dias)})`, monto: acumulada.mora, orden: items.length });
     }
-
-    // Recargo por mora del MES DE ESTA FACTURA (§ pedido del usuario
-    // 2026-09-03/04: tiene que estar en la factura del mes que corresponde,
-    // no aparecer recién en la del mes siguiente): si `mes` es el mes en
-    // curso o cualquier mes YA PASADO, ya venció su día de pago
-    // (Configuración) y no se cobró el alquiler completo, se sugiere este
-    // recargo. `diasDeAtrasoEnMes()` ya topea solo al último día de ESE
-    // mismo mes (si `mes` ya cerró, el tope termina siendo directamente ese
-    // último día; si es el mes en curso, sigue creciendo día a día hasta
-    // hoy). "Mora acumulada" de arriba sigue cubriendo los meses ANTERIORES
-    // a este — no se superponen. No aplica a un mes futuro (todavía no
-    // venció nada).
-    if (mes.getTime() <= primerDiaMes(new Date()).getTime()) {
-      const configuracion = await this.configuracionService.get();
-      const diasAtraso = diasDeAtrasoEnMes(mes, configuracion.diaVencimientoAlquiler);
-      if (diasAtraso > 0) {
-        const alquilerEsperado = rentaVigenteRaw != null ? Number(rentaVigenteRaw) : 0;
-        const cobradoEsteMes = await this.cobrosService.cobradoDelMes(propiedadId, mes);
-        if (cobradoEsteMes < alquilerEsperado) {
-          const recargo = calcularMontoMora(propiedad, alquilerEsperado, diasAtraso);
-          if (recargo > 0) {
-            items.push({
-              descripcion: `Recargo por mora (${diasAtraso} ${diasAtraso === 1 ? 'día' : 'días'} de atraso)`,
-              monto: recargo,
-              orden: items.length,
-            });
-          }
-        }
-      }
+    if (delMes.mora > 0) {
+      items.push({ descripcion: `Recargo por mora (${diasTexto(delMes.dias)})`, monto: delMes.mora, orden: items.length });
     }
 
     // Ítems sueltos que se hayan tipeado a mano en la factura anterior (un

@@ -17,7 +17,12 @@ import {
   ultimosMesesCerrados,
 } from '../common/fecha.util';
 import { montoRegularEstimadoDelMes } from '../common/monto-regular-mes.util';
-import { calcularMontoMora } from '../common/mora.util';
+import {
+  calcularMontoMora,
+  diasMoraDelMes,
+  facturaIncluyeMoraDe,
+  mesesEnVentanaDeMora,
+} from '../common/mora.util';
 
 // IMPAGO_CON_MORA (§ pedido del usuario 2026-09-03): el mes en curso (no
 // cerrado todavía) pasó su día de vencimiento sin cobrarse del todo — del 1
@@ -94,8 +99,8 @@ export class CobrosService {
 
   // "Esperado" de un mes sin factura emitida todavía — alquiler + servicios
   // + gastos trasladados, estimados con los últimos montos conocidos (ver
-  // el comentario de montoRegularEstimadoDelMes()), MÁS la mora acumulada
-  // de meses anteriores (`moraAcumulada()`, mismo criterio que usa
+  // el comentario de montoRegularEstimadoDelMes()), MÁS la mora todavía no
+  // facturada de meses anteriores (`moraPendiente().acumulada`, mismo criterio que usa
   // `FacturasService.itemsPredeterminados()` para sugerir el ítem "Mora
   // acumulada" al abrir "Emitir factura"). Sin esto, "Esperado" mostraba
   // un número (solo lo nuevo de este mes) y al emitir la factura con los
@@ -127,8 +132,8 @@ export class CobrosService {
       mesStr,
     );
     if (base == null) return null;
-    const { mora } = await this.moraAcumulada(propiedadId, mesStringAFecha(mesStr));
-    return base + mora;
+    const { acumulada } = await this.moraPendiente(propiedadId, mesStr);
+    return base + acumulada.mora;
   }
 
   // §2.2 / §3.1: tabla "Cobros del mes" — esperado, cobrado, estado y pagos
@@ -384,78 +389,95 @@ export class CobrosService {
     return { deuda, mesesImpagos };
   }
 
-  // Mora acumulada sobre la MISMA ventana de 12 meses cerrados que
-  // `deudaAcumulada()` (§ pedido del usuario 2026-09-04: antes la mora solo
-  // se calculaba sobre el mes inmediato anterior, y encima únicamente si ya
-  // se había terminado de pagar — un inquilino que directamente nunca paga
-  // no generaba mora en ningún lado, aunque acumulara meses de atraso). Por
-  // cada mes de la ventana:
-  // - si terminó pagándose (cobrado >= esperado), la mora sale de los días
-  //   reales entre el vencimiento y el ÚLTIMO pago de ese mes (mismo
-  //   criterio que antes tenía en solitario `FacturasService.calcularMora()`).
-  // - si sigue sin pagarse (mes ya cerrado, nunca se saldó), sale de los
-  //   días entre el vencimiento y el ÚLTIMO día de ese mes — un mes cerrado
-  //   no puede seguir acumulando más días de los que tuvo (esa lógica es la
-  //   misma que usa `diasDeAtrasoEnMes()` para el mes todavía en curso).
-  // No incluye el mes en curso: ese lo cubre por separado el ítem "Recargo
-  // por mora" de `FacturasService.itemsPredeterminados()`, que sigue
-  // sumando día a día mientras el mes sigue abierto.
-  async moraAcumulada(propiedadId: string, ahora: Date = new Date()) {
+  // Mora TODAVÍA NO FACTURADA que corresponde sugerir en la factura de
+  // `mesStr` — la usan `FacturasService.itemsPredeterminados()` (ítems "Mora
+  // acumulada" y "Recargo por mora") y `esperadoEstimado()` de acá arriba.
+  //
+  // Meses que entran: la MISMA ventana de 12 meses cerrados que
+  // `deudaAcumulada()` (§ pedido del usuario 2026-09-04) → `acumulada`, más
+  // el propio mes de la factura si ya arrancó (no uno futuro) → `delMes`.
+  // Días de atraso de cada mes (`diasMoraDelMes()`): si terminó pagándose,
+  // del vencimiento al ÚLTIMO pago; si no, del vencimiento a hoy, con tope
+  // en el último día de ese mes (un mes cerrado no sigue sumando días).
+  //
+  // § pedido del usuario 2026-11-06 ("esta todo pagado ya de meses
+  // anteriores y... sigue apareciendo el campo de mora" + "si le borro la
+  // mora de la factura... que no aparezca cada vez que le doy a generar
+  // factura"): antes se recalculaba la mora entera de cada mes en CADA
+  // factura, así que un mes pagado tarde volvía a cobrarse en todas las
+  // facturas de los 12 meses siguientes, y una mora borrada a mano
+  // reaparecía siempre. Ahora cada factura emitida SALDA la mora que había
+  // hasta el momento de emitirla — se haya dejado el ítem (cobrada) o se lo
+  // haya borrado (perdonada), da igual — y acá solo se sugiere lo que vino
+  // DESPUÉS: los días que se siguieron sumando desde entonces (ej. un mes
+  // que estaba impago al facturar y se terminó pagando más tarde). No hace
+  // falta guardar nada extra: lo que saldó cada factura se reconstruye con
+  // su `fecha` de emisión y los pagos con `fecha` anterior a esa, que es
+  // justo lo que la factura sugirió en su momento. Incluye a la propia
+  // factura de `mesStr` si ya existe — reabrirla muestra solo la mora
+  // nueva desde que se emitió (la ya guardada la preserva el frontend).
+  async moraPendiente(propiedadId: string, mesStr: string) {
+    const sinMora = { acumulada: { mora: 0, dias: 0 }, delMes: { mora: 0, dias: 0 } };
     const propiedad = await this.prisma.propiedad.findUnique({
       where: { id: propiedadId },
       select: { punitorioTipo: true, punitorioValor: true, punitorioFrecuencia: true },
     });
     if (!propiedad?.punitorioTipo || propiedad.punitorioValor == null || Number(propiedad.punitorioValor) <= 0) {
-      return { mora: 0, mesesConMora: 0, diasAtraso: 0 };
+      return sinMora;
     }
 
-    const configuracion = await this.configuracionService.get();
+    const mesFactura = mesStringAFecha(mesStr);
     const hoy = new Date();
-    const referencia = ahora.getTime() > hoy.getTime() ? hoy : ahora;
-    const alDiaDesde = await this.alDiaDesde(propiedadId);
-    const meses = ultimosMesesCerrados(VENTANA_DEUDA_MESES, referencia).filter(
-      (mes) => !alDiaDesde || mes.getTime() >= alDiaDesde.getTime(),
-    );
+    const mesHoy = primerDiaMes(hoy);
+    const [configuracion, alDiaDesde, facturas] = await Promise.all([
+      this.configuracionService.get(),
+      this.alDiaDesde(propiedadId),
+      this.prisma.factura.findMany({ where: { propiedadId }, select: { mes: true, fecha: true } }),
+    ]);
+    const dentroDelContrato = (mes: Date) => !alDiaDesde || mes.getTime() >= alDiaDesde.getTime();
+
+    const cerrados = mesesEnVentanaDeMora(mesFactura, hoy).filter(dentroDelContrato);
+    const delMes = mesFactura.getTime() <= mesHoy.getTime() && dentroDelContrato(mesFactura) ? mesFactura : null;
+    const meses = delMes ? [...cerrados, delMes] : cerrados;
+    if (!meses.length) return sinMora;
+
+    const pagos = await this.prisma.pago.findMany({
+      where: { propiedadId, anulado: false, mes: { in: meses } },
+      select: { mes: true, fecha: true, monto: true },
+    });
 
     const porMes = await Promise.all(
       meses.map(async (mes) => {
         const esperadoRaw = await this.propiedadesService.rentaVigente(propiedadId, finDeMes(mes));
-        if (esperadoRaw == null) return { monto: 0, dias: 0 };
+        if (esperadoRaw == null || Number(esperadoRaw) <= 0) return { mes, mora: 0, dias: 0 };
         const esperado = Number(esperadoRaw);
-        const cobrado = await this.cobradoDelMes(propiedadId, mes);
+        const pagosDelMes = pagos.filter((p) => p.mes.getTime() === mes.getTime());
+        const dias = (hasta: Date) =>
+          diasMoraDelMes(mes, esperado, pagosDelMes, configuracion.diaVencimientoAlquiler, hasta);
 
-        const vencimiento = new Date(
-          Date.UTC(mes.getUTCFullYear(), mes.getUTCMonth(), configuracion.diaVencimientoAlquiler),
-        );
-        let diasAtraso: number;
-        if (cobrado >= esperado) {
-          const ultimoPago = await this.prisma.pago.findFirst({
-            where: { propiedadId, mes, anulado: false },
-            orderBy: { fecha: 'desc' },
-          });
-          if (!ultimoPago) return { monto: 0, dias: 0 };
-          diasAtraso = Math.round((ultimoPago.fecha.getTime() - vencimiento.getTime()) / 86_400_000);
-        } else {
-          diasAtraso = Math.floor((finDeMes(mes).getTime() - vencimiento.getTime()) / 86_400_000);
-        }
-        if (diasAtraso <= 0) return { monto: 0, dias: 0 };
-
-        return { monto: calcularMontoMora(propiedad, esperado, diasAtraso), dias: diasAtraso };
+        const diasTotales = dias(hoy);
+        if (diasTotales <= 0) return { mes, mora: 0, dias: 0 };
+        // Lo que ya saldaron las facturas que incluyeron este mes al
+        // emitirse (la más reciente, ya que los días solo crecen con el
+        // tiempo) — mismo criterio de meses que usó cada una.
+        const diasSaldados = facturas
+          .filter((f) => facturaIncluyeMoraDe(f, mes))
+          .reduce((max, f) => Math.max(max, dias(f.fecha)), 0);
+        // Se resta MONTO, no días: con frecuencia SEMANA/MES/UNICO el monto
+        // no es proporcional a los días (ej. UNICO ya cobrado = 0 de nuevo).
+        const mora =
+          calcularMontoMora(propiedad, esperado, diasTotales) - calcularMontoMora(propiedad, esperado, diasSaldados);
+        return mora > 0 ? { mes, mora, dias: diasTotales - diasSaldados } : { mes, mora: 0, dias: 0 };
       }),
     );
 
-    let mora = 0;
-    let mesesConMora = 0;
-    let diasAtraso = 0;
+    const resultado = { acumulada: { mora: 0, dias: 0 }, delMes: { mora: 0, dias: 0 } };
     for (const m of porMes) {
-      if (m.monto > 0) {
-        mora += m.monto;
-        diasAtraso += m.dias;
-        mesesConMora++;
-      }
+      const destino = delMes && m.mes.getTime() === delMes.getTime() ? resultado.delMes : resultado.acumulada;
+      destino.mora += m.mora;
+      destino.dias += m.dias;
     }
-
-    return { mora, mesesConMora, diasAtraso };
+    return resultado;
   }
 
   // Detalle mes a mes de lo pendiente (deuda + mes en curso si todavía no se

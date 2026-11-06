@@ -357,6 +357,16 @@ revisarlas antes de reimplementar algo que suene a "normalizar un mes" o
     nunca genera mora, así que un mes impago ahí ya no deja ningún
     rastro en la factura siguiente (antes al menos quedaba "Deuda
     arrastrada"). No se pidió un fallback, no se armó ninguno.
+- **La mora se cobra una sola vez: cada factura emitida salda la mora que
+  había hasta su `Factura.fecha`** (2026-11-06) — se haya dejado el ítem o
+  se lo haya borrado a mano para perdonarla.
+  `CobrosService.moraPendiente()` (única fuente de "Mora acumulada" y
+  "Recargo por mora") sugiere solo lo posterior, reconstruyendo lo saldado
+  con la fecha de emisión de cada factura y los pagos con `fecha` anterior
+  a esa; no hay ninguna tabla de "mora cobrada". Consecuencias: reemitir
+  una factura corre su `fecha` (salda hasta hoy); eliminarla devuelve la
+  mora que había saldado; y `FacturaModal` nunca recalcula la mora ya
+  guardada en una factura existente, solo le suma la nueva.
 - **"Descargar PDF" deja elegir carpeta/nombre** — `lib/pdfComprobante.ts`
   partido en `generarPdfComprobante()` (arma el PDF, devuelve un `Blob`),
   `descargarPdfComprobante()` (descarga silenciosa, la sigue usando solo
