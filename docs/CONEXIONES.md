@@ -4902,6 +4902,39 @@ factura"*.
       un `.filter`). Eliminar una factura (✕) devuelve la mora que había
       saldado — esperable, la factura ya no existe.
 
+## 2026-11-13 — Agenda: checkbox "Ver todos los próximos"
+
+Pedido del usuario: *"en la agenda haya una checkbox que diga 'Ver todos
+los proximos' y cuando actives el checkbox te muestre todo lo que hay
+pendiente meses siguientes"*. Antes, la lista lateral "Próximos eventos"
+salía solo del mes que mostraba el calendario y cortaba en 12.
+
+- [x] **Backend**: nuevo `GET /agenda/proximos?desde=YYYY-MM-DD` →
+      `AgendaService.eventosProximos()` — eventos manuales + automáticos
+      (vencimientos, aumentos, incidencias) de `desde` en adelante, sin
+      tope de meses. `desde` lo manda el navegador (su "hoy" local: el
+      servidor está en UTC y a la noche ya sería mañana); sin él, hoy UTC.
+      `eventosDelMes()` y el nuevo comparten `eventosEnRango(desde, hasta |
+      null, usuario)` — mismos eventos y misma visibilidad por rol (EQUIPO
+      solo los suyos), sin duplicar lógica.
+- [x] **Frontend** (`AgendaPage.tsx`): checkbox "Ver todos los próximos"
+      al lado de "Ver los ya hechos". Tildado, la lista lateral pasa a
+      "TODOS LOS PRÓXIMOS", sin el tope de 12, con un separador por mes
+      (`.evmes`, `global.css`); respeta "Ver los ya hechos". Un día elegido
+      en el calendario le gana a esta vista, y tildar el checkbox lo
+      suelta. El calendario y los KPIs no cambian (siguen siendo del mes).
+      La query solo se pide con el checkbox tildado; las mutaciones ya
+      invalidan `['agenda']` por prefijo, así que se refresca sola.
+- [x] **Verificado con la API local**, eventos `TEST` creados y borrados:
+      `proximos?desde=2026-11-13` trae hoy + dic + ene + mar 2027 y deja
+      afuera el de ayer, todos los automáticos con fecha ≥ hoy; `mes/2026-11`
+      y `mes/2026-12` devuelven lo mismo que antes. `tsc --noEmit` limpio en
+      `app/api` y `admin`, `vite build` del admin OK.
+- [~] **No verificado en navegador** (no hay Chrome/Chromium en esta
+      máquina). Como en la vista normal, las incidencias abiertas con fecha
+      de apertura anterior a hoy no entran (no son "próximas"; las cuenta
+      el KPI "Atrasados").
+
 ## Cómo actualizar este archivo
 
 Cada vez que se implemente una conexión: marcarla `[x]`, agregar la fecha y

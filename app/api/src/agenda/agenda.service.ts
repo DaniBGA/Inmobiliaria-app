@@ -77,10 +77,28 @@ export class AgendaService {
   // siendo globales para todos, no son de nadie en particular.
   async eventosDelMes(mesStr: string, usuario: UsuarioRequest) {
     const mes = mesStringAFecha(mesStr);
-    const finMes = sumarMeses(mes, 1);
-    const enRango = { gte: mes, lt: finMes };
+    return { mes: mesStr, ...(await this.eventosEnRango(mes, sumarMeses(mes, 1), usuario)) };
+  }
 
-    const whereManuales: { fecha: typeof enRango; usuarioId: string | null } = {
+  // Checkbox "Ver todos los próximos" de Agenda (pedido del usuario
+  // 2026-11-13): todo lo que hay desde `desdeStr` (YYYY-MM-DD, el "hoy" del
+  // navegador — el servidor está en UTC y a la noche ya sería mañana) en
+  // adelante, sin tope de meses. Mismos eventos y mismas reglas de
+  // visibilidad por rol que `eventosDelMes()`.
+  async eventosProximos(desdeStr: string | undefined, usuario: UsuarioRequest) {
+    const hoy = new Date();
+    const desde = /^\d{4}-\d{2}-\d{2}$/.test(desdeStr ?? '')
+      ? new Date(`${desdeStr}T00:00:00.000Z`)
+      : new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate()));
+    return { desde: desde.toISOString().slice(0, 10), ...(await this.eventosEnRango(desde, null, usuario)) };
+  }
+
+  // `hasta: null` = sin límite hacia adelante.
+  private async eventosEnRango(desde: Date, hasta: Date | null, usuario: UsuarioRequest) {
+    const enRango = hasta ? { gte: desde, lt: hasta } : { gte: desde };
+    const dentro = (fecha: Date) => fecha >= desde && (!hasta || fecha < hasta);
+
+    const whereManuales = {
       fecha: enRango,
       usuarioId: usuario.rol === RolUsuario.EQUIPO ? usuario.id : null,
     };
@@ -111,7 +129,7 @@ export class AgendaService {
     const candidatosAumento = await Promise.all(
       propiedadesAlquiladas.map(async (p) => {
         const proxima = await this.propiedadesService.proximoAumento(p.id);
-        if (!proxima || proxima < mes || proxima >= finMes) return null;
+        if (!proxima || !dentro(proxima)) return null;
         return {
           tipo: 'AUMENTO_PROXIMO' as const,
           fecha: proxima,
@@ -150,7 +168,6 @@ export class AgendaService {
     }));
 
     return {
-      mes: mesStr,
       manuales,
       automaticos: [
         ...eventosVencimiento,

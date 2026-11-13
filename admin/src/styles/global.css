@@ -454,6 +454,8 @@ textarea:focus{outline:none;border-color:var(--ink)}
 .callegend i.firma{background:var(--green)} .callegend i.tarea{background:var(--muted)}
 .callegend i.auto{background:var(--red)}
 .evlist{display:flex;flex-direction:column;gap:10px}
+.evmes{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--muted);font-weight:700;text-transform:uppercase;margin:8px 2px 0;padding-bottom:6px;border-bottom:1px solid var(--border2)}
+.evmes:first-child{margin-top:0}
 .evcard{background:var(--card);border:1px solid var(--border2);border-radius:12px;padding:14px 16px;display:flex;gap:12px;box-shadow:var(--shadow);cursor:pointer;transition:border-color .15s}
 .evcard:hover{border-color:var(--ink2)}
 .evcard.hecho{opacity:.55}

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AgendaService } from './agenda.service';
 import { CreateEventoDto } from './dto/create-evento.dto';
 import { UpdateEventoDto } from './dto/update-evento.dto';
@@ -12,6 +12,11 @@ export class AgendaController {
   @Get('mes/:mes')
   eventosDelMes(@Param('mes') mes: string, @Req() req: any) {
     return this.agendaService.eventosDelMes(mes, req.user);
+  }
+
+  @Get('proximos')
+  eventosProximos(@Query('desde') desde: string | undefined, @Req() req: any) {
+    return this.agendaService.eventosProximos(desde, req.user);
   }
 
   @Get('clientes/:clienteId/proximo-evento')

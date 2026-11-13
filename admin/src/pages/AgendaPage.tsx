@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
 import { PageHeader } from '../components/PageHeader';
@@ -39,8 +39,7 @@ interface EventoAuto {
   automatico: true;
 }
 
-interface EventosDelMes {
-  mes: string;
+interface EventosAgenda {
   manuales: EventoManual[];
   automaticos: EventoAuto[];
 }
@@ -56,6 +55,8 @@ interface Combinado {
   automatico: boolean;
   propiedadNombre: string | null;
   clienteNombre: string | null;
+  // Evento manual de origen (para abrirlo en el modal de edición).
+  original: EventoManual | null;
 }
 
 const TIPO_MANUAL_LABEL: Record<TipoEventoManual, string> = {
@@ -117,16 +118,57 @@ function hoyStrUTC(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function combinar(data: EventosAgenda | undefined): Combinado[] {
+  return [
+    ...(data?.manuales ?? []).map((e) => ({
+      key: `m-${e.id}`,
+      id: e.id,
+      fecha: e.fecha,
+      clase: TIPO_MANUAL_CLASE[e.tipo],
+      icono: TIPO_MANUAL_ICO[e.tipo],
+      titulo: e.titulo,
+      hecho: e.hecho,
+      automatico: false,
+      propiedadNombre: e.propiedad?.nombre ?? null,
+      clienteNombre: e.cliente?.nombre ?? null,
+      original: e,
+    })),
+    ...(data?.automaticos ?? []).map((e, i) => ({
+      key: `a-${e.tipo}-${i}`,
+      id: null,
+      fecha: e.fecha,
+      clase: TIPO_AUTO_CLASE[e.tipo],
+      icono: TIPO_AUTO_ICO[e.tipo],
+      titulo: e.titulo,
+      hecho: false,
+      automatico: true,
+      propiedadNombre: null,
+      clienteNombre: null,
+      original: null,
+    })),
+  ];
+}
+
 export function AgendaPage() {
   const qc = useQueryClient();
   const [mes, setMes] = useState(mesActualStr());
   const [diaSel, setDiaSel] = useState<string | null>(null);
   const [verHechos, setVerHechos] = useState(false);
+  const [verTodos, setVerTodos] = useState(false);
   const [modal, setModal] = useState<'new' | EventoManual | null>(null);
 
   const eventosDelMes = useQuery({
     queryKey: ['agenda', 'mes', mes],
-    queryFn: () => api.get<EventosDelMes>(`/agenda/mes/${mes}`),
+    queryFn: () => api.get<EventosAgenda>(`/agenda/mes/${mes}`),
+  });
+  // "Ver todos los próximos" (pedido del usuario 2026-11-13): todo lo
+  // pendiente de hoy en adelante, sin importar el mes que muestre el
+  // calendario — solo se pide con el checkbox tildado.
+  const hoy = hoyStrUTC();
+  const eventosProximos = useQuery({
+    queryKey: ['agenda', 'proximos', hoy],
+    queryFn: () => api.get<EventosAgenda>(`/agenda/proximos?desde=${hoy}`),
+    enabled: verTodos,
   });
   const propiedades = useQuery({
     queryKey: ['propiedades'],
@@ -159,41 +201,12 @@ export function AgendaPage() {
     );
   }
 
-  const manuales = eventosDelMes.data?.manuales ?? [];
-  const automaticos = eventosDelMes.data?.automaticos ?? [];
-
-  const combinados: Combinado[] = [
-    ...manuales.map((e) => ({
-      key: `m-${e.id}`,
-      id: e.id,
-      fecha: e.fecha,
-      clase: TIPO_MANUAL_CLASE[e.tipo],
-      icono: TIPO_MANUAL_ICO[e.tipo],
-      titulo: e.titulo,
-      hecho: e.hecho,
-      automatico: false,
-      propiedadNombre: e.propiedad?.nombre ?? null,
-      clienteNombre: e.cliente?.nombre ?? null,
-    })),
-    ...automaticos.map((e, i) => ({
-      key: `a-${e.tipo}-${i}`,
-      id: null,
-      fecha: e.fecha,
-      clase: TIPO_AUTO_CLASE[e.tipo],
-      icono: TIPO_AUTO_ICO[e.tipo],
-      titulo: e.titulo,
-      hecho: false,
-      automatico: true,
-      propiedadNombre: null,
-      clienteNombre: null,
-    })),
-  ];
+  const combinados = combinar(eventosDelMes.data);
 
   // KPIs (§2.7): "hoy" y "esta semana" cuentan todo lo pendiente en rango;
   // "atrasados" solo cuenta automáticos dentro de una ventana de 60 días —
   // pasado eso ya es historia, no un pendiente real (vencimientos viejos no
   // se pueden marcar como hechos, así que quedarían para siempre si no).
-  const hoy = hoyStrUTC();
   const delHoy = combinados.filter((e) => e.fecha.slice(0, 10) === hoy && (verHechos || !e.hecho));
   const en7 = combinados.filter((e) => {
     const d = diasHasta(e.fecha);
@@ -232,6 +245,12 @@ export function AgendaPage() {
   if (diaSel) {
     listaLateral = (eventosPorDia.get(diaSel) ?? []).filter((e) => verHechos || !e.hecho);
     tituloLateral = `EVENTOS DEL ${diaSel.split('-').reverse().join('/')}`;
+  } else if (verTodos) {
+    // Sin el tope de 12 de la vista normal: acá el pedido es ver TODO.
+    listaLateral = combinar(eventosProximos.data)
+      .filter((e) => verHechos || !e.hecho)
+      .sort((a, b) => a.fecha.localeCompare(b.fecha));
+    tituloLateral = 'TODOS LOS PRÓXIMOS';
   } else {
     listaLateral = combinados
       .filter((e) => diasHasta(e.fecha) >= 0 && (verHechos || !e.hecho))
@@ -266,9 +285,9 @@ export function AgendaPage() {
                   'Vencimientos de contrato, aumentos próximos e incidencias abiertas o en ejecución aparecen solos, generados por el resto del sistema.',
               },
               {
-                titulo: 'Calendario y "Ver los ya hechos"',
+                titulo: 'Calendario, "Ver todos los próximos" y "Ver los ya hechos"',
                 subtitulo:
-                  'Hacé clic en un día del calendario para ver solo sus eventos; tildá "Ver los ya hechos" para no perderlos de vista.',
+                  'Hacé clic en un día del calendario para ver solo sus eventos; tildá "Ver todos los próximos" para listar todo lo pendiente de hoy en adelante, de cualquier mes, y "Ver los ya hechos" para no perderlos de vista.',
               },
             ],
           ]}
@@ -315,6 +334,19 @@ export function AgendaPage() {
               Mes actual
             </button>
             <span className="spacer"></span>
+            <label className="chk" style={{ marginRight: 12 }}>
+              <input
+                type="checkbox"
+                checked={verTodos}
+                onChange={(e) => {
+                  setVerTodos(e.target.checked);
+                  // Un día elegido en el calendario le gana a esta vista —
+                  // se suelta para que el checkbox se vea en efecto enseguida.
+                  if (e.target.checked) setDiaSel(null);
+                }}
+              />
+              <span>Ver todos los próximos</span>
+            </label>
             <label className="chk" style={{ marginRight: 12 }}>
               <input type="checkbox" checked={verHechos} onChange={(e) => setVerHechos(e.target.checked)} />
               <span>Ver los ya hechos</span>
@@ -391,10 +423,16 @@ export function AgendaPage() {
           </div>
           <div>
             <h3 className="agtitle">{tituloLateral}</h3>
-            {listaLateral.length === 0 ? (
+            {!diaSel && verTodos && eventosProximos.isLoading ? (
+              <div className="loadstate">Cargando…</div>
+            ) : !diaSel && verTodos && eventosProximos.isError ? (
+              <div className="errstate">No se pudieron cargar los próximos eventos.</div>
+            ) : listaLateral.length === 0 ? (
               <div className="okstate" style={{ padding: 32 }}>
                 <div className="big">▥</div>
-                <h4>{diaSel ? 'Nada agendado este día' : 'No hay eventos próximos'}</h4>
+                <h4>
+                  {diaSel ? 'Nada agendado este día' : verTodos ? 'No hay nada pendiente de hoy en adelante' : 'No hay eventos próximos'}
+                </h4>
                 <p>
                   {diaSel ? (
                     'Hacé clic en "+ Nuevo evento" para agendar algo.'
@@ -409,14 +447,20 @@ export function AgendaPage() {
               </div>
             ) : (
               <div className="evlist">
-                {listaLateral.map((e) => {
+                {listaLateral.map((e, i) => {
                   const d = diasHasta(e.fecha);
                   const cuando = d === 0 ? 'HOY' : d === 1 ? 'MAÑANA' : d < 0 ? `ATRASADO ${Math.abs(d)}d` : `en ${d} días`;
-                  const original = e.id ? manuales.find((m) => m.id === e.id) : null;
+                  const original = e.original;
+                  // En "todos los próximos" la lista abarca varios meses: un
+                  // separador al arrancar cada uno para no perderse.
+                  const mesEvento = e.fecha.slice(0, 7);
+                  const separadorMes =
+                    !diaSel && verTodos && (i === 0 || listaLateral[i - 1].fecha.slice(0, 7) !== mesEvento);
                   return (
+                    <Fragment key={e.key}>
+                    {separadorMes && <div className="evmes">{mesLabel(mesEvento)}</div>}
                     <div
                       className={`evcard ${e.hecho ? 'hecho' : ''} ${e.automatico ? e.clase : ''}`}
-                      key={e.key}
                       style={{ cursor: e.automatico ? 'default' : 'pointer' }}
                       onClick={() => original && setModal(original)}
                     >
@@ -443,6 +487,7 @@ export function AgendaPage() {
                         {e.automatico ? '' : e.icono}
                       </div>
                     </div>
+                    </Fragment>
                   );
                 })}
               </div>
